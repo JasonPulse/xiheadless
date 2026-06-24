@@ -1,0 +1,13 @@
+# build output
+bin/
+obj/
+*.user
+
+# IDE / OS
+.vs/
+.idea/
+.DS_Store
+
+# Local dev harness — contains a test-account password default. Production runs the
+# Docker image with XIBOT_ACCOUNT/XIBOT_PASSWORD/XIBOT_BRAIN supplied as k8s env vars.
+runbot.sh
