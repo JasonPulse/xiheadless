@@ -27,6 +27,7 @@ public sealed class WorldState
     public uint EventNpcId;
     public ushort EventNpcIndex;
     public ushort EventId;
+    public DateTime LastEventDrivenUtc;   // when a brain capability last deliberately drove an event (so the auto-completer doesn't stomp it)
 
     // /check (con) result, filled by the 0x029 reply to a 0x0DD check (Consider).
     public uint ConTargetId;     // mob we're awaiting a con for

@@ -60,6 +60,12 @@ public static class BotHost
         // has no active CS, so the EVENTEND is a harmless "Not in an event".
         EnsureNewCharSetup(caps, conn.State.ZoneId);
 
+        // Headless event auto-completer (CORE/system, runs the whole session): there is no human to
+        // dismiss cutscenes, so any server-pushed event left open freezes the bot "in event". Finish
+        // anything that lingers (level-up CS, mission CS, stray NPC events) — see AutoCompleteEvents.
+        using var autoCts = new CancellationTokenSource();
+        var autoEvents = AutoCompleteEvents(caps, autoCts.Token);
+
         var brain = BrainRegistry.Create(brainName, caps);
         Console.WriteLine($"running brain: {brain.GetType().Name}");
         var runner = new BotRunner(brain);
@@ -75,6 +81,7 @@ public static class BotHost
         // Graceful shutdown: stop the brain first (so it isn't acting mid-logout), then clean-logout.
         Console.WriteLine("stopping -> cancel brain + graceful logout");
         runner.Stop();
+        autoCts.Cancel();   // stop the event auto-completer so it isn't finishing events mid-logout
         // Never log out while KO'd — a dead logout re-strands the char in zone-0 limbo on next login.
         // Revive at the home point first (home point must be set; see EnsureNewCharSetup).
         if (caps.Combat.Dead)
@@ -148,6 +155,36 @@ public static class BotHost
     {
         for (int i = 0; i < timeoutMs / 100 && !cond(); i++) Thread.Sleep(100);
         return cond();
+    }
+
+    // Continuously auto-complete any event the server pushes that the brain isn't deliberately driving.
+    // A headless client never clicks through cutscenes, so an unhandled event (level-up CS, mission CS,
+    // ROV, a stray NPC menu) leaves the char "in event" and suppresses everything else. We finish any
+    // event that has lingered past a grace period since the last time the brain touched an event
+    // (Examine/Finish stamp World.LastEventDrivenUtc), so deliberate quest/AH/job-change dialogs — which
+    // respond well within the grace — are never stomped. For chained cutscenes the next event re-arms
+    // EventActive and we finish that too.
+    static async Task AutoCompleteEvents(CapabilitySet caps, CancellationToken ct)
+    {
+        var w = caps.Perception.World;
+        const int graceMs = 7000;
+        DateTime activeSince = DateTime.MaxValue;
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                await Task.Delay(500, ct);
+                if (!w.EventActive) { activeSince = DateTime.MaxValue; continue; }
+                if (activeSince == DateTime.MaxValue) activeSince = DateTime.UtcNow;   // rising edge of an active event
+                var reference = w.LastEventDrivenUtc > activeSince ? w.LastEventDrivenUtc : activeSince;
+                if ((DateTime.UtcNow - reference).TotalMilliseconds < graceMs) continue; // brain may be driving it
+                ushort ev = w.EventId;
+                Console.WriteLine($"[auto-event] event {ev} lingered with no brain action -> auto-finishing");
+                await caps.Events.FinishEvent(0, ct);
+                activeSince = DateTime.MaxValue;
+            }
+        }
+        catch (OperationCanceledException) { }
     }
 
     static NavMesh? LoadZoneMesh(ushort zoneId)

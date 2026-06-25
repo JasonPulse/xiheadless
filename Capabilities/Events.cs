@@ -41,6 +41,7 @@ public sealed class Events(ISession s) : IEvents
     public async Task<bool> Examine(uint npcId, CancellationToken ct = default)
     {
         s.State.EventActive = false;
+        s.State.LastEventDrivenUtc = DateTime.UtcNow;   // the brain is deliberately driving this event; keep the auto-completer off it
         ushort idx = IndexOf(npcId);
         Console.WriteLine($"[events] Talk npc=0x{npcId:X} idx={idx} mypos=({s.State.X:F0},{s.State.Y:F0},{s.State.Z:F0})");
         s.Enqueue(ActionPacket.Build(ActionPacket.Talk, npcId, idx));   // starts the NPC's event server-side
@@ -61,6 +62,7 @@ public sealed class Events(ISession s) : IEvents
         Console.WriteLine($"[events] EVENTEND npc=0x{npcId:X} idx={npcIndex} event={eventId} sel={selection}");
         s.Enqueue(EventEndPacket.Build(npcId, npcIndex, eventId, selection));
         s.State.EventActive = false;
+        s.State.LastEventDrivenUtc = DateTime.UtcNow;
         await Task.Delay(800, ct);
     }
 }
