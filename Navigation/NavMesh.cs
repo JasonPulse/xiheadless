@@ -14,6 +14,7 @@ public sealed class NavMesh
     readonly DtNavMeshQuery _query;
     static readonly RcVec3f Extents = new(2.5f, 5.0f, 2.5f);   // poly search box (LSB polyPickExt)
     static readonly RcVec3f TallExtents = new(5.0f, 100.0f, 5.0f); // tall box: snap a target whose height we only approximate (outdoor terrain)
+    static readonly RcVec3f WideExtents = new(25.0f, 200.0f, 25.0f); // fallback: snap an off-mesh target (e.g. a crystal/NPC against a wall) to the nearest walkable poly
     readonly IDtQueryFilter _filter = new DtQueryDefaultFilter();
 
     NavMesh(DtNavMesh mesh) { _mesh = mesh; _query = new DtNavMeshQuery(mesh); }
@@ -71,6 +72,10 @@ public sealed class NavMesh
 
         _query.FindNearestPoly(startPos, TallExtents, _filter, out long startRef, out RcVec3f startNear, out _);
         _query.FindNearestPoly(endPos, TallExtents, _filter, out long endRef, out RcVec3f endNear, out _);
+        // Off-mesh endpoint (e.g. a crystal/NPC placed a few yalms off walkable ground): retry with a
+        // wider box so we path to the nearest walkable spot beside it instead of failing outright.
+        if (startRef == 0) _query.FindNearestPoly(startPos, WideExtents, _filter, out startRef, out startNear, out _);
+        if (endRef == 0) _query.FindNearestPoly(endPos, WideExtents, _filter, out endRef, out endNear, out _);
         if (startRef == 0 || endRef == 0) return result;
         startPos = startNear; endPos = endNear; // use the snapped on-mesh points (correct height)
 
