@@ -31,9 +31,8 @@ public sealed class CraftBrain(IPerception p, IAuctionHouse ah, ICrafting craft,
             await Task.Delay(2000, ct);   // let inventory/state resettle after the zone change
         }
 
-        // Craft skill in 0x062 is encoded level<<5 (server bumps WorkingSkills by 0x20 per level).
         int startGains = p.World.SkillGains[RecipeSkill];
-        Console.WriteLine($"[craft] Smithing level {p.World.SkillLevel(RecipeSkill) >> 5} at start");
+        Console.WriteLine($"[craft] Smithing level {p.World.SkillLevel(RecipeSkill)} at start");
 
         int made = 0;
         for (int n = 0; n < MaxSynths && !ct.IsCancellationRequested; n++)
@@ -57,7 +56,7 @@ public sealed class CraftBrain(IPerception p, IAuctionHouse ah, ICrafting craft,
         }
 
         double gained = (p.World.SkillGains[RecipeSkill] - startGains) / 10.0;
-        Console.WriteLine($"[craft] done — {made}/{MaxSynths} succeeded; Smithing +{gained:0.0} this session (now level {p.World.SkillLevel(RecipeSkill) >> 5}); logging out");
+        Console.WriteLine($"[craft] done — {made}/{MaxSynths} succeeded; Smithing +{gained:0.0} this session (now level {p.World.SkillLevel(RecipeSkill)}); logging out");
         lifecycle.Logout();
     }
 

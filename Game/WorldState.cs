@@ -45,9 +45,17 @@ public sealed class WorldState
     // so Delivery uses this to confirm a send and find a free outgoing slot. -1 = none since reset.
     public volatile int DboxAck = -1;
 
-    // Skill levels (0x062 skill_base[64]); skill id -> level. SkillLevel masks the capped (0x8000) bit.
-    public readonly ushort[] Skills = new ushort[64]; // [1]=H2H,[3]=Sword,[5]=Axe,[36]=Elemental,...
-    public int SkillLevel(int id) => id >= 0 && id < 64 ? Skills[id] & 0x7FFF : 0;
+    // Skill levels (0x062 skill_base[64]); skill id -> level. Masks the capped (0x8000) bit.
+    // Encoding differs by type: combat/magic (1-45) are raw skill points; CRAFT skills (48-57) are
+    // packed as (level<<5 | rank), so we shift them down to whole craft levels. SkillLevel returns the
+    // brain-meaningful value for either (e.g. raw 32 for Smithing => level 1, not 32).
+    public readonly ushort[] Skills = new ushort[64]; // [1]=H2H,[3]=Sword,[5]=Axe,[36]=Elemental,[50]=Smithing,...
+    public int SkillLevel(int id)
+    {
+        if (id < 0 || id >= 64) return 0;
+        int v = Skills[id] & 0x7FFF;
+        return id is >= 48 and <= 57 ? v >> 5 : v;   // craft = level<<5 | rank; others = raw points
+    }
     // Cumulative skill-up amount this session, per skill id, in 0.1-level units (from 0x029 SKILL_GAIN).
     // 0x062 only resends the integer level on a level cross, so this is how we see fine-grained gains.
     public readonly int[] SkillGains = new int[64];
