@@ -10,7 +10,7 @@ public sealed class HomePointBrain(IPerception p, INavigation nav, IZoning zonin
     // Starting city zone -> a Home Point crystal position (from the zone's HomePoint NPC !pos).
     static readonly Dictionary<ushort, (float x, float y, float z)> Crystal = new()
     {
-        [241] = (-98.588f, 0.001f, -183.416f),   // Windurst Woods, HomePoint#1
+        [241] = (-92f, -5f, 62f),   // Windurst Woods, HomePoint#3 (closest to the Mog House entrance/spawn)
     };
 
     public async Task RunAsync(CancellationToken ct)
