@@ -95,19 +95,59 @@ public static class BotHost
     static readonly Dictionary<ushort, ushort> CutsceneId = new()
     {
         [234] = 1,   [236] = 1,   [235] = 0,     // Bastok: Mines / Port / Markets(0->7)
-        [238] = 531, [241] = 367, [240] = 305,   // Windurst: Waters / Woods / Walls
-        [230] = 535, [231] = 503, [232] = 500,   // San d'Oria: Southern / Northern / Port
+        [238] = 531, [241] = 367, [240] = 305,   // Windurst: Waters / Woods / Port
+        [230] = 503, [231] = 535, [232] = 500,   // San d'Oria: Southern / Northern / Port
     };
 
-    // Finish the New Character Cutscene on login by blind-finishing the starting zone's csid (sets the
-    // home point + unblocks NPC events). Idempotent: a done char's EVENTEND is a no-op "Not in an event".
-    static void EnsureNewCharSetup(CapabilitySet caps, ushort zone)
+    // Complete the New Character Cutscene (which calls setHomePoint()) on login. Two obstacles, both
+    // solved by finishing the ACTUAL active event (read from the parsed event-start packet) rather than
+    // blind-firing a guessed id:
+    //  1. The headless char never completed the CS at creation, so the home point is unset.
+    //  2. Once the char is level >= 3, ROV mission 1-01 (event 30035) auto-fires on every city zone-in
+    //     and wins the event slot, BLOCKING the new-char CS. (Confirmed via map logs: "Event ID
+    //     mismatch 30035 != 367" — the old blind-fire of 367 always lost to the active 30035.)
+    // So we DRAIN auto-firing zone-in events: finish whatever is active; if finishing a blocker leaves
+    // no event, re-zone (out a zoneline and back) to re-trigger onZoneIn, until the new-char CS fires
+    // and sets the home point. Idempotent: a set-up char (notSeen=0, ROV done) fires no zone-in event,
+    // so this returns after one short wait. CutsceneId[zone] is the event whose onEventFinish calls
+    // setHomePoint (Bastok Markets chains 0 -> 7, so its done-id is 7).
+    static void EnsureNewCharSetup(CapabilitySet caps, ushort startZone)
     {
-        if (!CutsceneId.TryGetValue(zone, out var csid)) return;   // not a starting zone
-        Console.WriteLine($"[setup] finishing New Character Cutscene csid {csid} (zone {zone}) -> setHomePoint + unblock events");
-        caps.Events.Finish(caps.Perception.World.MyId, 0, csid, 0).GetAwaiter().GetResult();
-        Thread.Sleep(2500);
-        if (zone == 235) { caps.Events.Finish(caps.Perception.World.MyId, 0, 7, 0).GetAwaiter().GetResult(); Thread.Sleep(2500); }
+        if (!CutsceneId.TryGetValue(startZone, out var csid)) return;   // only starting cities run this
+        ushort hpDoneId = startZone == 235 ? (ushort)7 : csid;
+        var w = caps.Perception.World;
+        bool blockerCleared = false;
+
+        for (int pass = 0; pass < 8; pass++)
+        {
+            if (WaitFor(() => w.EventActive, 6000))
+            {
+                ushort ev = w.EventId;
+                Console.WriteLine($"[setup] active zone-in event {ev} -> finishing (home-point CS is {hpDoneId})");
+                caps.Events.FinishEvent(0).GetAwaiter().GetResult();
+                Thread.Sleep(2500);
+                if (w.EventId == ev) w.EventActive = false;   // parser doesn't clear it; reset unless a chained event replaced it
+                if (ev == hpDoneId) { Console.WriteLine("[setup] new-character cutscene finished -> HOME POINT SET"); return; }
+                blockerCleared = true;   // finished a blocker (ROV 30035 / Bastok intro 0); a chain may auto-start, else re-zone
+                continue;
+            }
+            if (!blockerCleared) { Console.WriteLine("[setup] no zone-in event active -> char already set up"); return; }
+            // A blocker was cleared but the new-char CS hasn't fired -> re-zone to re-trigger onZoneIn.
+            var nb = Zonelines.All.FirstOrDefault(l => l.From == startZone && !CutsceneId.ContainsKey(l.To));
+            if (nb.To == 0) { Console.WriteLine("[setup] no non-city neighbor to bounce off; stopping setup"); return; }
+            Console.WriteLine($"[setup] re-zoning {startZone} -> {nb.To} -> {startZone} to re-trigger the new-char CS");
+            caps.Zoning.ToZone(nb.To).GetAwaiter().GetResult();
+            caps.Zoning.ToZone(startZone).GetAwaiter().GetResult();
+            w.EventActive = false;
+            blockerCleared = false;
+        }
+        Console.WriteLine("[setup] WARNING: drained events but never saw the new-char CS finish; home point may be unset");
+    }
+
+    static bool WaitFor(Func<bool> cond, int timeoutMs)
+    {
+        for (int i = 0; i < timeoutMs / 100 && !cond(); i++) Thread.Sleep(100);
+        return cond();
     }
 
     static NavMesh? LoadZoneMesh(ushort zoneId)
