@@ -12,6 +12,7 @@ public sealed class WorldState
     public long NowMs;          // monotonic clock (set by the runtime each update) for entity aging
     public int MaxHp, MaxMp;    // from 0x01b job_info
     public uint Hp, Mp, Tp;     // current absolute values (from 0x0DF group_attr); TP 0-3000
+    public uint Gil;            // gil balance (from the item-65535 entry in 0x01F/0x020)
     public byte MainJob, MainJobLevel, SubJob, SubJobLevel;
     public readonly ushort[] Stats = new ushort[7]; // STR,DEX,VIT,AGI,INT,MND,CHR (base)
     public byte Hpp, Mpp;       // HP%/MP% (0x037 / 0x0DF)
@@ -58,7 +59,7 @@ public sealed class WorldState
     public override string ToString() =>
         $"id=0x{MyId:X} zone={ZoneId} pos=({X:F1},{Y:F1},{Z:F1}) rot={Rotation} " +
         $"HP%={Hpp} status={ServerStatus} maxHP={MaxHp} maxMP={MaxMp} " +
-        $"job={MainJob}/{MainJobLevel} sub={SubJob}/{SubJobLevel} stats=[{string.Join(",", Stats)}] entities={Entities.Count}";
+        $"job={MainJob}/{MainJobLevel} sub={SubJob}/{SubJobLevel} gil={Gil} entities={Entities.Count}";
 }
 
 public sealed class Entity

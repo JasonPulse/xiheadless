@@ -30,6 +30,7 @@ public static class PacketParsers
             case 0x032: EventStart(sub, w, false); break; // GP_SERV_COMMAND_EVENT (npc menu/cutscene)
             case 0x034: EventStart(sub, w, true); break;  // GP_SERV_COMMAND_EVENTNUM (event with numeric params)
             case 0x062: Skills2(sub, w); break;           // GP_SERV_COMMAND_CLISTATUS2 (skill levels)
+            case 0x01E: ItemNum(sub, w); break;           // GP_SERV_COMMAND_ITEM_NUM (quantity-only update; how gil grants arrive)
             case 0x01F: ItemList(sub, w); break;          // GP_SERV_COMMAND_ITEM_LIST (one inventory item)
             case 0x020: ItemAttr(sub, w); break;          // GP_SERV_COMMAND_ITEM_ATTR (item w/ extdata; different layout)
             case 0x04B: PostBoxResult(sub, w); break;     // GP_SERV_COMMAND_PBX_RESULT (delivery box reply/ack)
@@ -156,11 +157,21 @@ public static class PacketParsers
         for (int i = 0; i < 64; i++) w.Skills[i] = U16(b, off + i * 2);
     }
 
+    // 0x01E GP_SERV_COMMAND_ITEM_NUM: ItemNum(qty)@4, Category(container)@8, ItemIndex(slot)@9. Quantity-only
+    // update (no item id) — gil grants and stack-count changes arrive here. (container 0, slot 0) is gil.
+    static void ItemNum(ReadOnlySpan<byte> b, WorldState w)
+    {
+        if (b.Length < 10) return;
+        uint qty = U32(b, 4); byte container = b[8], slot = b[9];
+        if (container == 0 && slot == 0) w.Gil = qty;   // LOC_INVENTORY slot 0 = gil
+    }
+
     // 0x01F GP_SERV_COMMAND_ITEM_LIST: ItemNum(qty)@4, ItemNo(itemid)@8, Category(container)@10, ItemIndex(slot)@11.
     static void ItemList(ReadOnlySpan<byte> b, WorldState w)
     {
         if (b.Length < 12) return;
         uint qty = U32(b, 4); ushort itemId = U16(b, 8); byte container = b[10], slot = b[11];
+        if (itemId == 65535) w.Gil = qty;   // gil is the item at inv slot 0; qty = the gil balance
         var key = (container, slot);
         if (qty == 0 || itemId == 0) w.Inventory.Remove(key);
         else w.Inventory[key] = itemId;
@@ -172,6 +183,7 @@ public static class PacketParsers
     {
         if (b.Length < 16) return;
         uint qty = U32(b, 4); ushort itemId = U16(b, 12); byte container = b[14], slot = b[15];
+        if (itemId == 65535) w.Gil = qty;   // gil balance
         var key = (container, slot);
         if (qty == 0 || itemId == 0) w.Inventory.Remove(key);
         else w.Inventory[key] = itemId;
