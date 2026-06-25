@@ -21,6 +21,8 @@ public sealed class CapabilitySet
     public IShop Shop { get; }
     public ILifecycle Lifecycle { get; }
     public IAuctionHouse Auction { get; }
+    public IQuests Quests { get; }
+    public IJobChange JobChange { get; }
 
     readonly Navigator _nav;
 
@@ -43,6 +45,8 @@ public sealed class CapabilitySet
         Shop = new Shop(s);
         Lifecycle = new Lifecycle(onLogout ?? (() => { }));
         Auction = new AuctionHouse(s);
+        Quests = new Quests(Events);
+        JobChange = new JobChange(s);
     }
 
     /// Hot-swap the navmesh after a zone change (the brain keeps its same INavigation/IZoning refs).
@@ -63,7 +67,9 @@ public sealed class CapabilitySet
         t == typeof(ICrafting)   ? Crafting :
         t == typeof(IShop)       ? Shop :
         t == typeof(ILifecycle)  ? Lifecycle :
-        t == typeof(IAuctionHouse) ? Auction : null;
+        t == typeof(IAuctionHouse) ? Auction :
+        t == typeof(IQuests)     ? Quests :
+        t == typeof(IJobChange)  ? JobChange : null;
 }
 
 /// Discovers every IBrain in the assembly and constructs one by name, auto-injecting
