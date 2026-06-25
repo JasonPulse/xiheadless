@@ -72,21 +72,15 @@ public static class BotHost
         return 0;
     }
 
-    // TODO: generate the full zoneid->navmesh-name map from zone_settings. For now the route
-    // zones we care about. Files named by zone name in the navmesh dir.
-    static readonly Dictionary<ushort, string> ZoneMesh = new()
-    {
-        [235] = "Bastok_Markets", [234] = "Bastok_Mines", [236] = "Port_Bastok",
-        [106] = "North_Gustaberg", [107] = "South_Gustaberg",
-    };
-
+    // Navmesh file = the zone's canonical name (from ZoneGraph) + ".nav", so every zone with a mesh
+    // file in the navmesh dir is automatically walkable — no per-zone map to maintain.
     static NavMesh? LoadZoneMesh(ushort zoneId)
     {
         var dir = Environment.GetEnvironmentVariable("XIBOT_NAVMESH_DIR")
                   ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Code/Lua/personal/temp/server/navmeshes");
-        if (!ZoneMesh.TryGetValue(zoneId, out var name)) { Console.WriteLine($"no navmesh mapping for zone {zoneId}"); return null; }
+        var name = Game.Zonelines.Name(zoneId);
         var path = Path.Combine(dir, name + ".nav");
-        if (!File.Exists(path)) { Console.WriteLine($"navmesh not found: {path}"); return null; }
+        if (!File.Exists(path)) { Console.WriteLine($"navmesh not found for zone {zoneId} ({name}): {path}"); return null; }
         Console.WriteLine($"loaded navmesh {name}.nav for zone {zoneId}");
         return NavMesh.Load(path);
     }

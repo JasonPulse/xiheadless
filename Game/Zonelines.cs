@@ -6,24 +6,30 @@ namespace XiHeadless.Game;
 /// which is on the navmesh by construction. Values verified from sql/zonelines.sql.
 public readonly record struct ZoneLine(uint RectId, ushort From, ushort To, float TriggerX, float TriggerY, float TriggerZ);
 
-/// Static zone-connectivity graph for the Bastok region (the zones we have navmeshes for).
-/// Add rows to extend the bot's reachable world; BFS finds a multi-hop route.
+/// Whole-world zone-connectivity graph, generated from the server SQL (see ZoneGraph / `gengraph`).
+/// BFS finds a multi-hop route; names resolve so a brain can just GoTo("Windurst Woods").
 public static class Zonelines
 {
-    // From\To, RectId of the From->To line, and the trigger point in From (= reverse line's toPos).
-    public static readonly ZoneLine[] All =
+    public static readonly ZoneLine[] All = ZoneGraph.Lines;
+
+    const ushort MiscAh = 0x200;   // ZONEMISC MISC_AH bit: zone allows auction-house use
+
+    // Canonical name (and a spaces<->underscores, case-insensitive variant) -> zone id.
+    static readonly Dictionary<string, ushort> _byName = BuildNames();
+    static readonly Dictionary<ushort, (string name, ushort misc)> _info =
+        ZoneGraph.Zones.ToDictionary(z => z.id, z => (z.name, z.misc));
+
+    static Dictionary<string, ushort> BuildNames()
     {
-        new(812267130, 235, 234, -201.904f, 1.928f, -194.828f), // Bastok Markets -> Bastok Mines
-        new(845756026, 234, 235, -104.018f, 9.359f,  81.411f),  // Bastok Mines   -> Bastok Markets
-        new(845821562, 235, 236, -233.879f, -2.224f, 86.783f),  // Bastok Markets -> Port Bastok
-        new(845887098, 236, 235, -194.012f, -0.138f, -76.239f), // Port Bastok    -> Bastok Markets
-        new(812332666, 236, 106,  142.002f, 4.969f,  -2.008f),  // Port Bastok    -> North Gustaberg
-        new(813249146, 106, 236,  660.000f, -2.478f, 306.236f), // North Gustaberg -> Port Bastok
-        new(812201594, 234, 107,  -16.039f, -4.217f, -132.804f),// Bastok Mines   -> South Gustaberg
-        new(813314682, 107, 234,  579.993f, -1.928f, -305.077f),// South Gustaberg -> Bastok Mines
-        new(879375994, 235, 107, -363.536f, -12.108f,-183.525f),// Bastok Markets -> South Gustaberg
-        new(846869114, 107, 235,  259.963f, -1.928f, -183.317f),// South Gustaberg -> Bastok Markets
-    };
+        var m = new Dictionary<string, ushort>(StringComparer.OrdinalIgnoreCase);
+        foreach (var z in ZoneGraph.Zones) { m[z.name] = z.id; m[z.name.Replace('_', ' ')] = z.id; }
+        return m;
+    }
+
+    /// Resolve a zone name ("Windurst Woods" or "Windurst_Woods", any case) to its id, or null.
+    public static ushort? Resolve(string name) => _byName.TryGetValue(name.Trim(), out var id) ? id : null;
+    public static string Name(ushort id) => _info.TryGetValue(id, out var i) ? i.name : id.ToString();
+    public static bool HasAuctionHouse(ushort id) => _info.TryGetValue(id, out var i) && (i.misc & MiscAh) != 0;
 
     static readonly Dictionary<ushort, List<ZoneLine>> _byFrom = Build();
 

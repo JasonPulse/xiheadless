@@ -10,6 +10,7 @@ public interface IZoning
     ushort CurrentZone { get; }
     void RequestZoneLine(uint rectId);                              // low-level: send 0x5E
     Task ToZone(ushort targetZone, CancellationToken ct = default); // high-level: walk the route hop by hop
+    Task<bool> GoTo(string zoneName, CancellationToken ct = default); // resolve a zone by name, then ToZone
 }
 
 /// Builds the 0x05E GP_CLI_COMMAND_MAPRECT zone-line request.
@@ -35,6 +36,17 @@ public sealed class Zoning(ISession s, INavigation nav) : IZoning
 
     public void RequestZoneLine(uint rectId)
         => s.Enqueue(ZoneRequestPacket.Build(rectId, s.State.X, s.State.Y, s.State.Z));
+
+    public async Task<bool> GoTo(string zoneName, CancellationToken ct = default)
+    {
+        if (Zonelines.Resolve(zoneName) is not ushort target)
+        {
+            Console.WriteLine($"[travel] unknown zone '{zoneName}'");
+            return false;
+        }
+        await ToZone(target, ct);
+        return CurrentZone == target;
+    }
 
     public async Task ToZone(ushort targetZone, CancellationToken ct = default)
     {
