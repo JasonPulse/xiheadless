@@ -53,16 +53,13 @@ public static class BotHost
         // On every zone change, hot-swap the navmesh so navigation works in the new zone.
         conn.ZoneChanged += zid => caps.SwapMesh(LoadZoneMesh(zid));
 
-        // First-login setup: a headless char never ran the New Character Cutscene (setHomePoint + clears
-        // notSeen + unblocks events). It re-triggers on zone-in to a starting zone and leaves the char
-        // "in event", suppressing all other NPC events. Blind-finish the zone's cutscene id (the server
-        // matches currentEvent==csid; we don't parse the CS start). Idempotent: a done char (notSeen=0)
-        // has no active CS, so the EVENTEND is a harmless "Not in an event".
-        EnsureNewCharSetup(caps, conn.State.ZoneId);
-
         // Headless event auto-completer (CORE/system, runs the whole session): there is no human to
-        // dismiss cutscenes, so any server-pushed event left open freezes the bot "in event". Finish
-        // anything that lingers (level-up CS, mission CS, stray NPC events) — see AutoCompleteEvents.
+        // dismiss cutscenes, so any server-pushed event left open freezes the bot "in event". This
+        // finishes anything that lingers — including the New Character Cutscene, which calls
+        // setHomePoint(). A fresh char's first login is at its starting city at level 1 (before the ROV
+        // mission cutscene exists at level 3), so the new-char CS fires and gets auto-finished here ->
+        // home point set with no special setup code. Setting up / navigating is brain activity, not
+        // system logic, and the bot takes no config beyond account/password/brain.
         using var autoCts = new CancellationTokenSource();
         var autoEvents = AutoCompleteEvents(caps, autoCts.Token);
 
@@ -93,68 +90,6 @@ public static class BotHost
         conn.Stop();   // sends 0x0E7 and holds ~40s for the server to complete the logout
         Console.WriteLine("session ended cleanly.");
         return 0;
-    }
-
-    // Navmesh file = the zone's canonical name (from ZoneGraph) + ".nav", so every zone with a mesh
-    // file in the navmesh dir is automatically walkable — no per-zone map to maintain.
-    // New Character Cutscene csid per starting zone (New_Character_Cutscenes.lua). Finishing it runs
-    // setHomePoint() + clears notSeen + unblocks NPC events. Core operating data (not a brain concern).
-    static readonly Dictionary<ushort, ushort> CutsceneId = new()
-    {
-        [234] = 1,   [236] = 1,   [235] = 0,     // Bastok: Mines / Port / Markets(0->7)
-        [238] = 531, [241] = 367, [240] = 305,   // Windurst: Waters / Woods / Port
-        [230] = 503, [231] = 535, [232] = 500,   // San d'Oria: Southern / Northern / Port
-    };
-
-    // Complete the New Character Cutscene (which calls setHomePoint()) on login. Two obstacles, both
-    // solved by finishing the ACTUAL active event (read from the parsed event-start packet) rather than
-    // blind-firing a guessed id:
-    //  1. The headless char never completed the CS at creation, so the home point is unset.
-    //  2. Once the char is level >= 3, ROV mission 1-01 (event 30035) auto-fires on every city zone-in
-    //     and wins the event slot, BLOCKING the new-char CS. (Confirmed via map logs: "Event ID
-    //     mismatch 30035 != 367" — the old blind-fire of 367 always lost to the active 30035.)
-    // So we DRAIN auto-firing zone-in events: finish whatever is active; if finishing a blocker leaves
-    // no event, re-zone (out a zoneline and back) to re-trigger onZoneIn, until the new-char CS fires
-    // and sets the home point. Idempotent: a set-up char (notSeen=0, ROV done) fires no zone-in event,
-    // so this returns after one short wait. CutsceneId[zone] is the event whose onEventFinish calls
-    // setHomePoint (Bastok Markets chains 0 -> 7, so its done-id is 7).
-    static void EnsureNewCharSetup(CapabilitySet caps, ushort startZone)
-    {
-        if (!CutsceneId.TryGetValue(startZone, out var csid)) return;   // only starting cities run this
-        ushort hpDoneId = startZone == 235 ? (ushort)7 : csid;
-        var w = caps.Perception.World;
-        bool blockerCleared = false;
-
-        for (int pass = 0; pass < 8; pass++)
-        {
-            if (WaitFor(() => w.EventActive, 6000))
-            {
-                ushort ev = w.EventId;
-                Console.WriteLine($"[setup] active zone-in event {ev} -> finishing (home-point CS is {hpDoneId})");
-                caps.Events.FinishEvent(0).GetAwaiter().GetResult();
-                Thread.Sleep(2500);
-                if (w.EventId == ev) w.EventActive = false;   // parser doesn't clear it; reset unless a chained event replaced it
-                if (ev == hpDoneId) { Console.WriteLine("[setup] new-character cutscene finished -> HOME POINT SET"); return; }
-                blockerCleared = true;   // finished a blocker (ROV 30035 / Bastok intro 0); a chain may auto-start, else re-zone
-                continue;
-            }
-            if (!blockerCleared) { Console.WriteLine("[setup] no zone-in event active -> char already set up"); return; }
-            // A blocker was cleared but the new-char CS hasn't fired -> re-zone to re-trigger onZoneIn.
-            var nb = Zonelines.All.FirstOrDefault(l => l.From == startZone && !CutsceneId.ContainsKey(l.To));
-            if (nb.To == 0) { Console.WriteLine("[setup] no non-city neighbor to bounce off; stopping setup"); return; }
-            Console.WriteLine($"[setup] re-zoning {startZone} -> {nb.To} -> {startZone} to re-trigger the new-char CS");
-            caps.Zoning.ToZone(nb.To).GetAwaiter().GetResult();
-            caps.Zoning.ToZone(startZone).GetAwaiter().GetResult();
-            w.EventActive = false;
-            blockerCleared = false;
-        }
-        Console.WriteLine("[setup] WARNING: drained events but never saw the new-char CS finish; home point may be unset");
-    }
-
-    static bool WaitFor(Func<bool> cond, int timeoutMs)
-    {
-        for (int i = 0; i < timeoutMs / 100 && !cond(); i++) Thread.Sleep(100);
-        return cond();
     }
 
     // Continuously auto-complete any event the server pushes that the brain isn't deliberately driving.
