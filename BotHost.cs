@@ -90,11 +90,20 @@ public static class BotHost
 
     // Navmesh file = the zone's canonical name (from ZoneGraph) + ".nav", so every zone with a mesh
     // file in the navmesh dir is automatically walkable — no per-zone map to maintain.
+    // New Character Cutscene csid per starting zone (New_Character_Cutscenes.lua). Finishing it runs
+    // setHomePoint() + clears notSeen + unblocks NPC events. Core operating data (not a brain concern).
+    static readonly Dictionary<ushort, ushort> CutsceneId = new()
+    {
+        [234] = 1,   [236] = 1,   [235] = 0,     // Bastok: Mines / Port / Markets(0->7)
+        [238] = 531, [241] = 367, [240] = 305,   // Windurst: Waters / Woods / Walls
+        [230] = 535, [231] = 503, [232] = 500,   // San d'Oria: Southern / Northern / Port
+    };
+
     // Finish the New Character Cutscene on login by blind-finishing the starting zone's csid (sets the
     // home point + unblocks NPC events). Idempotent: a done char's EVENTEND is a no-op "Not in an event".
     static void EnsureNewCharSetup(CapabilitySet caps, ushort zone)
     {
-        if (!Brains.HomePointBrain.CutsceneId.TryGetValue(zone, out var csid)) return;   // not a starting zone
+        if (!CutsceneId.TryGetValue(zone, out var csid)) return;   // not a starting zone
         Console.WriteLine($"[setup] finishing New Character Cutscene csid {csid} (zone {zone}) -> setHomePoint + unblock events");
         caps.Events.Finish(caps.Perception.World.MyId, 0, csid, 0).GetAwaiter().GetResult();
         Thread.Sleep(2500);
