@@ -52,9 +52,18 @@ public sealed class WarBrain(IPerception p, INavigation nav, ICombat combat, IZo
         Console.WriteLine($"[war] start skills: GreatAxe={gear.SkillLevel(WepSkill)} H2H={gear.SkillLevel(1)}");
         Console.WriteLine($"[war] hunting in zone {HuntZone}");
 
-        int fights = 0;
+        byte lastLevel = p.World.MainJobLevel;
         while (!ct.IsCancellationRequested)
         {
+            // Re-equip the moment we level up, so each piece comes online exactly when we meet its
+            // requirement (e.g. the Butterfly Axe at lv5 -> Great Axe skill + WS start).
+            if (p.World.MainJobLevel > lastLevel)
+            {
+                Console.WriteLine($"[war] LEVEL UP -> {p.World.MainJobLevel}, re-equipping");
+                lastLevel = p.World.MainJobLevel;
+                await Equip(ct);
+            }
+
             // Dead (KO'd): stop, homepoint to revive (a zone change), then loop back to travel + re-gear.
             if (combat.Dead)
             {
@@ -125,9 +134,6 @@ public sealed class WarBrain(IPerception p, INavigation nav, ICombat combat, IZo
             }
             Console.WriteLine($"[war] fight ended: mob hpp={mob.Hpp} myHP%={p.World.Hpp} lvl={p.World.MainJobLevel}");
             if (combat.Engaged && mob.Hpp < 100) combat.Disengage();
-
-            // Re-equip every few fights so gear comes online as we cross its level requirement.
-            if (++fights % 8 == 0) await Equip(ct);
             await Task.Delay(1000, ct);
         }
     }
