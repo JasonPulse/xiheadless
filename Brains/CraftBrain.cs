@@ -60,7 +60,10 @@ public sealed class CraftBrain(IPerception p, IAuctionHouse ah, ICrafting craft,
             await Task.Delay(2000, ct);   // synth animation/cooldown before the next
         }
 
-        await Task.Delay(2500, ct);   // skill-up (0x029) arrives a beat after the synth result; let it land
+        // Note: the synth skill-up message (0x029) can arrive 15s+ after the result — sometimes only
+        // during logout — so this session total is best-effort. Each skill-up is logged authoritatively
+        // as a "[skill-up] ..." line the moment it arrives, which is the real record.
+        await Task.Delay(3000, ct);
         double gained = (p.World.SkillGains[RecipeSkill] - startGains) / 10.0;
         Console.WriteLine($"[craft] done — {made}/{MaxSynths} synth(s) produced {Result}; Smithing +{gained:0.0} this session (now ~{p.World.SkillLevel(RecipeSkill)}); logging out");
         lifecycle.Logout();
