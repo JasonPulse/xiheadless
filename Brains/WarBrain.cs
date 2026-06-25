@@ -123,14 +123,18 @@ public sealed class WarBrain(IPerception p, INavigation nav, ICombat combat, IZo
                 float d = p.DistanceTo(mob.X, mob.Z);
                 if (d > 2.5f) nav.Follow(mob.Id);
                 else { nav.Stop(); nav.Face(mob.Id); }
-                var ws = CombatRoutines.BestWeaponSkill(WepSkill, gear.SkillLevel(WepSkill));
+                // WS off the ACTUALLY-equipped weapon's skill: Onion Sword (sword, 3) until lv5, then
+                // Butterfly Axe (Great Axe, 6). So Fast Blade fires on the sword early and Shield Break
+                // once the axe is on — instead of waiting on a skill the equipped weapon doesn't train.
+                byte wep = p.World.MainJobLevel >= 5 ? WepSkill : (byte)3;
+                var ws = CombatRoutines.BestWeaponSkill(wep, gear.SkillLevel(wep));
                 if (ws is not null && combat.Engaged && combat.CanWeaponSkill && mob.Hpp is > 10 and < 100)
                 {
-                    Console.WriteLine($"[war] {ws} (tp={combat.Tp} greataxe={gear.SkillLevel(WepSkill)}) on mob hpp={mob.Hpp}");
+                    Console.WriteLine($"[war] {ws} (tp={combat.Tp} skill{wep}={gear.SkillLevel(wep)}) on mob hpp={mob.Hpp}");
                     await combat.WeaponSkill(ws.Value, mob.Id, ct);
                 }
                 await Task.Delay(2000, ct);
-                Console.WriteLine($"[war] fighting myHP%={p.World.Hpp} tp={combat.Tp} lvl={p.World.MainJobLevel} ga={gear.SkillLevel(WepSkill)} | mob hpp={mob.Hpp} dist={p.DistanceTo(mob.X, mob.Z):F0}");
+                Console.WriteLine($"[war] fighting myHP%={p.World.Hpp} tp={combat.Tp} lvl={p.World.MainJobLevel} sword={gear.SkillLevel(3)} ga={gear.SkillLevel(6)} | mob hpp={mob.Hpp} dist={p.DistanceTo(mob.X, mob.Z):F0}");
             }
             Console.WriteLine($"[war] fight ended: mob hpp={mob.Hpp} myHP%={p.World.Hpp} lvl={p.World.MainJobLevel}");
             if (combat.Engaged && mob.Hpp < 100) combat.Disengage();
