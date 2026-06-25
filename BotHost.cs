@@ -74,6 +74,14 @@ public static class BotHost
         // Graceful shutdown: stop the brain first (so it isn't acting mid-logout), then clean-logout.
         Console.WriteLine("stopping -> cancel brain + graceful logout");
         runner.Stop();
+        // Never log out while KO'd — a dead logout re-strands the char in zone-0 limbo on next login.
+        // Revive at the home point first (home point must be set; see EnsureNewCharSetup).
+        if (caps.Combat.Dead)
+        {
+            Console.WriteLine("stopping while KO'd -> homepoint-revive before logout");
+            caps.Combat.Homepoint().GetAwaiter().GetResult();
+            Thread.Sleep(8000);   // let the warp/revive land before we log out
+        }
         conn.Stop();   // sends 0x0E7 and holds ~40s for the server to complete the logout
         Console.WriteLine("session ended cleanly.");
         return 0;
