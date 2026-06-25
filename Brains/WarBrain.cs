@@ -12,17 +12,18 @@ public sealed class WarBrain(IPerception p, INavigation nav, ICombat combat, IZo
     const byte WepSkill = 6;                  // Great Axe — the WS auto-pick reads this skill
     const ushort Weapon = 16704;              // Butterfly Axe (Great Axe, lv5)
 
-    // Low-level WAR gear (item id, equip slot). EquipSet applies them in order; the server silently
-    // ignores any piece above our level, so we re-equip as we level to bring each online.
-    static readonly (ushort item, byte slot)[] Gear =
+    const ushort EarlyWeapon = 16534;   // Onion Sword (lv1) — used until we can wield the axe at lv5
+
+    // Non-weapon gear (item id, slot). The main-hand weapon is chosen by level in Equip() so we never
+    // send two main-hand equips in one pass (which left the bot effectively unarmed). EquipSet applies
+    // each piece; the server ignores any above our level, so we re-equip on level-up to bring them on.
+    static readonly (ushort item, byte slot)[] Armor =
     {
-        (16534,  EquipSlot.Main),   // Onion Sword     (lv1) — early weapon until we can wield the axe
-        (Weapon, EquipSlot.Main),   // Butterfly Axe   (lv5) — overrides Onion Sword once usable
-        (17280,  EquipSlot.Ranged), // Boomerang       (lv14)
-        (13014,  EquipSlot.Feet),   // Leaping Boots   (lv7) — AH version (Bounding Boots is the rare/ex upgrade)
-        (14803,  EquipSlot.Ear1),   // Optical Earring (lv10)
-        (13194,  EquipSlot.Waist),  // Warrior's Belt  (lv15)
-        (13522,  EquipSlot.Ring1),  // Courage Ring    (lv14)
+        (13014, EquipSlot.Feet),   // Leaping Boots   (lv7) — AH version (Bounding Boots is the rare/ex upgrade)
+        (17280, EquipSlot.Ranged), // Boomerang       (lv14)
+        (14803, EquipSlot.Ear1),   // Optical Earring (lv10)
+        (13194, EquipSlot.Waist),  // Warrior's Belt  (lv15)
+        (13522, EquipSlot.Ring1),  // Courage Ring    (lv14)
     };
 
     public async Task RunAsync(CancellationToken ct)
@@ -39,7 +40,7 @@ public sealed class WarBrain(IPerception p, INavigation nav, ICombat combat, IZo
             Console.WriteLine($"[war] traveling to {AhZone} for gear");
             await zoning.GoTo(AhZone, ct);
         }
-        foreach (var (item, _) in Gear)
+        foreach (var item in new ushort[] { EarlyWeapon, Weapon }.Concat(Armor.Select(g => g.item)))
         {
             if (ct.IsCancellationRequested) return;
             await ShopRoutines.BuyFromAH(ah, p, item, ct);
@@ -144,8 +145,12 @@ public sealed class WarBrain(IPerception p, INavigation nav, ICombat combat, IZo
 
     async Task Equip(CancellationToken ct)
     {
-        int n = await gear.EquipSet(Gear.Select(g => (g.slot, (uint)g.item)), ct);
-        Console.WriteLine($"[war] equipped {n}/{Gear.Length} pieces (lvl {p.World.MainJobLevel}, ga={gear.SkillLevel(WepSkill)})");
+        // One main-hand weapon, chosen by level: Butterfly Axe at lv5+, else the Onion Sword.
+        ushort weapon = p.World.MainJobLevel >= 5 ? Weapon : EarlyWeapon;
+        var set = new List<(byte slot, uint item)> { (EquipSlot.Main, weapon) };
+        set.AddRange(Armor.Select(g => (g.slot, (uint)g.item)));
+        int n = await gear.EquipSet(set, ct);
+        Console.WriteLine($"[war] equipped {n}/{set.Count} (lvl {p.World.MainJobLevel}, wep={weapon} sword={gear.SkillLevel(3)} ga={gear.SkillLevel(6)})");
     }
 
     // Con gate: only fight EasyPrey(2)..EvenMatch(4) — winnable and gives EXP.
