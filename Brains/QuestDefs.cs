@@ -192,4 +192,50 @@ public static class QuestDefs
             QuestStep.Trade("The_Eldieme_Necropolis_[S]", 376.936f, -39.999f, 17.914f, 2550, 12, "Erlene: trade 12 Sheet of Vellum -> unlock SCH"),
         },
     };
+
+    /// Prerequisite quest chains that must be COMPLETED before the unlock quest will start. Each entry
+    /// is the chain's quests concatenated in order; the runner executes these before Unlock[job]. Same
+    /// step model, same caveats (the server still enforces each quest's own level/fame/time gates).
+    public static readonly Dictionary<byte, QuestStep[]> Prereqs = new()
+    {
+        // PLD: A Squire's Test (trade Revival Tree Root 940) -> A Squire's Test II (lvl 10; timed
+        // Stalactite Dew grab in Ordelles Caves — the 30s qm2->qm3 window isn't executable as steps).
+        [Job.Pld] = new[]
+        {
+            QuestStep.Talk("Southern_San_dOria", -136f, -11f, 64f, 0, "A Squire's Test: accept (Balasiel)"),
+            QuestStep.Trade("Southern_San_dOria", -136f, -11f, 64f, 940, 1, "A Squire's Test: trade Revival Tree Root"),
+            QuestStep.Talk("Southern_San_dOria", -136f, -11f, 64f, 0, "Squire II: accept (lvl 10+)"),
+            QuestStep.Examine("Ordelles_Caves", -94f, 1f, 273f, "Squire II: place hands in pool (30s timer)"),
+            QuestStep.Examine("Ordelles_Caves", -139f, 0.1f, 264f, "Squire II: scoop Stalactite Dew within 30s"),
+            QuestStep.Talk("Southern_San_dOria", -136f, -11f, 64f, 0, "Squire II: return dew (Balasiel)"),
+        },
+
+        // BST: Chocobo's Wounds (lvl 20; feed gausebit wildgrass 534 several times, 45s between feeds —
+        // the cooldown/early-feed rejection isn't executable) -> Save My Son (lvl 18; Nightflowers must
+        // be examined at NIGHT 21:30-05:40).
+        [Job.Bst] = new[]
+        {
+            QuestStep.Talk("Upper_Jeuno", -55f, 8f, 95f, 1, "Chocobo's Wounds: accept (Brutus, opt1)"),
+            QuestStep.Trade("Upper_Jeuno", -61.42f, 8.2f, 93f, 534, 1, "feed gausebit wildgrass (1)"),
+            QuestStep.Trade("Upper_Jeuno", -61.42f, 8.2f, 93f, 534, 1, "feed gausebit wildgrass (2)"),
+            QuestStep.Trade("Upper_Jeuno", -61.42f, 8.2f, 93f, 534, 1, "feed gausebit wildgrass (3)"),
+            QuestStep.Trade("Upper_Jeuno", -61.42f, 8.2f, 93f, 534, 1, "feed gausebit wildgrass (4)"),
+            QuestStep.Trade("Upper_Jeuno", -61.42f, 8.2f, 93f, 534, 1, "feed gausebit wildgrass (5)"),
+            QuestStep.Trade("Upper_Jeuno", -61.42f, 8.2f, 93f, 534, 1, "feed gausebit wildgrass (6) -> complete"),
+            QuestStep.Talk("Lower_Jeuno", -82.22f, -7.65f, -168.839f, 0, "Save My Son: begin (door _6t2)"),
+            QuestStep.Talk("Upper_Jeuno", -50.541f, 8.199f, 87.17f, 0, "Save My Son: Shalott story"),
+            QuestStep.Examine("Qufim_Island", -264.775f, -3.718f, 28.767f, "Save My Son: Nightflowers at NIGHT (21:30-05:40)"),
+            QuestStep.Talk("Lower_Jeuno", -82.22f, -7.65f, -168.839f, 0, "Save My Son: return to door -> complete"),
+        },
+
+        // BRD: The Old Monument (trade Sheet of Parchment 917 -> Poetic Parchment 634) -> A Minstrel in
+        // Despair (trade Poetic Parchment 634).
+        [Job.Brd] = new[]
+        {
+            QuestStep.Talk("Lower_Jeuno", -17f, 0f, -61f, 0, "Old Monument: talk Mertaire"),
+            QuestStep.Examine("Buburimu_Peninsula", -244f, 16f, -280f, "Old Monument: examine Song Runes"),
+            QuestStep.Trade("Buburimu_Peninsula", -244f, 16f, -280f, 917, 1, "Old Monument: trade Sheet of Parchment"),
+            QuestStep.Trade("Lower_Jeuno", -17.201f, -0.100f, -60.072f, 634, 1, "Minstrel: trade Poetic Parchment -> complete"),
+        },
+    };
 }

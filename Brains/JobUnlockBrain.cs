@@ -21,12 +21,15 @@ public sealed class JobUnlockBrain(
             lifecycle.Logout();
             return;
         }
-        Console.WriteLine($"[jobunlock] job {Target}: {steps.Length} step(s); char job={p.World.MainJob} lvl={p.World.MainJobLevel}");
+        // Run the prerequisite quest chain (if any) first — the unlock quest won't start otherwise.
+        var prereq = QuestDefs.Prereqs.TryGetValue(Target, out var pre) ? pre : System.Array.Empty<QuestStep>();
+        var all = prereq.Concat(steps).ToArray();
+        Console.WriteLine($"[jobunlock] job {Target}: {prereq.Length} prereq + {steps.Length} unlock step(s); char job={p.World.MainJob} lvl={p.World.MainJobLevel}");
 
-        for (int i = 0; i < steps.Length && !ct.IsCancellationRequested; i++)
+        for (int i = 0; i < all.Length && !ct.IsCancellationRequested; i++)
         {
-            var step = steps[i];
-            Console.WriteLine($"[jobunlock] step {i + 1}/{steps.Length} [{step.Kind}]: {step.Label}");
+            var step = all[i];
+            Console.WriteLine($"[jobunlock] step {i + 1}/{all.Length} [{step.Kind}]: {step.Label}");
             if (!await Do(step, ct)) { Console.WriteLine("[jobunlock] step failed — stopping"); break; }
             await Task.Delay(1200, ct);
         }
