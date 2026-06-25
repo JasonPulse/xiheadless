@@ -33,6 +33,7 @@ public static class PacketParsers
             case 0x01E: ItemNum(sub, w); break;           // GP_SERV_COMMAND_ITEM_NUM (quantity-only update; how gil grants arrive)
             case 0x01F: ItemList(sub, w); break;          // GP_SERV_COMMAND_ITEM_LIST (one inventory item)
             case 0x020: ItemAttr(sub, w); break;          // GP_SERV_COMMAND_ITEM_ATTR (item w/ extdata; different layout)
+            case 0x06F: CombineAns(sub, w); break;        // GP_SERV_COMMAND_COMBINE_ANS (synthesis result)
             case 0x04B: PostBoxResult(sub, w); break;     // GP_SERV_COMMAND_PBX_RESULT (delivery box reply/ack)
             case 0x03C: ShopList(sub, w); break;          // GP_SERV_COMMAND_SHOP_LIST (a vendor's items)
         }
@@ -157,6 +158,20 @@ public static class PacketParsers
         for (int i = 0; i < 64; i++) w.Skills[i] = U16(b, off + i * 2);
     }
 
+    // 0x06F GP_SERV_COMMAND_COMBINE_ANS: Result@4(u8), Count@6(u8), ItemNo@8(u16). The authoritative
+    // synth-complete signal (success/fail/break); arrives at the end of the synth animation.
+    static readonly string[] _synthResult = { "Success", "Failed", "Interrupted", "CancelBadRecipe", "Cancel", "?5", "SkillTooLow", "CancelRareItem" };
+    static void CombineAns(ReadOnlySpan<byte> b, WorldState w)
+    {
+        if (b.Length < 10) return;
+        byte res = b[4];
+        w.SynthItemNo = U16(b, 8);
+        w.SynthCount = b[6];
+        w.SynthResult = res;
+        string name = res < _synthResult.Length ? _synthResult[res] : res == 13 ? "MustWaitLonger" : res == 14 ? "InterruptedCritical" : $"code{res}";
+        Console.WriteLine($"[synth] result={name} item={w.SynthItemNo} x{w.SynthCount}");
+    }
+
     // 0x01E GP_SERV_COMMAND_ITEM_NUM: ItemNum(qty)@4, Category(container)@8, ItemIndex(slot)@9. Quantity-only
     // update (no item id) — gil grants and stack-count changes arrive here. (container 0, slot 0) is gil.
     static void ItemNum(ReadOnlySpan<byte> b, WorldState w)
@@ -215,11 +230,19 @@ public static class PacketParsers
         }
     }
 
-    // Skill id -> display name (server SKILLTYPE enum), for skill-up logging. Crafts are 48-56.
+    // Skill id -> display name (server SKILLTYPE enum), for skill-up logging.
     static readonly Dictionary<int, string> _skillNames = new()
     {
+        // melee/ranged (1-31)
         [1] = "H2H", [2] = "Dagger", [3] = "Sword", [4] = "GreatSword", [5] = "Axe", [6] = "GreatAxe",
         [7] = "Scythe", [8] = "Polearm", [9] = "Katana", [10] = "GreatKatana", [11] = "Club", [12] = "Staff",
+        [25] = "Archery", [26] = "Marksmanship", [27] = "Throwing", [28] = "Guard", [29] = "Evasion",
+        [30] = "Shield", [31] = "Parry",
+        // magic (32-45)
+        [32] = "Divine", [33] = "Healing", [34] = "Enhancing", [35] = "Enfeebling", [36] = "Elemental",
+        [37] = "Dark", [38] = "Summoning", [39] = "Ninjutsu", [40] = "Singing", [41] = "StringInstr",
+        [42] = "WindInstr", [43] = "BlueMagic", [44] = "Geomancy", [45] = "Handbell",
+        // crafts (48-56)
         [48] = "Fishing", [49] = "Woodworking", [50] = "Smithing", [51] = "Goldsmithing",
         [52] = "Clothcraft", [53] = "Leathercraft", [54] = "Bonecraft", [55] = "Alchemy", [56] = "Cooking",
     };

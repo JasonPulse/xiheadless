@@ -33,6 +33,13 @@ public sealed class WorldState
     public int ConDifficulty;    // 0=TooWeak,1=IncrediblyEasy,2=EasyPrey,3=DecentChallenge,4=EvenMatch,5=Tough,6=VeryTough,7=IncrediblyTough; -1=pending
     public byte ConMobLevel;
 
+    // Last synthesis result (0x06F COMBINE_ANS). SynthResult: -1=none/pending since reset, else the
+    // SynthesisResult code (0=Success,1=Failed,2=Interrupted,6=SkillTooLow,13=MustWaitLonger,14=InterruptedCritical).
+    // The crafter resets it to -1 before each synth and waits for the server to set it.
+    public volatile int SynthResult = -1;
+    public ushort SynthItemNo;   // result item id (on success)
+    public byte SynthCount;      // result quantity
+
     // Last delivery-box (0x04B GP_SERV_COMMAND_PBX_RESULT) reply, encoded as (command << 8) | slot.
     // The server only replies to a Set when it SUCCEEDS (a failed insert/bad receiver sends nothing),
     // so Delivery uses this to confirm a send and find a free outgoing slot. -1 = none since reset.

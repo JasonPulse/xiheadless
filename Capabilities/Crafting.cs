@@ -9,8 +9,10 @@ public interface ICrafting
 {
     // crystalItem/crystalSlot = the crystal (item id + its inventory slot); ingredients = up to 8
     // (item id + inventory slot) each. The crystal must be a valid crystal and the slots must hold
-    // exactly those items, or the server rejects the synth.
-    void Synth(ushort crystalItem, byte crystalSlot, IReadOnlyList<(ushort item, byte slot)> ingredients);
+    // exactly those items, or the server rejects the synth. Sends the combine and waits for the
+    // server's result packet (0x06F). Returns the SynthesisResult code (0=Success, 1=Failed,
+    // 2=Interrupted, 6=SkillTooLow, 13=MustWaitLonger, 14=InterruptedCritical), or -1 on timeout.
+    Task<int> Synth(ushort crystalItem, byte crystalSlot, IReadOnlyList<(ushort item, byte slot)> ingredients, CancellationToken ct = default);
 }
 
 /// Builds 0x096 GP_CLI_COMMAND_COMBINE_ASK. Layout: hdr(4) HashNo@4 padding@5 Crystal@6(u16)
@@ -36,6 +38,12 @@ internal static class CombinePacket
 
 public sealed class Crafting(ISession s) : ICrafting
 {
-    public void Synth(ushort crystalItem, byte crystalSlot, IReadOnlyList<(ushort item, byte slot)> ingredients)
-        => s.Enqueue(CombinePacket.Build(crystalItem, crystalSlot, ingredients));
+    public async Task<int> Synth(ushort crystalItem, byte crystalSlot, IReadOnlyList<(ushort item, byte slot)> ingredients, CancellationToken ct = default)
+    {
+        s.State.SynthResult = -1;                                  // arm: wait for the next 0x06F
+        s.Enqueue(CombinePacket.Build(crystalItem, crystalSlot, ingredients));
+        for (int t = 0; t < 30000 && s.State.SynthResult < 0; t += 200)  // synth animation can run ~15s+
+            await Task.Delay(200, ct);
+        return s.State.SynthResult;
+    }
 }
