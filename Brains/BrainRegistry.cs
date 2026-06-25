@@ -23,6 +23,7 @@ public sealed class CapabilitySet
     public IAuctionHouse Auction { get; }
     public IQuests Quests { get; }
     public IJobChange JobChange { get; }
+    public ITradeNpc TradeNpc { get; }
 
     readonly Navigator _nav;
 
@@ -47,6 +48,7 @@ public sealed class CapabilitySet
         Auction = new AuctionHouse(s);
         Quests = new Quests(Events);
         JobChange = new JobChange(s, Delivery);
+        TradeNpc = new TradeNpc(s);
     }
 
     /// Hot-swap the navmesh after a zone change (the brain keeps its same INavigation/IZoning refs).
@@ -69,7 +71,8 @@ public sealed class CapabilitySet
         t == typeof(ILifecycle)  ? Lifecycle :
         t == typeof(IAuctionHouse) ? Auction :
         t == typeof(IQuests)     ? Quests :
-        t == typeof(IJobChange)  ? JobChange : null;
+        t == typeof(IJobChange)  ? JobChange :
+        t == typeof(ITradeNpc)   ? TradeNpc : null;
 }
 
 /// Discovers every IBrain in the assembly and constructs one by name, auto-injecting

@@ -8,7 +8,8 @@ namespace XiHeadless.Brains;
 ///  ZoneInFrom   — travel so we ENTER Zone from FromZone (quests that fire onZoneIn checking prevZone).
 ///  Equip        — equip an item (e.g. a quest weapon) into a slot.
 ///  KillWith     — equip a weapon, then defeat Count monsters with it (combat-objective steps).
-public enum StepKind { Goto, Talk, Examine, ZoneInFrom, Equip, KillWith }
+///  Trade        — walk to an NPC and trade Count of ItemId to it (quest turn-ins).
+public enum StepKind { Goto, Talk, Examine, ZoneInFrom, Equip, KillWith, Trade }
 
 /// One step of a quest flow. The server tracks quest state + key items; the engine performs the
 /// physical actions in order. Built via the factory helpers for readability.
@@ -22,6 +23,7 @@ public readonly record struct QuestStep(
     public static QuestStep ZoneInFrom(string fromZone, string zone, string label) => new(StepKind.ZoneInFrom, zone, FromZone: fromZone, Label: label);
     public static QuestStep Equip(ushort itemId, byte slot, string label) => new(StepKind.Equip, ItemId: itemId, Slot: slot, Label: label);
     public static QuestStep KillWith(ushort weaponItem, int count, string label) => new(StepKind.KillWith, ItemId: weaponItem, Count: count, Label: label);
+    public static QuestStep Trade(string zone, float x, float y, float z, ushort itemId, int qty, string label) => new(StepKind.Trade, zone, x, y, z, ItemId: itemId, Count: qty, Label: label);
 }
 
 /// Advanced-job unlock quest flows, keyed by job id, transcribed from the server quest Lua (positions,
@@ -186,9 +188,8 @@ public static class QuestDefs
         {
             QuestStep.Talk("The_Eldieme_Necropolis_[S]", 376.936f, -39.999f, 17.914f, 0, "Erlene: begin (ev10)"),
             QuestStep.Goto("Crawlers_Nest_[S]", "go to Crawlers' Nest [S] for Tucker"),
-            QuestStep.Talk("Crawlers_Nest_[S]", 216.763f, -32.441f, -20.239f, 0, "Tucker: trade Rolanberry x12 -> Sheet of Vellum (ev6)"),
-            QuestStep.Goto("The_Eldieme_Necropolis_[S]", "return to Erlene with vellum"),
-            QuestStep.Talk("The_Eldieme_Necropolis_[S]", 376.936f, -39.999f, 17.914f, 0, "Erlene: trade vellum x12 -> complete, unlock SCH (ev14)"),
+            QuestStep.Trade("Crawlers_Nest_[S]", 216.763f, -32.441f, -20.239f, 4365, 12, "Tucker: trade 12 Rolanberry -> Sheet of Vellum"),
+            QuestStep.Trade("The_Eldieme_Necropolis_[S]", 376.936f, -39.999f, 17.914f, 2550, 12, "Erlene: trade 12 Sheet of Vellum -> unlock SCH"),
         },
     };
 }

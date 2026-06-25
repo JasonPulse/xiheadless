@@ -7,7 +7,7 @@ namespace XiHeadless.Brains;
 /// Behavior is CODE: the target job is a const. Reuses IZoning/INavigation/IPerception/IQuests +
 /// ICombat/IGear (kill objectives) + ILifecycle.
 public sealed class JobUnlockBrain(
-    IPerception p, INavigation nav, IZoning zoning, IQuests quests, ICombat combat, IGear gear, ILifecycle lifecycle) : IBrain
+    IPerception p, INavigation nav, IZoning zoning, IQuests quests, ITradeNpc trade, ICombat combat, IGear gear, ILifecycle lifecycle) : IBrain
 {
     const byte Target = Capabilities.Job.Pld;   // which advanced job to unlock (see QuestDefs)
     const float NpcReach = 6f;
@@ -43,8 +43,20 @@ public sealed class JobUnlockBrain(
         StepKind.ZoneInFrom => await EnsureZone(step.FromZone, ct) && await EnsureZone(step.Zone, ct), // enter Zone from FromZone
         StepKind.Equip      => await gear.EquipItem(step.ItemId, step.Slot, ct),
         StepKind.KillWith   => await KillWith(step.ItemId, step.Count, ct),
+        StepKind.Trade      => await TradeStep(step, ct),
         _                   => false,
     };
+
+    async Task<bool> TradeStep(QuestStep step, CancellationToken ct)
+    {
+        if (!await EnsureZone(step.Zone, ct)) return false;
+        nav.MoveTo(step.X, step.Y, step.Z);
+        for (int t = 0; t < 60000 && nav.IsMoving && !ct.IsCancellationRequested; t += 100) await Task.Delay(100, ct);
+        nav.Stop();
+        var npc = p.Nearest(e => !e.IsMob && p.DistanceTo(e.X, e.Z) <= NpcReach);
+        if (npc is null) { Console.WriteLine("[jobunlock] no NPC in reach to trade"); return false; }
+        return await trade.Trade(npc.Id, npc.Index, new[] { (step.ItemId, (uint)step.Count) }, ct);
+    }
 
     async Task<bool> EnsureZone(string zone, CancellationToken ct)
     {
