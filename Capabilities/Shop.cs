@@ -1,0 +1,43 @@
+using System.Buffers.Binary;
+
+namespace XiHeadless.Capabilities;
+
+/// NPC vendor shop: open a vendor by talking to it (loads its stock into WorldState.Shop), then buy
+/// by shop slot. Crafting mats (crystals, ingredients) are bought here; the economy reuses it too.
+public interface IShop
+{
+    // Talk the vendor to open its shop; resolves to the loaded stock (slot index -> item id, price).
+    Task<IReadOnlyDictionary<byte, (ushort itemId, uint price)>> Open(uint npcId, CancellationToken ct = default);
+    void Buy(byte shopIndex, ushort qty);   // 0x083 — buy `qty` of the shop's slot `shopIndex`
+}
+
+/// Builds 0x083 GP_CLI_COMMAND_SHOP_BUY: hdr(4) ItemNum@4(u32) ShopNo@8(u16) ShopItemIndex@10(u16)
+/// PropertyItemIndex@12(u8) pad[3]. 16 bytes = 4 words. The server ignores ShopNo; it buys the shop
+/// slot at ShopItemIndex (price/item come from the shop container it set up on open).
+internal static class ShopPacket
+{
+    public static byte[] Buy(byte shopIndex, ushort qty)
+    {
+        var p = new byte[16];
+        BinaryPrimitives.WriteUInt16LittleEndian(p, (ushort)(0x083 | (4 << 9)));
+        BinaryPrimitives.WriteUInt32LittleEndian(p.AsSpan(4), qty);
+        BinaryPrimitives.WriteUInt16LittleEndian(p.AsSpan(10), shopIndex);
+        return p;
+    }
+}
+
+public sealed class Shop(ISession s) : IShop
+{
+    public async Task<IReadOnlyDictionary<byte, (ushort itemId, uint price)>> Open(uint npcId, CancellationToken ct = default)
+    {
+        s.State.Shop.Clear();
+        // A pure vendor's onTrigger runs player:showShop -> 0x03E + 0x03C (no cutscene/event), which
+        // the parser drops into WorldState.Shop. ActIndex (targid) = npcId & 0xFFF.
+        s.Enqueue(ActionPacket.Build(ActionPacket.Talk, npcId, (ushort)(npcId & 0xFFF)));
+        for (int t = 0; t < 4000 && s.State.Shop.Count == 0 && !ct.IsCancellationRequested; t += 100)
+            await Task.Delay(100, ct);
+        return s.State.Shop;
+    }
+
+    public void Buy(byte shopIndex, ushort qty) => s.Enqueue(ShopPacket.Buy(shopIndex, qty));
+}

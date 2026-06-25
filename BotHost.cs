@@ -1,3 +1,5 @@
+using System.Runtime.InteropServices;
+
 namespace XiHeadless;
 
 /// Owns one bot's lifecycle: login -> lobby -> select-or-create char -> zone-in ->
@@ -34,18 +36,20 @@ public static class BotHost
         var conn = new MapConnection(client.MapServer, client.CharId, sessionKey, resDir);
         conn.State.MyName = client.CharName;   // so brains know their own char (e.g. gil-grant target)
 
-        // Clean-logout on any shutdown path (normal exit, Ctrl-C, k8s SIGTERM).
-        int stopped = 0;
-        void Shutdown() { if (Interlocked.Exchange(ref stopped, 1) == 0) { Console.WriteLine("shutting down -> clean logout"); conn.Stop(); } }
-        AppDomain.CurrentDomain.ProcessExit += (_, _) => Shutdown();
-        Console.CancelKeyPress += (_, e) => { e.Cancel = true; Shutdown(); };
+        // Graceful stop signal. k8s SIGTERM (pod delete/scale-down) and Ctrl-C set it; we then cancel
+        // the brain and clean-logout. Cancel the default termination so the runtime lets us finish the
+        // ~40s logout (the pod's terminationGracePeriodSeconds must be >= ~45s for it to complete).
+        using var stop = new ManualResetEventSlim(false);
+        using var onTerm = PosixSignalRegistration.Create(PosixSignal.SIGTERM, c => { c.Cancel = true; stop.Set(); });
+        using var onInt = PosixSignalRegistration.Create(PosixSignal.SIGINT, c => { c.Cancel = true; stop.Set(); });
 
         Console.WriteLine("zoning in...");
         bool zoned = conn.ZoneInSync();
         Console.WriteLine(zoned ? $"IN ZONE: {conn.State}" : "did not receive zone-in");
         conn.Start();
 
-        var caps = new CapabilitySet(conn, LoadZoneMesh(conn.State.ZoneId));
+        // onLogout = the same stop signal SIGTERM uses, so a brain can end its own session (ILifecycle).
+        var caps = new CapabilitySet(conn, LoadZoneMesh(conn.State.ZoneId), stop.Set);
         // On every zone change, hot-swap the navmesh so navigation works in the new zone.
         conn.ZoneChanged += zid => caps.SwapMesh(LoadZoneMesh(zid));
         var brain = BrainRegistry.Create(brainName, caps);
@@ -53,12 +57,17 @@ public static class BotHost
         var runner = new BotRunner(brain);
         runner.Start();
 
-        if (runSeconds is int sec)                               // bounded run (testing) — log state
-            for (int i = 0; i < sec; i++) { Thread.Sleep(1000); Console.WriteLine($"  state: {conn.State}"); }
-        else Thread.Sleep(Timeout.Infinite);                     // run until SIGTERM (fleet)
+        // Run until a stop signal — bounded by runSeconds for dev (logging state each tick), or
+        // indefinitely for the fleet. stop.Wait returns true the moment a signal arrives.
+        if (runSeconds is int sec)
+            for (int i = 0; i < sec && !stop.Wait(1000); i++) Console.WriteLine($"  state: {conn.State}");
+        else
+            stop.Wait();
 
+        // Graceful shutdown: stop the brain first (so it isn't acting mid-logout), then clean-logout.
+        Console.WriteLine("stopping -> cancel brain + graceful logout");
         runner.Stop();
-        Shutdown();
+        conn.Stop();   // sends 0x0E7 and holds ~40s for the server to complete the logout
         Console.WriteLine("session ended cleanly.");
         return 0;
     }

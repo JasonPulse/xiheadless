@@ -138,6 +138,14 @@ public sealed class RmtIntake(int port)
 """;
     }
 
+    /// Stop the listener (frees the port). The Loop's GetContextAsync throws and exits.
+    public void Stop()
+    {
+        var l = _listener;
+        _listener = null;
+        try { l?.Stop(); l?.Close(); } catch { }
+    }
+
     public bool TryDequeue(out (string player, int amount) req) => _q.TryDequeue(out req);
     public void Enqueue(string player, int amount) => _q.Enqueue((player, amount)); // seed/test
 }

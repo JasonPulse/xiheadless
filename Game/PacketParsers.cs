@@ -33,6 +33,7 @@ public static class PacketParsers
             case 0x01F: ItemList(sub, w); break;          // GP_SERV_COMMAND_ITEM_LIST (one inventory item)
             case 0x020: ItemAttr(sub, w); break;          // GP_SERV_COMMAND_ITEM_ATTR (item w/ extdata; different layout)
             case 0x04B: PostBoxResult(sub, w); break;     // GP_SERV_COMMAND_PBX_RESULT (delivery box reply/ack)
+            case 0x03C: ShopList(sub, w); break;          // GP_SERV_COMMAND_SHOP_LIST (a vendor's items)
         }
     }
 
@@ -186,6 +187,20 @@ public static class PacketParsers
     {
         if (b.Length < 7) return;
         w.DboxAck = (b[4] << 8) | b[6];
+    }
+
+    // 0x03C GP_SERV_COMMAND_SHOP_LIST — hdr(4) ShopItemOffsetIndex@4 Flags@6 pad@7, then GP_SHOP[N]@8,
+    // each 12 bytes: ItemPrice@0(u32) ItemNo@4(u16) ShopIndex@6(u8). N = (len-8)/12. May arrive in
+    // chunks; we just upsert each entry by its shop slot index (IShop clears Shop before opening).
+    static void ShopList(ReadOnlySpan<byte> b, WorldState w)
+    {
+        for (int o = 8; o + 12 <= b.Length; o += 12)
+        {
+            uint price = U32(b, o);
+            ushort itemId = U16(b, o + 4);
+            byte idx = b[o + 6];
+            if (itemId != 0) w.Shop[idx] = (itemId, price);
+        }
     }
 
     static void BattleMessage(ReadOnlySpan<byte> b, WorldState w)

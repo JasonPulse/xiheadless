@@ -18,10 +18,12 @@ public sealed class CapabilitySet
     public IGilGrant GilGrant { get; }
     public IBazaar Bazaar { get; }
     public ICrafting Crafting { get; }
+    public IShop Shop { get; }
+    public ILifecycle Lifecycle { get; }
 
     readonly Navigator _nav;
 
-    public CapabilitySet(ISession s, NavMesh? mesh = null)
+    public CapabilitySet(ISession s, NavMesh? mesh = null, Action? onLogout = null)
     {
         Perception = new Perception(s.State);
         Chat = new Chat(s);
@@ -37,6 +39,8 @@ public sealed class CapabilitySet
         GilGrant = new BotApi();   // HTTP client; auth/endpoint from deployment secrets (env)
         Bazaar = new Bazaar(s);
         Crafting = new Crafting(s);
+        Shop = new Shop(s);
+        Lifecycle = new Lifecycle(onLogout ?? (() => { }));
     }
 
     /// Hot-swap the navmesh after a zone change (the brain keeps its same INavigation/IZoning refs).
@@ -54,7 +58,9 @@ public sealed class CapabilitySet
         t == typeof(IDelivery)   ? Delivery :
         t == typeof(IGilGrant)   ? GilGrant :
         t == typeof(IBazaar)     ? Bazaar :
-        t == typeof(ICrafting)   ? Crafting : null;
+        t == typeof(ICrafting)   ? Crafting :
+        t == typeof(IShop)       ? Shop :
+        t == typeof(ILifecycle)  ? Lifecycle : null;
 }
 
 /// Discovers every IBrain in the assembly and constructs one by name, auto-injecting

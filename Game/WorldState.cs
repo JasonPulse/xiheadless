@@ -42,6 +42,9 @@ public sealed class WorldState
     public int SkillLevel(int id) => id >= 0 && id < 64 ? Skills[id] & 0x7FFF : 0;
     // Inventory: (container,slot) -> itemId (from 0x01F item list). Lets us find an item to equip.
     public readonly Dictionary<(byte container, byte slot), ushort> Inventory = new();
+    // NPC shop inventory (0x03C shop_list): shop slot index -> (item id, unit price). Buying references
+    // the slot index (the server ignores the packet's ShopNo). Cleared by IShop before each OpenShop.
+    public readonly Dictionary<byte, (ushort itemId, uint price)> Shop = new();
 
     /// True if the bot has learned the given spell (from the 0x0AA magic-data bitmap).
     public bool KnowsSpell(ushort spellId)
