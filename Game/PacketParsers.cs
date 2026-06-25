@@ -132,7 +132,11 @@ public static class PacketParsers
                 Console.WriteLine($"    [0x00A floats] x@12={F32(b,12):F3} z@16={F32(b,16):F3} y@20={F32(b,20):F3}");
             w.X = F32(b, 12); w.Z = F32(b, 16); w.Y = F32(b, 20);
         }
-        if (b.Length >= 52) w.ZoneId = (ushort)U32(b, 48);
+        // Zone id lives at offset 48 in a full zone-in. Log what we actually get so a bad/short zone-in
+        // (which has left the bot at ZoneId=0 after homepoint) is visible instead of silently 0.
+        ushort z = b.Length >= 52 ? (ushort)U32(b, 48) : (ushort)0;
+        Console.WriteLine($"[zone-in] len={b.Length} zone@48={z} (prev {w.ZoneId})");
+        if (b.Length >= 52 && z != 0) w.ZoneId = z;   // don't clobber a known zone with a short/zero zone-in
         w.InZone = true;
     }
 
