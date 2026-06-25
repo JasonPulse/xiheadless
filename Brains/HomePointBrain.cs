@@ -1,37 +1,37 @@
 namespace XiHeadless.Brains;
 
-/// Sets the bot's home point at a Home Point crystal (so death-recovery revives somewhere
-/// valid instead of zone-0 limbo). Finds the nearest "Home Point" NPC, walks to it, examines
-/// it, and selects Set Home Point (option 1). Run once in a city with a crystal.
-public sealed class HomePointBrain(IPerception p, INavigation nav, IEvents events) : IBrain
+/// Completes the New Character Cutscene — the server-side event that calls setHomePoint() (and gives
+/// the Adventurer's Coupon), which a headless-created char never ran, leaving its home point unset so
+/// death recovery dumps it in zone-0 limbo. The cutscene is per starting zone (New_Character_Cutscenes
+/// .lua); on zone-in with notSeen==1 the server starts the zone's CS, and finishing that event sets the
+/// home point. We finish whichever event the server actually presents (robust across nations), falling
+/// back to the per-zone id. Run once per fresh char in its starting zone (ideally from char creation).
+public sealed class HomePointBrain(IPerception p, IZoning zoning, IEvents events) : IBrain
 {
+    // Starting zone -> New Character Cutscene event id (from New_Character_Cutscenes.lua).
+    static readonly Dictionary<ushort, ushort> NewCharCs = new()
+    {
+        [235] = 0,   [234] = 1,   [236] = 1,     // Bastok: Markets / Mines / Port
+        [238] = 531, [241] = 367, [240] = 305,   // Windurst: Waters / Woods / (Walls/Port)
+    };
+
     public async Task RunAsync(CancellationToken ct)
     {
-        // The headless char never completed the New Character Cutscene, where the server calls
-        // player:setHomePoint() AND which (until finished) keeps the char "in event" and blocks ALL
-        // npc interaction. It re-triggers onZoneIn while unfinished. Finishing it sets the home point
-        // and unblocks NPCs. Event id is per-zone (Bastok Mines = 1).
-        const ushort csEvent = 1;
-        Console.WriteLine($"[hp] finishing new-char cutscene event {csEvent} (sets home point + unblocks NPCs; harmless if already done)");
-        await Task.Delay(4000, ct);
-        await events.Finish(p.World.MyId, 0, csEvent, 0, ct);
-        await Task.Delay(3000, ct);   // let the cutscene's setPos warp land
+        await Task.Delay(4000, ct);   // let zone-in + the CS trigger (onZoneIn starts it if notSeen==1)
+        ushort zone = zoning.CurrentZone;
 
-        // Verify NPC interaction is now unblocked: walk to the Bastok Mines crystal and examine it.
-        uint crystalId = 17735748u;
-        Entity? c = null;
-        for (int i = 0; i < 30 && c is null && !ct.IsCancellationRequested; i++)
-        { p.World.Entities.TryGetValue(crystalId, out c); if (c is null) await Task.Delay(500, ct); }
-        if (c is not null)
+        // Prefer the event the server actually started (the real CS); else the per-zone fallback id.
+        ushort cs = events.EventActive ? events.CurrentEventId
+                  : NewCharCs.TryGetValue(zone, out var mapped) ? mapped : ushort.MaxValue;
+        if (cs == ushort.MaxValue && !events.EventActive)
         {
-            Console.WriteLine($"[hp] walking to crystal ({c.X:F0},{c.Z:F0}) to verify NPC interaction");
-            for (int i = 0; i < 60 && p.DistanceTo(c.X, c.Z) > 4f && !ct.IsCancellationRequested; i++)
-            { if (!nav.IsMoving) nav.MoveTo(c.X, c.Z); await Task.Delay(400, ct); }
-            nav.Stop(); nav.Face(crystalId);
-            bool got = await events.Examine(crystalId, ct);
-            Console.WriteLine($"[hp] crystal examine: event received={got} id={events.CurrentEventId} (true => NPC/event interaction WORKS)");
-            if (got) await events.FinishEvent(1, ct);
+            Console.WriteLine($"[hp] zone {zone}: no new-char cutscene active and no mapping — already done?");
+            return;
         }
-        await Task.Delay(Timeout.Infinite, ct);
+
+        Console.WriteLine($"[hp] finishing New Character Cutscene event {cs} in zone {zone} (sets home point)");
+        await events.Finish(p.World.MyId, 0, cs, 0, ct);
+        await Task.Delay(3000, ct);   // let the cutscene's setHomePoint + setPos land
+        Console.WriteLine($"[hp] done — home point should now be set (zone {zoning.CurrentZone})");
     }
 }
