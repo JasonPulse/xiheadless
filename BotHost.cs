@@ -52,6 +52,13 @@ public static class BotHost
         var caps = new CapabilitySet(conn, LoadZoneMesh(conn.State.ZoneId), stop.Set);
         // On every zone change, hot-swap the navmesh so navigation works in the new zone.
         conn.ZoneChanged += zid => caps.SwapMesh(LoadZoneMesh(zid));
+
+        // First-login setup: a headless char never ran the New Character Cutscene, whose server-side
+        // onEventFinish calls setHomePoint(). Without it the home point is unset and death dumps the
+        // char in zone-0 limbo. The cutscene auto-triggers on zone-in (notSeen==1); finish whatever
+        // event the server presents to set the home point. Idempotent — a set-up char shows no CS.
+        EnsureNewCharSetup(caps);
+
         var brain = BrainRegistry.Create(brainName, caps);
         Console.WriteLine($"running brain: {brain.GetType().Name}");
         var runner = new BotRunner(brain);
@@ -74,6 +81,17 @@ public static class BotHost
 
     // Navmesh file = the zone's canonical name (from ZoneGraph) + ".nav", so every zone with a mesh
     // file in the navmesh dir is automatically walkable — no per-zone map to maintain.
+    // Finish the New Character Cutscene if the server presents it on zone-in (sets the home point).
+    // One-time per char: once notSeen=0 server-side, it never triggers again, so this no-ops.
+    static void EnsureNewCharSetup(CapabilitySet caps)
+    {
+        for (int i = 0; i < 10 && !caps.Events.EventActive; i++) Thread.Sleep(500);  // let the CS arrive
+        if (!caps.Events.EventActive) return;
+        Console.WriteLine($"[setup] New Character Cutscene active (event {caps.Events.CurrentEventId}) -> finishing to set home point");
+        caps.Events.FinishEvent(0).GetAwaiter().GetResult();
+        Thread.Sleep(3000);   // let the server's setHomePoint + setPos land
+    }
+
     static NavMesh? LoadZoneMesh(ushort zoneId)
     {
         var dir = Environment.GetEnvironmentVariable("XIBOT_NAVMESH_DIR")

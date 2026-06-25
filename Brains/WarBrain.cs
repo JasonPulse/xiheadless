@@ -163,9 +163,10 @@ public sealed class WarBrain(IPerception p, INavigation nav, ICombat combat, IZo
         Console.WriteLine($"[war] equipped {n}/{set.Count} (lvl {p.World.MainJobLevel}, wep={weapon} sword={gear.SkillLevel(3)} ga={gear.SkillLevel(6)})");
     }
 
-    // Con gate: only fight EasyPrey(2)..EvenMatch(4) — winnable and gives EXP.
+    // Con gate: EasyPrey(2)..DecentChallenge(3). Skip EvenMatch(4) — at low level with sparse gear
+    // (most WAR armor is lv24+) and no weaponskill yet, EvenMatch mobs kill us; Decent still gives EXP.
     const int _conMin = 2;
-    const int _conMax = 4;
+    const int _conMax = 3;
     readonly HashSet<uint> _skip = new();
 
     int _roam;
