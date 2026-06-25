@@ -26,12 +26,14 @@ public sealed class HomePointBrain(IPerception p, INavigation nav, IZoning zonin
 
         Console.WriteLine($"[hp] walking to the Home Point crystal in zone {zone} ({pos.x:F0},{pos.z:F0})");
         nav.MoveTo(pos.x, pos.y, pos.z);
-        for (int t = 0; t < 60000 && nav.IsMoving && !ct.IsCancellationRequested; t += 200) await Task.Delay(200, ct);
+        // Wait until we're beside the crystal (the path can be long/winding) or the path is exhausted.
+        for (int t = 0; t < 150000 && p.DistanceTo(pos.x, pos.z) > 6f && nav.IsMoving && !ct.IsCancellationRequested; t += 200) await Task.Delay(200, ct);
         nav.Stop();
+        Console.WriteLine($"[hp] arrived at ({p.World.X:F0},{p.World.Z:F0}), {p.DistanceTo(pos.x, pos.z):F0}y from crystal");
 
-        // Examine the crystal (nearest "Home Point" NPC, else nearest non-mob at the spot) and Set Home Point.
-        var crystal = p.Nearest(e => e.Name.Contains("Home Point", StringComparison.OrdinalIgnoreCase) && p.DistanceTo(e.X, e.Z) <= 8f)
-                      ?? p.Nearest(e => !e.IsMob && p.DistanceTo(e.X, e.Z) <= 8f);
+        // Examine the crystal (nearest "Home Point" NPC, else nearest non-mob nearby) and Set Home Point.
+        var crystal = p.Nearest(e => e.Name.Contains("Home Point", StringComparison.OrdinalIgnoreCase) && p.DistanceTo(e.X, e.Z) <= 12f)
+                      ?? p.Nearest(e => !e.IsMob && p.DistanceTo(e.X, e.Z) <= 12f);
         if (crystal is null) { Console.WriteLine("[hp] no crystal in reach"); lifecycle.Logout(); return; }
 
         Console.WriteLine($"[hp] examining crystal 0x{crystal.Id:X} '{crystal.Name}'");
