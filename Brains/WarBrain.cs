@@ -19,7 +19,7 @@ public sealed class WarBrain(IPerception p, INavigation nav, ICombat combat, IZo
         (16534,  EquipSlot.Main),   // Onion Sword     (lv1) — early weapon until we can wield the axe
         (Weapon, EquipSlot.Main),   // Butterfly Axe   (lv5) — overrides Onion Sword once usable
         (17280,  EquipSlot.Ranged), // Boomerang       (lv14)
-        (15351,  EquipSlot.Feet),   // Bounding Boots  (lv7)
+        (13014,  EquipSlot.Feet),   // Leaping Boots   (lv7) — AH version (Bounding Boots is the rare/ex upgrade)
         (14803,  EquipSlot.Ear1),   // Optical Earring (lv10)
         (13194,  EquipSlot.Waist),  // Warrior's Belt  (lv15)
         (13522,  EquipSlot.Ring1),  // Courage Ring    (lv14)
