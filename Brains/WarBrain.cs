@@ -5,7 +5,7 @@ namespace XiHeadless.Brains;
 /// fight to the death, and on KO homepoint-revive and return. Re-equips periodically so each piece
 /// comes online as we out-level its requirement. Gear guide (network-gnomes WAR guide, lv1-18 bracket):
 /// Great Axe is the weapon (WS auto-picks off Great Axe skill).
-public sealed class WarBrain(IPerception p, INavigation nav, ICombat combat, IZoning zoning, IGear gear, IAuctionHouse ah) : IBrain
+public sealed class WarBrain(IPerception p, INavigation nav, ICombat combat, IZoning zoning, IGear gear, IAuctionHouse ah, IDelivery delivery) : IBrain
 {
     const ushort HuntZone = 116;             // East Sarutabaruta (Windurst starting area, adjacent to Windurst Woods)
     const string AhZone = "Windurst Woods";  // where we buy gear (has the AH)
@@ -33,6 +33,16 @@ public sealed class WarBrain(IPerception p, INavigation nav, ICombat combat, IZo
         // buy phase or every bid reads 0 ("out of budget") and we buy nothing.
         for (int i = 0; i < 30 && p.World.Gil == 0 && !ct.IsCancellationRequested; i++) await Task.Delay(500, ct);
         Console.WriteLine($"[war] char='{p.World.MyName}' job={p.World.MainJob}/{p.World.SubJob} lvl={p.World.MainJobLevel} gil={p.World.Gil} zone={zoning.CurrentZone}");
+
+        // If we logged in INSIDE the Mog House (zone 0), step out to the city first — otherwise we can't
+        // route anywhere (every travel needs a real source zone).
+        if (zoning.CurrentZone == 0)
+        {
+            Console.WriteLine("[war] inside the Mog House (zone 0) — exiting to the city");
+            await delivery.ExitMogHouse(ct);
+            await Task.Delay(2500, ct);
+            Console.WriteLine($"[war] after Mog House exit -> zone {zoning.CurrentZone}");
+        }
 
         // 1) Gear up from the AH (must be in a MISC_AH zone), then carry it to the hunt zone.
         if (!Game.Zonelines.HasAuctionHouse(zoning.CurrentZone))

@@ -41,22 +41,28 @@ public sealed class JobChange(ISession s, IDelivery delivery) : IJobChange
         // Need Moogle-menu access. A zone with an Explorer/Nomad Moogle (MISC_MOGMENU) allows it
         // directly; otherwise enter the Mog House first (any city has one or the other).
         ushort zone = s.State.ZoneId;
+        bool entered = false;
         if (!Game.Zonelines.HasMogMenu(zone))
         {
             Console.WriteLine($"[job] zone {zone} has no Explorer Moogle — entering Mog House");
             if (!await delivery.EnterMogHouse(ct)) { Console.WriteLine("[job] no Moogle access here — move to a city"); return false; }
+            entered = true;
         }
 
         Console.WriteLine($"[job] requesting main={mainJob} sub={supportJob}");
         s.Enqueue(JobPacket.Build(mainJob, supportJob));
-        for (int t = 0; t < 8000; t += 200)   // server reapplies + resends 0x1B JOB_INFO
+        bool ok = false;
+        for (int t = 0; t < 8000 && !ok; t += 200)   // server reapplies + resends 0x1B JOB_INFO
         {
             await Task.Delay(200, ct);
             bool mainOk = mainJob == 0 || s.State.MainJob == mainJob;
             bool subOk = supportJob == 0 || s.State.SubJob == supportJob;
-            if (mainOk && subOk) { Console.WriteLine($"[job] now {s.State.MainJob}/{s.State.SubJob}"); return true; }
+            if (mainOk && subOk) { Console.WriteLine($"[job] now {s.State.MainJob}/{s.State.SubJob}"); ok = true; }
         }
-        Console.WriteLine($"[job] not confirmed (now {s.State.MainJob}/{s.State.SubJob}) — job locked, or not in a Mog House?");
-        return false;
+        // Always leave the Mog House if we entered it — otherwise we strand the bot inside (zone 0),
+        // where it can't route out and every later login starts stuck in the Mog House.
+        if (entered) { await delivery.ExitMogHouse(ct); Console.WriteLine("[job] exited Mog House"); }
+        if (!ok) Console.WriteLine($"[job] not confirmed (now {s.State.MainJob}/{s.State.SubJob}) — job locked?");
+        return ok;
     }
 }
