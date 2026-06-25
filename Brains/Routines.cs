@@ -28,7 +28,9 @@ public static class CombatRoutines
     /// This is how a brain uses its skills data instead of a hardcoded "fire at skill 10".
     public static WeaponSkill? BestWeaponSkill(byte skillType, int skillLevel) =>
         Actions.Ws.Values
-            .Where(w => w.Type == skillType && w.SkillLevel <= skillLevel)
+            // SkillLevel 0 = merit/relic/mythic WS (e.g. Metatron Torment, King's Justice), NOT unlocked
+            // by skill — exclude them so we pick the highest genuinely skill-unlocked WS (first tier = 5).
+            .Where(w => w.Type == skillType && w.SkillLevel > 0 && w.SkillLevel <= skillLevel)
             .OrderByDescending(w => w.SkillLevel)
             .Select(w => (WeaponSkill?)w.Ws)
             .FirstOrDefault();

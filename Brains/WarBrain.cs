@@ -16,7 +16,8 @@ public sealed class WarBrain(IPerception p, INavigation nav, ICombat combat, IZo
     // ignores any piece above our level, so we re-equip as we level to bring each online.
     static readonly (ushort item, byte slot)[] Gear =
     {
-        (Weapon, EquipSlot.Main),   // Butterfly Axe   (lv5)
+        (16534,  EquipSlot.Main),   // Onion Sword     (lv1) — early weapon until we can wield the axe
+        (Weapon, EquipSlot.Main),   // Butterfly Axe   (lv5) — overrides Onion Sword once usable
         (17280,  EquipSlot.Ranged), // Boomerang       (lv14)
         (15351,  EquipSlot.Feet),   // Bounding Boots  (lv7)
         (14803,  EquipSlot.Ear1),   // Optical Earring (lv10)
@@ -27,6 +28,9 @@ public sealed class WarBrain(IPerception p, INavigation nav, ICombat combat, IZo
     public async Task RunAsync(CancellationToken ct)
     {
         await Task.Delay(3000, ct);
+        // Gil + inventory stream in over the first few seconds after zone-in; wait for gil before the
+        // buy phase or every bid reads 0 ("out of budget") and we buy nothing.
+        for (int i = 0; i < 30 && p.World.Gil == 0 && !ct.IsCancellationRequested; i++) await Task.Delay(500, ct);
         Console.WriteLine($"[war] char='{p.World.MyName}' job={p.World.MainJob}/{p.World.SubJob} lvl={p.World.MainJobLevel} gil={p.World.Gil} zone={zoning.CurrentZone}");
 
         // 1) Gear up from the AH (must be in a MISC_AH zone), then carry it to the hunt zone.
