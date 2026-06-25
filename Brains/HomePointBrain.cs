@@ -1,37 +1,48 @@
 namespace XiHeadless.Brains;
 
-/// Completes the New Character Cutscene — the server-side event that calls setHomePoint() (and gives
-/// the Adventurer's Coupon), which a headless-created char never ran, leaving its home point unset so
-/// death recovery dumps it in zone-0 limbo. The cutscene is per starting zone (New_Character_Cutscenes
-/// .lua); on zone-in with notSeen==1 the server starts the zone's CS, and finishing that event sets the
-/// home point. We finish whichever event the server actually presents (robust across nations), falling
-/// back to the per-zone id. Run once per fresh char in its starting zone (ideally from char creation).
-public sealed class HomePointBrain(IPerception p, IZoning zoning, IEvents events) : IBrain
+/// Sets the home point at a Home Point crystal — the reliable, game-intended action (examine crystal,
+/// select "Set Home Point" = option 1, server calls setHomePoint()). Needed because a headless char's
+/// New Character Cutscene never ran setHomePoint(), so death warps it to zone-0 limbo. Run once in a
+/// starting city; the char must be IN that city (the crystal is there). Reuses INavigation + IEvents +
+/// IPerception + ILifecycle.
+public sealed class HomePointBrain(IPerception p, INavigation nav, IZoning zoning, IEvents events, ILifecycle lifecycle) : IBrain
 {
-    // Starting zone -> New Character Cutscene event id (from New_Character_Cutscenes.lua).
-    static readonly Dictionary<ushort, ushort> NewCharCs = new()
+    // Starting city zone -> a Home Point crystal position (from the zone's HomePoint NPC !pos).
+    static readonly Dictionary<ushort, (float x, float y, float z)> Crystal = new()
     {
-        [235] = 0,   [234] = 1,   [236] = 1,     // Bastok: Markets / Mines / Port
-        [238] = 531, [241] = 367, [240] = 305,   // Windurst: Waters / Woods / (Walls/Port)
+        [241] = (-98.588f, 0.001f, -183.416f),   // Windurst Woods, HomePoint#1
     };
 
     public async Task RunAsync(CancellationToken ct)
     {
-        await Task.Delay(4000, ct);   // let zone-in + the CS trigger (onZoneIn starts it if notSeen==1)
+        await Task.Delay(4000, ct);
         ushort zone = zoning.CurrentZone;
-
-        // Prefer the event the server actually started (the real CS); else the per-zone fallback id.
-        ushort cs = events.EventActive ? events.CurrentEventId
-                  : NewCharCs.TryGetValue(zone, out var mapped) ? mapped : ushort.MaxValue;
-        if (cs == ushort.MaxValue && !events.EventActive)
+        if (!Crystal.TryGetValue(zone, out var pos))
         {
-            Console.WriteLine($"[hp] zone {zone}: no new-char cutscene active and no mapping — already done?");
+            Console.WriteLine($"[hp] no Home Point crystal mapped for zone {zone} — be in a mapped city");
+            lifecycle.Logout();
             return;
         }
 
-        Console.WriteLine($"[hp] finishing New Character Cutscene event {cs} in zone {zone} (sets home point)");
-        await events.Finish(p.World.MyId, 0, cs, 0, ct);
-        await Task.Delay(3000, ct);   // let the cutscene's setHomePoint + setPos land
-        Console.WriteLine($"[hp] done — home point should now be set (zone {zoning.CurrentZone})");
+        Console.WriteLine($"[hp] walking to the Home Point crystal in zone {zone} ({pos.x:F0},{pos.z:F0})");
+        nav.MoveTo(pos.x, pos.y, pos.z);
+        for (int t = 0; t < 60000 && nav.IsMoving && !ct.IsCancellationRequested; t += 200) await Task.Delay(200, ct);
+        nav.Stop();
+
+        // Examine the crystal (nearest "Home Point" NPC, else nearest non-mob at the spot) and Set Home Point.
+        var crystal = p.Nearest(e => e.Name.Contains("Home Point", StringComparison.OrdinalIgnoreCase) && p.DistanceTo(e.X, e.Z) <= 8f)
+                      ?? p.Nearest(e => !e.IsMob && p.DistanceTo(e.X, e.Z) <= 8f);
+        if (crystal is null) { Console.WriteLine("[hp] no crystal in reach"); lifecycle.Logout(); return; }
+
+        Console.WriteLine($"[hp] examining crystal 0x{crystal.Id:X} '{crystal.Name}'");
+        if (await events.Examine(crystal.Id, ct))
+        {
+            await events.FinishEvent(1, ct);   // option 1 = SET_HOMEPOINT (homepoint.lua selection)
+            Console.WriteLine("[hp] sent Set Home Point (option 1) — verify with a death->warp-to-city");
+        }
+        else Console.WriteLine("[hp] crystal examine produced no event (NPC interaction blocked?)");
+
+        await Task.Delay(2500, ct);
+        lifecycle.Logout();
     }
 }
