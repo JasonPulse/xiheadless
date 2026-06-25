@@ -299,6 +299,12 @@ public static class Diagnostics
         var landing = new Dictionary<(ushort, ushort), (float x, float y, float z)>();
         foreach (var e in edges) landing[(e.from, e.to)] = (e.x, e.y, e.z);
 
+        // Mog House entrances: a zoneline with tozone=0 is the Mog House door in that zone (server sets
+        // m_moghouseID). Map zone -> first such rect, straight from the data (no hand-picked city list).
+        var mogEntry = new Dictionary<ushort, uint>();
+        foreach (var e in edges)
+            if (e.to == 0 && !mogEntry.ContainsKey(e.from)) mogEntry[e.from] = e.rect;
+
         // For each edge from->to, the walk trigger in `from` = where the REVERSE line (to->from) lands.
         // Emit only real inter-zone edges (to != 0) that have a reverse, so the bot can walk to them.
         var sb = new StringBuilder();
@@ -327,11 +333,18 @@ public static class Diagnostics
             emitted++;
         }
         sb.AppendLine("    };");
+        sb.AppendLine();
+        sb.AppendLine("    // Mog House entrance maprect per zone (tozone=0 zonelines): send 0x5E with this to enter.");
+        sb.AppendLine("    public static readonly System.Collections.Generic.Dictionary<ushort, uint> MogHouseEntry = new()");
+        sb.AppendLine("    {");
+        foreach (var kv in mogEntry.OrderBy(k => k.Key))
+            sb.AppendLine($"        [{kv.Key}] = {kv.Value},");
+        sb.AppendLine("    };");
         sb.AppendLine("}");
 
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(outFile))!);
         File.WriteAllText(outFile, sb.ToString());
-        Console.WriteLine($"gengraph: {zones.Count} zones, {emitted} walkable edges ({skippedNoReverse} one-way skipped) -> {outFile}");
+        Console.WriteLine($"gengraph: {zones.Count} zones, {emitted} walkable edges ({skippedNoReverse} one-way skipped), {mogEntry.Count} Mog House entrances -> {outFile}");
         return 0;
     }
 }

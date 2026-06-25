@@ -37,35 +37,15 @@ internal static class DeliveryPacket
 
 public sealed class Delivery(ISession s) : IDelivery
 {
-    // City zone -> its Mog House entrance maprect (zonelines rows with tozone=0). The bot only needs
-    // to BE in the zone; entry (0x5e_maprect.cpp:209, m_toZone==0) resolves the rect by id in the
-    // current zone with NO proximity check and sets m_moghouseID=id (no 0x0B zone-change). Bastok
-    // mapped; add San d'Oria/Windurst the same way (their tozone=0 zonelines).
-    static readonly Dictionary<ushort, uint> MogHouseEntry = new()
-    {
-        [230] = 812805498,   // Southern San d'Oria
-        [231] = 846359930,   // Northern San d'Oria
-        [232] = 879914362,   // Port San d'Oria
-        [234] = 1735552378,  // Bastok Mines
-        [235] = 1634889082,  // Bastok Markets
-        [236] = 1769106810,  // Port Bastok
-        [238] = 913468794,   // Windurst Waters
-        [239] = 947023226,   // Windurst Waters (S)
-        [240] = 1701997946,  // Port Windurst
-        [241] = 1802661242,  // Windurst Woods
-        [243] = 1836215674,  // Ru'Lude Gardens
-        [244] = 1869770106,  // Upper Jeuno
-        [245] = 1970433402,  // Lower Jeuno
-        [246] = 1936878970,  // Port Jeuno
-    };
-
-    /// Enter the bot's Mog House (required before the delivery box works) by sending the current
-    /// city's entrance maprect. Must already be in a mapped city zone. Reuses the 0x5E builder.
+    /// Enter the bot's Mog House (required before the delivery box / job change work) by sending the
+    /// current zone's entrance maprect. Entrances come from Game.ZoneGraph.MogHouseEntry (generated from
+    /// every tozone=0 zoneline in the server data). Entry (0x5e_maprect.cpp:209, m_toZone==0) resolves
+    /// the rect in the current zone with NO proximity check and sets m_moghouseID=id (no 0x0B re-zone).
     public async Task<bool> EnterMogHouse(CancellationToken ct = default)
     {
-        if (!MogHouseEntry.TryGetValue(s.State.ZoneId, out var rect))
+        if (!Game.ZoneGraph.MogHouseEntry.TryGetValue(s.State.ZoneId, out var rect))
         {
-            Console.WriteLine($"[delivery] no Mog House entrance mapped for zone {s.State.ZoneId} — be in a home city first");
+            Console.WriteLine($"[delivery] no Mog House entrance in the data for zone {s.State.ZoneId}");
             return false;
         }
         s.Enqueue(ZoneRequestPacket.Build(rect, s.State.X, s.State.Y, s.State.Z)); // 0x5E maprect -> sets m_moghouseID
