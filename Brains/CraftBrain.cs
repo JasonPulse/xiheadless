@@ -13,11 +13,6 @@ public sealed class CraftBrain(IPerception p, IAuctionHouse ah, ICrafting craft,
     const int RecipeSkill = 50;          // Smithing (the skill this recipe trains); see SkillName/0x062
     const string AhZone = "Windurst Woods"; // has MISC_AH (Port Windurst, where we log in, doesn't)
 
-    // The server charges our EXACT bid (not the listing price) and only fills if a listing <= bid
-    // exists, so we escalate from low to high and stop the instant the item arrives — paying close to
-    // the real price instead of overpaying. A failed bid costs nothing.
-    static readonly uint[] BidLadder = { 50, 250, 1000, 4000, 15000 };
-
     public async Task RunAsync(CancellationToken ct)
     {
         await Task.Delay(4000, ct);   // let inventory (0x01F/0x020) stream in after zone-in
@@ -68,25 +63,6 @@ public sealed class CraftBrain(IPerception p, IAuctionHouse ah, ICrafting craft,
         return null;
     }
 
-    // Ensure itemId is in inventory: if missing, escalate AH bids (single then stack at each rung)
-    // until it arrives or the ladder is exhausted.
-    async Task<bool> EnsureItem(ushort itemId, CancellationToken ct)
-    {
-        if (SlotOf(itemId) != null) return true;   // already have one (leftover or GM-given)
-        foreach (var bid in BidLadder)
-        {
-            foreach (var single in new[] { true, false })
-            {
-                if (bid > p.World.Gil) { Console.WriteLine($"[craft] bid {bid} > gil {p.World.Gil} — out of budget"); return SlotOf(itemId) != null; }
-                ah.Bid(itemId, bid, single);
-                Console.WriteLine($"[craft] bid {bid} for {itemId} (single={single})");
-                for (int i = 0; i < 6 && !ct.IsCancellationRequested; i++)
-                {
-                    await Task.Delay(500, ct);
-                    if (SlotOf(itemId) != null) { Console.WriteLine($"[craft] acquired {itemId} for <= {bid}"); return true; }
-                }
-            }
-        }
-        return SlotOf(itemId) != null;
-    }
+    // Ensure itemId is in inventory: buy it from the AH (shared escalating-bid routine) if missing.
+    Task<bool> EnsureItem(ushort itemId, CancellationToken ct) => ShopRoutines.BuyFromAH(ah, p, itemId, ct);
 }
