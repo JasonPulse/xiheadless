@@ -215,11 +215,29 @@ public static class PacketParsers
         }
     }
 
+    // Skill id -> display name (server SKILLTYPE enum), for skill-up logging. Crafts are 48-56.
+    static readonly Dictionary<int, string> _skillNames = new()
+    {
+        [1] = "H2H", [2] = "Dagger", [3] = "Sword", [4] = "GreatSword", [5] = "Axe", [6] = "GreatAxe",
+        [7] = "Scythe", [8] = "Polearm", [9] = "Katana", [10] = "GreatKatana", [11] = "Club", [12] = "Staff",
+        [48] = "Fishing", [49] = "Woodworking", [50] = "Smithing", [51] = "Goldsmithing",
+        [52] = "Clothcraft", [53] = "Leathercraft", [54] = "Bonecraft", [55] = "Alchemy", [56] = "Cooking",
+    };
+    static string SkillName(int id) => _skillNames.TryGetValue(id, out var n) ? n : $"skill{id}";
+
     static void BattleMessage(ReadOnlySpan<byte> b, WorldState w)
     {
         if (b.Length < 26) return;
         ushort msg = U16(b, 24);
         uint tar = U32(b, 8), data = U32(b, 12), data2 = U32(b, 16);
+        // SKILL_GAIN (38): "<target>'s <skill> skill rises X points." param=skillID, value=amount (0.1-level
+        // units). Fires on every weapon/magic/craft skill-up; accumulate so brains can report gains.
+        if (msg == 38 && data < 64)
+        {
+            w.SkillGains[(int)data] += (int)data2;
+            Console.WriteLine($"[skill-up] {SkillName((int)data)} +{data2 / 10.0:0.0} (session +{w.SkillGains[(int)data] / 10.0:0.0})");
+            return;
+        }
         // /check reply (0x0DD): param(Data)=mob level, value(Data2)=64+difficulty. Capture it when
         // we're awaiting a con for this target (Data2 in the check range).
         if (w.ConTargetId != 0 && w.ConDifficulty < 0 && tar == w.ConTargetId && data2 is >= 64 and <= 71)

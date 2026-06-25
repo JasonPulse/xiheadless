@@ -11,6 +11,7 @@ public sealed class CraftBrain(IPerception p, IAuctionHouse ah, ICrafting craft,
     const ushort Ingredient = 649;
     const ushort Result = 660;
     const int MaxSynths = 3;             // craft this many then log out (test batch)
+    const int RecipeSkill = 50;          // Smithing (the skill this recipe trains); see SkillName/0x062
     const string AhZone = "Windurst Woods"; // has MISC_AH (Port Windurst, where we log in, doesn't)
 
     // The server charges our EXACT bid (not the listing price) and only fills if a listing <= bid
@@ -31,9 +32,13 @@ public sealed class CraftBrain(IPerception p, IAuctionHouse ah, ICrafting craft,
             await Task.Delay(2000, ct);   // let inventory/state resettle after the zone change
         }
 
+        int startSkill = p.World.SkillLevel(RecipeSkill), startGains = p.World.SkillGains[RecipeSkill];
+        Console.WriteLine($"[craft] Smithing skill {startSkill} at start");
+
         int made = 0;
         for (int n = 0; n < MaxSynths && !ct.IsCancellationRequested; n++)
         {
+            int gainsBefore = p.World.SkillGains[RecipeSkill];
             if (!await EnsureItem(Crystal, ct))    { Console.WriteLine($"[craft] could not buy crystal {Crystal} from AH — stopping"); break; }
             if (!await EnsureItem(Ingredient, ct)) { Console.WriteLine($"[craft] could not buy ingredient {Ingredient} from AH — stopping"); break; }
 
@@ -50,11 +55,14 @@ public sealed class CraftBrain(IPerception p, IAuctionHouse ah, ICrafting craft,
                 if (SlotOf(Crystal) == null) break;                   // crystal consumed (success or break)
             }
             if (ok) made++;
-            Console.WriteLine($"[craft] synth #{n + 1} -> {(ok ? "produced " + Result : "no result (fail/break or low skill)")} (made {made})");
+            int upThisSynth = p.World.SkillGains[RecipeSkill] - gainsBefore;
+            Console.WriteLine($"[craft] synth #{n + 1} -> {(ok ? "produced " + Result : "no result (fail/break or low skill)")} (made {made}){(upThisSynth > 0 ? $"; Smithing +{upThisSynth / 10.0:0.0}" : "")}");
             await Task.Delay(2000, ct);   // synth animation/cooldown before the next
         }
 
-        Console.WriteLine($"[craft] done — {made}/{MaxSynths} synth(s) produced {Result}; logging out");
+        await Task.Delay(2500, ct);   // skill-up (0x029) arrives a beat after the synth result; let it land
+        double gained = (p.World.SkillGains[RecipeSkill] - startGains) / 10.0;
+        Console.WriteLine($"[craft] done — {made}/{MaxSynths} synth(s) produced {Result}; Smithing +{gained:0.0} this session (now ~{p.World.SkillLevel(RecipeSkill)}); logging out");
         lifecycle.Logout();
     }
 

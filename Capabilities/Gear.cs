@@ -9,6 +9,16 @@ public interface IGear
     int SkillLevel(int skillId);                  // 1=H2H,3=Sword,5=Axe,32=Divine..36=Elemental..39=Ninjutsu
     bool HasItem(uint itemId);
     Task<bool> EquipItem(uint itemId, byte equipSlot, CancellationToken ct = default); // find in inventory + equip
+    // Apply a gear set: (equip slot, item id) pairs, equipped in the given order (order matters — a
+    // two-handed main-hand clears sub, so list main before sub). Returns how many equips succeeded.
+    Task<int> EquipSet(IEnumerable<(byte slot, uint itemId)> set, CancellationToken ct = default);
+}
+
+/// Equip-slot ids (server SLOT_* enum), so gear sets read by name instead of magic numbers.
+public static class EquipSlot
+{
+    public const byte Main = 0, Sub = 1, Ranged = 2, Ammo = 3, Head = 4, Body = 5, Hands = 6, Legs = 7,
+                      Feet = 8, Neck = 9, Waist = 10, Ear1 = 11, Ear2 = 12, Ring1 = 13, Ring2 = 14, Back = 15;
 }
 
 /// Builds 0x050 GP_CLI_COMMAND_EQUIP_SET. hdr(4) PropertyItemIndex@4 EquipKind@5 Category@6.
@@ -41,5 +51,13 @@ public sealed class Gear(ISession s) : IGear
             }
         Console.WriteLine($"[gear] item {itemId} not in inventory");
         return false;
+    }
+
+    public async Task<int> EquipSet(IEnumerable<(byte slot, uint itemId)> set, CancellationToken ct = default)
+    {
+        int n = 0;
+        foreach (var (slot, itemId) in set)
+            if (await EquipItem(itemId, slot, ct)) n++;
+        return n;
     }
 }

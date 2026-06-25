@@ -41,6 +41,9 @@ public sealed class WorldState
     // Skill levels (0x062 skill_base[64]); skill id -> level. SkillLevel masks the capped (0x8000) bit.
     public readonly ushort[] Skills = new ushort[64]; // [1]=H2H,[3]=Sword,[5]=Axe,[36]=Elemental,...
     public int SkillLevel(int id) => id >= 0 && id < 64 ? Skills[id] & 0x7FFF : 0;
+    // Cumulative skill-up amount this session, per skill id, in 0.1-level units (from 0x029 SKILL_GAIN).
+    // 0x062 only resends the integer level on a level cross, so this is how we see fine-grained gains.
+    public readonly int[] SkillGains = new int[64];
     // Inventory: (container,slot) -> itemId (from 0x01F item list). Lets us find an item to equip.
     public readonly Dictionary<(byte container, byte slot), ushort> Inventory = new();
     // NPC shop inventory (0x03C shop_list): shop slot index -> (item id, unit price). Buying references
