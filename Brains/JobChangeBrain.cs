@@ -5,8 +5,8 @@ namespace XiHeadless.Brains;
 /// unlocked, so the target must be one of those. Reuses IJobChange + IPerception + ILifecycle.
 public sealed class JobChangeBrain(IPerception p, IJobChange jobs, ILifecycle lifecycle) : IBrain
 {
-    const byte TargetMain = Job.War;   // change main job back to WAR (flip from the prior MNK test)
-    const byte TargetSub = Job.None;   // leave the support slot unchanged
+    const byte TargetMain = Job.War;   // main WAR
+    const byte TargetSub = Job.Mnk;    // TEST: try to set MNK as support job (is the subjob quest even gated here?)
 
     public async Task RunAsync(CancellationToken ct)
     {
