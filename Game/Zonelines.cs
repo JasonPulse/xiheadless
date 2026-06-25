@@ -12,7 +12,8 @@ public static class Zonelines
 {
     public static readonly ZoneLine[] All = ZoneGraph.Lines;
 
-    const ushort MiscAh = 0x200;   // ZONEMISC MISC_AH bit: zone allows auction-house use
+    const ushort MiscAh = 0x200;       // ZONEMISC MISC_AH bit: zone allows auction-house use
+    const ushort MiscMogMenu = 0x20;   // ZONEMISC MISC_MOGMENU: Explorer/Nomad Moogle (job change w/o Mog House)
 
     // Canonical name (and a spaces<->underscores, case-insensitive variant) -> zone id.
     static readonly Dictionary<string, ushort> _byName = BuildNames();
@@ -30,6 +31,8 @@ public static class Zonelines
     public static ushort? Resolve(string name) => _byName.TryGetValue(name.Trim(), out var id) ? id : null;
     public static string Name(ushort id) => _info.TryGetValue(id, out var i) ? i.name : id.ToString();
     public static bool HasAuctionHouse(ushort id) => _info.TryGetValue(id, out var i) && (i.misc & MiscAh) != 0;
+    // True if the zone has an Explorer/Nomad Moogle, so job change works without entering a Mog House.
+    public static bool HasMogMenu(ushort id) => _info.TryGetValue(id, out var i) && (i.misc & MiscMogMenu) != 0;
 
     static readonly Dictionary<ushort, List<ZoneLine>> _byFrom = Build();
 

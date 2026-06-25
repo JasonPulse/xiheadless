@@ -34,11 +34,20 @@ internal static class JobPacket
     }
 }
 
-public sealed class JobChange(ISession s) : IJobChange
+public sealed class JobChange(ISession s, IDelivery delivery) : IJobChange
 {
     public async Task<bool> ChangeJob(byte mainJob, byte supportJob, CancellationToken ct = default)
     {
-        Console.WriteLine($"[job] requesting main={mainJob} sub={supportJob} (must be in Mog House)");
+        // Need Moogle-menu access. A zone with an Explorer/Nomad Moogle (MISC_MOGMENU) allows it
+        // directly; otherwise enter the Mog House first (any city has one or the other).
+        ushort zone = s.State.ZoneId;
+        if (!Game.Zonelines.HasMogMenu(zone))
+        {
+            Console.WriteLine($"[job] zone {zone} has no Explorer Moogle — entering Mog House");
+            if (!await delivery.EnterMogHouse(ct)) { Console.WriteLine("[job] no Moogle access here — move to a city"); return false; }
+        }
+
+        Console.WriteLine($"[job] requesting main={mainJob} sub={supportJob}");
         s.Enqueue(JobPacket.Build(mainJob, supportJob));
         for (int t = 0; t < 8000; t += 200)   // server reapplies + resends 0x1B JOB_INFO
         {

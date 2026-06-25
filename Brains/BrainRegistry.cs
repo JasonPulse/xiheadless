@@ -46,7 +46,7 @@ public sealed class CapabilitySet
         Lifecycle = new Lifecycle(onLogout ?? (() => { }));
         Auction = new AuctionHouse(s);
         Quests = new Quests(Events);
-        JobChange = new JobChange(s);
+        JobChange = new JobChange(s, Delivery);
     }
 
     /// Hot-swap the navmesh after a zone change (the brain keeps its same INavigation/IZoning refs).
