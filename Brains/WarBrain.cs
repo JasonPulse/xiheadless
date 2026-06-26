@@ -129,11 +129,16 @@ public sealed class WarBrain(IPerception p, INavigation nav, ICombat combat, IZo
             Console.WriteLine($"[war] engage 0x{mob.Id:X} (idx {mob.Index}) at dist {p.DistanceTo(mob.X, mob.Z):F1}");
             await combat.Engage(mob.Id, ct);
 
+            byte bestHpp = mob.Hpp;               // lowest mob HP we've driven it to
+            long lastProgressMs = p.World.NowMs;  // last time the mob actually took damage
             while (!ct.IsCancellationRequested && mob.Hpp > 0 && p.World.Hpp > 0 && (p.World.NowMs - mob.LastSeenMs) < 20000)
             {
                 float d = p.DistanceTo(mob.X, mob.Z);
                 if (d > 2.5f) nav.Follow(mob.Id);
                 else { nav.Stop(); nav.Face(mob.Id); }
+                // Keep auto-attack alive: if engagement dropped (or the initial Engage never took, which
+                // leaves TP and the mob's HP frozen), re-engage once we're back in melee range.
+                if (!combat.Engaged && d <= 5f) { nav.Face(mob.Id); await combat.Engage(mob.Id, ct); }
                 // WS off the ACTUALLY-equipped weapon's skill: Onion Sword (sword, 3) until lv5, then
                 // Butterfly Axe (Great Axe, 6). So Fast Blade fires on the sword early and Shield Break
                 // once the axe is on — instead of waiting on a skill the equipped weapon doesn't train.
@@ -146,9 +151,23 @@ public sealed class WarBrain(IPerception p, INavigation nav, ICombat combat, IZo
                 }
                 await Task.Delay(2000, ct);
                 Console.WriteLine($"[war] fighting myHP%={p.World.Hpp} tp={combat.Tp} lvl={p.World.MainJobLevel} sword={gear.SkillLevel(3)} ga={gear.SkillLevel(6)} | mob hpp={mob.Hpp} dist={p.DistanceTo(mob.X, mob.Z):F0}");
+
+                // Anti-stuck: if the mob hasn't lost HP for 15s we aren't actually damaging it (failed
+                // engage / unreachable / untargetable) — abandon it, skip it, and go find another mob so
+                // the session never dead-locks on one target.
+                if (mob.Hpp < bestHpp) { bestHpp = mob.Hpp; lastProgressMs = p.World.NowMs; }
+                else if (p.World.NowMs - lastProgressMs > 15000)
+                {
+                    Console.WriteLine($"[war] STUCK: no damage to 0x{mob.Id:X} '{mob.Name}' in 15s — abandoning + retargeting");
+                    _skip.Add(mob.Id);
+                    break;
+                }
             }
-            Console.WriteLine($"[war] fight ended: mob hpp={mob.Hpp} myHP%={p.World.Hpp} lvl={p.World.MainJobLevel}");
-            if (combat.Engaged && mob.Hpp < 100) combat.Disengage();
+            bool killed = mob.Hpp == 0;
+            Console.WriteLine($"[war] fight ended: mob hpp={mob.Hpp} myHP%={p.World.Hpp} lvl={p.World.MainJobLevel}{(killed ? " (killed)" : "")}");
+            if (combat.Engaged) combat.Disengage();
+            // Range the zone instead of camping: after a few kills, relocate deeper to fresh hunting ground.
+            if (killed && (++_kills % 4) == 0) { Console.WriteLine("[war] relocating deeper into the zone"); RoamStep(); }
             await Task.Delay(1000, ct);
         }
     }
@@ -170,13 +189,16 @@ public sealed class WarBrain(IPerception p, INavigation nav, ICombat combat, IZo
     readonly HashSet<uint> _skip = new();
 
     int _roam;
+    int _kills;
     void RoamStep()
     {
         var w = p.World;
         for (int i = 0; i < 8; i++)
         {
             double ang = (_roam + i) * Math.PI / 4;
-            float cx = w.X + (float)Math.Cos(ang) * 60f, cz = w.Z + (float)Math.Sin(ang) * 60f;
+            // Big steps (100y) so we actually move into fresh parts of the zone rather than circling one
+            // camp; the mob search radius is 50y, so each roam opens a new hunting area.
+            float cx = w.X + (float)Math.Cos(ang) * 100f, cz = w.Z + (float)Math.Sin(ang) * 100f;
             nav.MoveTo(cx, cz);
             if (nav.IsMoving) { _roam += i + 1; Console.WriteLine($"[war] roaming -> ({cx:F0},{cz:F0})"); return; }
         }
