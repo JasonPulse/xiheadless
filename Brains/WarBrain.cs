@@ -21,7 +21,7 @@ public sealed class WarBrain(IPerception p, INavigation nav, ICombat combat, IZo
     {
         (13014, EquipSlot.Feet),   // Leaping Boots   (lv7) — AH version (Bounding Boots is the rare/ex upgrade)
         (17280, EquipSlot.Ranged), // Boomerang       (lv14)
-        (14803, EquipSlot.Ear1),   // Optical Earring (lv10)
+        (13398, EquipSlot.Ear1),   // Physical Earring (lv10) — Optical Earring (14803) is mismarked Rare/Ex here, not AH-buyable
         (13194, EquipSlot.Waist),  // Warrior's Belt  (lv15)
         (13522, EquipSlot.Ring1),  // Courage Ring    (lv14)
     };
