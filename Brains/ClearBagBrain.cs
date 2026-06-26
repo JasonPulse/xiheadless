@@ -11,7 +11,7 @@ public sealed class ClearBagBrain(IPerception p, IInventory inv, IShop shop, INa
     static readonly HashSet<ushort> Keep = new()
     {
         16534, 16704, 13014, 17280, 13380, 13194, 13522,  // WAR gear
-        4096, 649, 660,                                    // craft mats/output
+        4096, 649,                                         // craft inputs (kept); Bronze Sheets (660) NOT kept -> sell them to verify selling
     };
 
     public async Task RunAsync(CancellationToken ct)

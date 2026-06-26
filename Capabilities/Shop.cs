@@ -30,12 +30,25 @@ public sealed class Shop(ISession s) : IShop
 {
     public async Task<IReadOnlyDictionary<byte, (ushort itemId, uint price)>> Open(uint npcId, CancellationToken ct = default)
     {
+        // A pure vendor's onTrigger runs player:showShop -> 0x03E + 0x03C (no cutscene/event), parsed
+        // into WorldState.Shop. ActIndex (targid) = npcId & 0xFFF. The server's reply can be SLOW (seen
+        // ~11s), so re-Talk every few seconds and wait generously — the old 4s wait gave up too early
+        // (that was the "flaky shop open"). Report the real latency.
         s.State.Shop.Clear();
-        // A pure vendor's onTrigger runs player:showShop -> 0x03E + 0x03C (no cutscene/event), which
-        // the parser drops into WorldState.Shop. ActIndex (targid) = npcId & 0xFFF.
-        s.Enqueue(ActionPacket.Build(ActionPacket.Talk, npcId, (ushort)(npcId & 0xFFF)));
-        for (int t = 0; t < 4000 && s.State.Shop.Count == 0 && !ct.IsCancellationRequested; t += 100)
-            await Task.Delay(100, ct);
+        ushort idx = (ushort)(npcId & 0xFFF);
+        long start = s.State.NowMs;
+        for (int attempt = 0; attempt < 6 && !ct.IsCancellationRequested; attempt++)
+        {
+            s.Enqueue(ActionPacket.Build(ActionPacket.Talk, npcId, idx));
+            for (int t = 0; t < 4000 && s.State.Shop.Count == 0 && !ct.IsCancellationRequested; t += 100)
+                await Task.Delay(100, ct);
+            if (s.State.Shop.Count > 0)
+            {
+                Console.WriteLine($"[shop] opened after {s.State.NowMs - start}ms, {s.State.Shop.Count} items (attempt {attempt + 1})");
+                return s.State.Shop;
+            }
+        }
+        Console.WriteLine($"[shop] FAILED to open after {s.State.NowMs - start}ms / 6 talks");
         return s.State.Shop;
     }
 
