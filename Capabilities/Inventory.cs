@@ -32,18 +32,24 @@ internal static class DumpPacket
 
 public sealed class Inventory(ISession s) : IInventory
 {
+    // Slots we've already attempted to drop this session. Some items won't actually leave (equipped =
+    // locked, Rare/Ex, key items, storage slips) and the server silently refuses; without this we'd
+    // keep re-picking the same stuck item forever. Skipping tried slots rotates us onto droppable loot.
+    readonly HashSet<(byte, byte)> _tried = new();
+
     public void Drop(byte container, byte slot, ushort qty) => s.Enqueue(DumpPacket.Build(container, slot, qty));
 
     public ushort DropJunk(IReadOnlySet<ushort> keep)
     {
         foreach (var ((c, slot), id) in s.State.Inventory)
         {
-            if (c != 0 || slot == 0 || id == 0 || keep.Contains(id)) continue;   // main inventory only; slot 0 = gil
+            if (c != 0 || slot == 0 || id == 0 || keep.Contains(id) || _tried.Contains((c, slot))) continue;
+            _tried.Add((c, slot));   // try this slot once; if it doesn't leave, we move on next call
             ushort qty = s.State.InventoryQty.TryGetValue((c, slot), out var q) && q > 0 ? q : (ushort)1;
             Console.WriteLine($"[inv] dropping junk item {id} x{qty} (slot {slot}) to free a slot");
             s.Enqueue(DumpPacket.Build(c, slot, qty));
             return id;
         }
-        return 0;
+        return 0;   // nothing left untried/droppable
     }
 }
