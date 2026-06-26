@@ -8,7 +8,12 @@ namespace XiHeadless.Brains;
 /// the WAR gear-up. (Selling drops for gil instead of dropping them is a better long-term move — TODO.)
 public static class ShopRoutines
 {
-    static readonly uint[] BidLadder = { 50, 250, 1000, 4000, 15000 };
+    // Fine-grained rungs = price DISCOVERY: the bot stops at the FIRST winning bid, so small steps mean
+    // it pays just above the actual lowest current listing instead of overshooting (the old {50,250,1000}
+    // ladder bought a ~300g item at the 1000 rung). Tight 50-100g steps low (where low-level gear/mats
+    // live) widening to ~30% steps high. Failed rungs resolve fast (server 0xC5), so more rungs is cheap.
+    static readonly uint[] BidLadder =
+        { 50, 100, 150, 200, 300, 400, 500, 700, 900, 1200, 1600, 2200, 3000, 4200, 6000, 8500, 12000 };
 
     public static bool HasItem(IPerception p, ushort itemId)
     {
