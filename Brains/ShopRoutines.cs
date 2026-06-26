@@ -42,11 +42,11 @@ public static class ShopRoutines
                     Console.WriteLine($"[ah] bid {bid} for {itemId} (single={single})");
                     int r = await WaitResult(p, itemId, ct);
                     if (HasItem(p, itemId)) { Console.WriteLine($"[ah] acquired {itemId} for <= {bid}"); return true; }
-                    if (r == 0xE5)   // inventory full — sell a junk item for gil to free a slot, then retry
-                    {
-                        ushort sold = await inv.SellJunk(keep, ct);
+                    if (r == 0xE5)   // inventory full — clear ALL sellable junk for gil in one pass, then retry
+                    {                 // (full clear, not one slot, so we don't thrash sell-one/buy-one/full-again)
+                        int sold = await inv.SellAllJunk(keep, ct);
                         if (sold == 0) { Console.WriteLine($"[ah] inventory full and nothing sellable — cannot buy {itemId}"); return false; }
-                        continue;   // SellJunk already waited for the sale to apply
+                        continue;     // plenty of room now; retry the bid
                     }
                     break;   // 0xC5 (no listing <= this bid) -> escalate to the next rung; or no result -> next stack
                 }

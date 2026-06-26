@@ -4,17 +4,18 @@ namespace XiHeadless.Capabilities;
 
 /// Inventory management. A headless bot grinding for hours fills its 30-slot inventory with mob drops;
 /// once full, AH purchases fail (server returns 0x04C result 0xE5 "inventory full"). We free slots by
-/// SELLING junk to a vendor for gil (better than dropping it for nothing — the server pays the item's
-/// base price and the slot frees). Items that can't be sold (NOSALE/locked/key) are skipped.
+/// SELLING junk to a vendor for gil (better than dropping it — the server pays the item's base price and
+/// the slot frees). When we clear, we clear EVERYTHING sellable (not just one slot), so the bot doesn't
+/// thrash sell-one/buy-one/full-again. Items that can't be sold (NOSALE/locked/key) are skipped.
 public interface IInventory
 {
-    /// Drop `qty` of the item in (container, slot) — 0x028 ITEM_DUMP. Last-resort; prefer SellJunk.
+    /// Drop `qty` of the item in (container, slot) — 0x028 ITEM_DUMP. Last-resort; prefer SellAllJunk.
     void Drop(byte container, byte slot, ushort qty);
 
-    /// Sell one whole stack of a main-inventory item NOT in `keep` to a vendor (0x084 appraise + 0x085
-    /// confirm) for gil, to free a slot. Rotates past items that won't sell. Returns the item id sold,
-    /// or 0 if nothing sellable remains.
-    Task<ushort> SellJunk(IReadOnlySet<ushort> keep, CancellationToken ct = default);
+    /// Sell EVERY main-inventory item not in `keep` to a vendor (0x084 appraise + 0x085 confirm) for gil,
+    /// freeing as many slots as possible in one pass. Skips items that won't sell. Returns the number of
+    /// items actually sold.
+    Task<int> SellAllJunk(IReadOnlySet<ushort> keep, CancellationToken ct = default);
 }
 
 /// Builds 0x028 GP_CLI_COMMAND_ITEM_DUMP: hdr(4) ItemNum@4(u32 qty) Category@8(container) ItemIndex@9(slot). 12B/3 words.
@@ -59,29 +60,41 @@ internal static class SellSetPacket
 
 public sealed class Inventory(ISession s) : IInventory
 {
-    // Slots already attempted this session. Some items won't sell (NOSALE/locked/key) and the server
-    // silently refuses; without this we'd keep re-picking the same stuck item. Skipping tried slots
-    // rotates us onto sellable loot.
-    readonly HashSet<(byte, byte)> _tried = new();
+    // Slots that wouldn't sell (NOSALE/locked/key). The server silently refuses them; remembering them
+    // lets the clear skip them instead of stalling. Sold slots are NOT marked (they free up + may be
+    // reused by new drops, which should be sellable next time).
+    readonly HashSet<(byte, byte)> _stuck = new();
 
     public void Drop(byte container, byte slot, ushort qty) => s.Enqueue(DumpPacket.Build(container, slot, qty));
 
-    public async Task<ushort> SellJunk(IReadOnlySet<ushort> keep, CancellationToken ct = default)
+    public async Task<int> SellAllJunk(IReadOnlySet<ushort> keep, CancellationToken ct = default)
     {
-        foreach (var ((c, slot), id) in s.State.Inventory)
+        int sold = 0;
+        while (!ct.IsCancellationRequested)
         {
-            if (c != 0 || slot == 0 || id == 0 || keep.Contains(id) || _tried.Contains((c, slot))) continue;
-            _tried.Add((c, slot));   // sell this slot once; if it doesn't leave, we move on next call
-            ushort qty = s.State.InventoryQty.TryGetValue((c, slot), out var q) && q > 0 ? q : (ushort)1;
+            // Find the next sellable junk slot (main inventory, not gil, not gear, not known-stuck).
+            (byte c, byte slot, ushort id, ushort qty)? pick = null;
+            foreach (var ((c, slot), id) in s.State.Inventory)
+            {
+                if (c != 0 || slot == 0 || id == 0 || keep.Contains(id) || _stuck.Contains((c, slot))) continue;
+                ushort q = s.State.InventoryQty.TryGetValue((c, slot), out var qq) && qq > 0 ? qq : (ushort)1;
+                pick = (c, slot, id, q);
+                break;
+            }
+            if (pick is null) break;   // nothing left to sell
+
+            var (pc, pslot, pid, pqty) = pick.Value;
             uint gilBefore = s.State.Gil;
-            Console.WriteLine($"[inv] selling junk item {id} x{qty} (slot {slot}) for gil");
-            s.Enqueue(SellReqPacket.Build(id, slot, qty));   // 0x084 appraise
-            await Task.Delay(600, ct);
-            s.Enqueue(SellSetPacket.Build());                // 0x085 confirm
-            await Task.Delay(1200, ct);                       // let the sale apply (gil + slot update)
-            if (s.State.Gil > gilBefore) Console.WriteLine($"[inv] sold {id} for {s.State.Gil - gilBefore} gil (now {s.State.Gil})");
-            return id;
+            s.Enqueue(SellReqPacket.Build(pid, pslot, pqty));   // 0x084 appraise
+            await Task.Delay(500, ct);
+            s.Enqueue(SellSetPacket.Build());                    // 0x085 confirm
+            await Task.Delay(1000, ct);                          // let the sale apply (slot + gil update)
+
+            bool gone = !s.State.Inventory.TryGetValue((pc, pslot), out var nowId) || nowId != pid;
+            if (gone) { sold++; Console.WriteLine($"[inv] sold {pid} x{pqty} (slot {pslot}) +{(long)s.State.Gil - gilBefore}g -> gil {s.State.Gil}"); }
+            else { _stuck.Add((pc, pslot)); Console.WriteLine($"[inv] item {pid} (slot {pslot}) won't sell — skipping"); }
         }
-        return 0;   // nothing left sellable
+        Console.WriteLine($"[inv] junk clear done — sold {sold} item(s) for gil");
+        return sold;
     }
 }
