@@ -85,14 +85,26 @@ public sealed class Inventory(ISession s) : IInventory
 
             var (pc, pslot, pid, pqty) = pick.Value;
             uint gilBefore = s.State.Gil;
-            s.Enqueue(SellReqPacket.Build(pid, pslot, pqty));   // 0x084 appraise
-            await Task.Delay(500, ct);
-            s.Enqueue(SellSetPacket.Build());                    // 0x085 confirm
-            await Task.Delay(1000, ct);                          // let the sale apply (slot + gil update)
 
-            bool gone = !s.State.Inventory.TryGetValue((pc, pslot), out var nowId) || nowId != pid;
-            if (gone) { sold++; Console.WriteLine($"[inv] sold {pid} x{pqty} (slot {pslot}) +{(long)s.State.Gil - gilBefore}g -> gil {s.State.Gil}"); }
-            else { _stuck.Add((pc, pslot)); Console.WriteLine($"[inv] item {pid} (slot {pslot}) won't sell — skipping"); }
+            // 1) Try to SELL it for gil (0x084 appraise + 0x085 confirm).
+            s.Enqueue(SellReqPacket.Build(pid, pslot, pqty));
+            await Task.Delay(500, ct);
+            s.Enqueue(SellSetPacket.Build());
+            await Task.Delay(1000, ct);
+            if (!s.State.Inventory.TryGetValue((pc, pslot), out var n1) || n1 != pid)
+            {
+                sold++; Console.WriteLine($"[inv] sold {pid} x{pqty} (slot {pslot}) +{(long)s.State.Gil - gilBefore}g -> gil {s.State.Gil}");
+                continue;
+            }
+
+            // 2) Couldn't sell (NOSALE like Beastman Seals, or sell unavailable) — DROP it to free the slot.
+            s.Enqueue(DumpPacket.Build(pc, pslot, pqty));
+            await Task.Delay(1000, ct);
+            if (!s.State.Inventory.TryGetValue((pc, pslot), out var n2) || n2 != pid)
+            {
+                sold++; Console.WriteLine($"[inv] dropped {pid} x{pqty} (slot {pslot}) — unsellable junk");
+            }
+            else { _stuck.Add((pc, pslot)); Console.WriteLine($"[inv] item {pid} (slot {pslot}) won't sell or drop (equipped/locked) — skipping"); }
         }
         Console.WriteLine($"[inv] junk clear done — sold {sold} item(s) for gil");
         return sold;
