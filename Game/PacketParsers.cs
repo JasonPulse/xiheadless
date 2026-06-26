@@ -35,6 +35,7 @@ public static class PacketParsers
             case 0x020: ItemAttr(sub, w); break;          // GP_SERV_COMMAND_ITEM_ATTR (item w/ extdata; different layout)
             case 0x06F: CombineAns(sub, w); break;        // GP_SERV_COMMAND_COMBINE_ANS (synthesis result)
             case 0x04B: PostBoxResult(sub, w); break;     // GP_SERV_COMMAND_PBX_RESULT (delivery box reply/ack)
+            case 0x04C: AucResp(sub, w); break;           // GP_SERV_COMMAND_AUC (bid result: Result@6, ItemNo@12)
             case 0x03C: ShopList(sub, w); break;          // GP_SERV_COMMAND_SHOP_LIST (a vendor's items)
         }
     }
@@ -191,8 +192,8 @@ public static class PacketParsers
         uint qty = U32(b, 4); ushort itemId = U16(b, 8); byte container = b[10], slot = b[11];
         if (itemId == 65535) w.Gil = qty;   // gil is the item at inv slot 0; qty = the gil balance
         var key = (container, slot);
-        if (qty == 0 || itemId == 0) w.Inventory.Remove(key);
-        else w.Inventory[key] = itemId;
+        if (qty == 0 || itemId == 0) { w.Inventory.Remove(key); w.InventoryQty.Remove(key); }
+        else { w.Inventory[key] = itemId; w.InventoryQty[key] = (ushort)qty; }
     }
 
     // 0x020 GP_SERV_COMMAND_ITEM_ATTR: ItemNum(qty)@4, Price@8, ItemNo(itemid)@12, Category@14, ItemIndex(slot)@15.
@@ -203,8 +204,19 @@ public static class PacketParsers
         uint qty = U32(b, 4); ushort itemId = U16(b, 12); byte container = b[14], slot = b[15];
         if (itemId == 65535) w.Gil = qty;   // gil balance
         var key = (container, slot);
-        if (qty == 0 || itemId == 0) w.Inventory.Remove(key);
-        else w.Inventory[key] = itemId;
+        if (qty == 0 || itemId == 0) { w.Inventory.Remove(key); w.InventoryQty.Remove(key); }
+        else { w.Inventory[key] = itemId; w.InventoryQty[key] = (ushort)qty; }
+    }
+
+    // 0x04C GP_SERV_COMMAND_AUC: the server's reply to our 0x04E Bid. Command@4, Result@6, ItemNo@12.
+    // Result: 0x01 bought, 0xC5 no listing at/below bid, 0xE5 inventory full OR rare item already owned.
+    static void AucResp(ReadOnlySpan<byte> b, WorldState w)
+    {
+        if (b.Length < 14) return;
+        w.AucResultItem = U16(b, 12);
+        w.AucResult = b[6];
+        string meaning = b[6] == 0x01 ? "bought" : b[6] == 0xC5 ? "no-listing" : b[6] == 0xE5 ? "inventory-full/rare" : $"0x{b[6]:X2}";
+        Console.WriteLine($"[auc] result={meaning} item={w.AucResultItem}");
     }
 
     // 0x029 GP_SERV_COMMAND_BATTLE_MESSAGE (s2c/0x029): UniqueNoCas@4, UniqueNoTar@8, Data@12,

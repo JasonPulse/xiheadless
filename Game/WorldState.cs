@@ -62,6 +62,13 @@ public sealed class WorldState
     public readonly int[] SkillGains = new int[64];
     // Inventory: (container,slot) -> itemId (from 0x01F item list). Lets us find an item to equip.
     public readonly Dictionary<(byte container, byte slot), ushort> Inventory = new();
+    // Parallel (container,slot) -> stack quantity, so we can drop a whole stack to free a slot.
+    public readonly Dictionary<(byte container, byte slot), ushort> InventoryQty = new();
+
+    // Last Auction House bid result (0x04C). 0 = none/pending since reset; else the server Result byte:
+    // 0x01 = bought, 0xC5 = no listing at/below bid, 0xE5 = inventory full OR rare item already owned.
+    public volatile int AucResult;
+    public ushort AucResultItem;
     // NPC shop inventory (0x03C shop_list): shop slot index -> (item id, unit price). Buying references
     // the slot index (the server ignores the packet's ShopNo). Cleared by IShop before each OpenShop.
     public readonly Dictionary<byte, (ushort itemId, uint price)> Shop = new();

@@ -5,7 +5,7 @@ namespace XiHeadless.Brains;
 /// fight to the death, and on KO homepoint-revive and return. Re-equips periodically so each piece
 /// comes online as we out-level its requirement. Gear guide (network-gnomes WAR guide, lv1-18 bracket):
 /// Great Axe is the weapon (WS auto-picks off Great Axe skill).
-public sealed class WarBrain(IPerception p, INavigation nav, ICombat combat, IZoning zoning, IGear gear, IAuctionHouse ah, IDelivery delivery) : IBrain
+public sealed class WarBrain(IPerception p, INavigation nav, ICombat combat, IZoning zoning, IGear gear, IAuctionHouse ah, IDelivery delivery, IInventory inv) : IBrain
 {
     const ushort HuntZone = 116;             // East Sarutabaruta (Windurst starting area, adjacent to Windurst Woods)
     const string AhZone = "Windurst Woods";  // where we buy gear (has the AH)
@@ -21,7 +21,7 @@ public sealed class WarBrain(IPerception p, INavigation nav, ICombat combat, IZo
     {
         (13014, EquipSlot.Feet),   // Leaping Boots   (lv7) — AH version (Bounding Boots is the rare/ex upgrade)
         (17280, EquipSlot.Ranged), // Boomerang       (lv14)
-        (13398, EquipSlot.Ear1),   // Physical Earring (lv10) — Optical Earring (14803) is mismarked Rare/Ex here, not AH-buyable
+        (13380, EquipSlot.Ear1),   // Hope Earring (lv10) — buyable lv10 ear (Optical 14803 mismarked Rare/Ex; Physical 13398 not listed)
         (13194, EquipSlot.Waist),  // Warrior's Belt  (lv15)
         (13522, EquipSlot.Ring1),  // Courage Ring    (lv14)
     };
@@ -50,10 +50,13 @@ public sealed class WarBrain(IPerception p, INavigation nav, ICombat combat, IZo
             Console.WriteLine($"[war] traveling to {AhZone} for gear");
             await zoning.GoTo(AhZone, ct);
         }
+        // Keep set = all our gear (never drop it when freeing inventory space). The coroutine drops junk
+        // mob-drops to make room, since a full inventory makes the AH refuse the purchase (0xE5).
+        var keep = new HashSet<ushort>(new ushort[] { EarlyWeapon, Weapon }.Concat(Armor.Select(g => (ushort)g.item)));
         foreach (var item in new ushort[] { EarlyWeapon, Weapon }.Concat(Armor.Select(g => g.item)))
         {
             if (ct.IsCancellationRequested) return;
-            await ShopRoutines.BuyFromAH(ah, p, item, ct);
+            await ShopRoutines.BuyItem(ah, p, inv, item, keep, ct);
         }
 
         // 2) Go to the hunt zone and equip what we can.

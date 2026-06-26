@@ -4,7 +4,7 @@ namespace XiHeadless.Brains;
 /// then synthesizes. Recipe is CODE (consts below) — Bronze Sheet = Fire Crystal + 1 Bronze Ingot
 /// (Smithing 4, recipe 10008). Does a small batch then logs out gracefully. Reuses IAuctionHouse +
 /// ICrafting + IPerception (inventory) + ILifecycle.
-public sealed class CraftBrain(IPerception p, IAuctionHouse ah, ICrafting craft, IZoning zoning, ILifecycle lifecycle) : IBrain
+public sealed class CraftBrain(IPerception p, IAuctionHouse ah, ICrafting craft, IZoning zoning, ILifecycle lifecycle, IInventory inv) : IBrain
 {
     // Recipe 10008: Crystal 4096 (Fire) + Ingredient 649 (Bronze Ingot) x1 -> Result 660 (Bronze Sheet).
     const ushort Crystal = 4096;
@@ -63,6 +63,9 @@ public sealed class CraftBrain(IPerception p, IAuctionHouse ah, ICrafting craft,
         return null;
     }
 
-    // Ensure itemId is in inventory: buy it from the AH (shared escalating-bid routine) if missing.
-    Task<bool> EnsureItem(ushort itemId, CancellationToken ct) => ShopRoutines.BuyFromAH(ah, p, itemId, ct);
+    // Keep the recipe mats when freeing inventory space (never drop what we're about to synth).
+    static readonly HashSet<ushort> Keep = new() { Crystal, Ingredient };
+
+    // Ensure itemId is in inventory: buy it from the AH (shared coroutine: escalate bid + clear junk) if missing.
+    Task<bool> EnsureItem(ushort itemId, CancellationToken ct) => ShopRoutines.BuyItem(ah, p, inv, itemId, Keep, ct);
 }

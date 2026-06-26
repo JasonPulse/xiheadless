@@ -2,9 +2,10 @@ using XiHeadless.Capabilities;
 
 namespace XiHeadless.Brains;
 
-/// Reusable Auction House buying. The server charges the EXACT bid and only fills if a listing <= bid
-/// exists, so we escalate low -> high and stop the instant the item lands in inventory (paying close to
-/// market, never overpaying). Must be in a MISC_AH zone. Shared by the crafter and the gear-up phase.
+/// Reusable Auction House buying as ONE coroutine: BuyItem(itemId) escalates the bid low->high, reads the
+/// server's result packet (0x04C), and when the inventory is full (result 0xE5) drops a junk item to free
+/// a slot and retries — so "go buy XXX" just works. Must be in a MISC_AH zone. Shared by the crafter and
+/// the WAR gear-up. (Selling drops for gil instead of dropping them is a better long-term move — TODO.)
 public static class ShopRoutines
 {
     static readonly uint[] BidLadder = { 50, 250, 1000, 4000, 15000 };
@@ -16,24 +17,50 @@ public static class ShopRoutines
         return false;
     }
 
-    /// Buy one itemId from the AH (single then stack at each price rung). True once it's in inventory.
-    public static async Task<bool> BuyFromAH(IAuctionHouse ah, IPerception p, ushort itemId, CancellationToken ct = default)
+    /// Buy one itemId from the AH. Escalates (single then stack at each price rung), parses the AH result,
+    /// frees a slot via inv.DropJunk(keep) on inventory-full, and stops the instant the item is owned.
+    /// `keep` = item ids the bot must NOT drop (its gear); pass the bot's gear set so clearing only dumps junk.
+    public static async Task<bool> BuyItem(IAuctionHouse ah, IPerception p, IInventory inv, ushort itemId,
+                                           IReadOnlySet<ushort> keep, CancellationToken ct = default)
     {
         if (HasItem(p, itemId)) return true;
         foreach (var bid in BidLadder)
         {
+            if (bid > p.World.Gil) { Console.WriteLine($"[ah] bid {bid} > gil {p.World.Gil} — out of budget"); break; }
             foreach (var single in new[] { true, false })
             {
-                if (bid > p.World.Gil) { Console.WriteLine($"[ah] bid {bid} > gil {p.World.Gil} — out of budget"); return HasItem(p, itemId); }
-                ah.Bid(itemId, bid, single);
-                Console.WriteLine($"[ah] bid {bid} for {itemId} (single={single})");
-                for (int i = 0; i < 6 && !ct.IsCancellationRequested; i++)
+                // Up to 2 tries at this (bid, single): a first 0xE5 triggers a drop, then we re-bid.
+                for (int attempt = 0; attempt < 2 && !ct.IsCancellationRequested; attempt++)
                 {
-                    await Task.Delay(500, ct);
+                    p.World.AucResult = 0;
+                    ah.Bid(itemId, bid, single);
+                    Console.WriteLine($"[ah] bid {bid} for {itemId} (single={single})");
+                    int r = await WaitResult(p, itemId, ct);
                     if (HasItem(p, itemId)) { Console.WriteLine($"[ah] acquired {itemId} for <= {bid}"); return true; }
+                    if (r == 0xE5)   // inventory full (or rare dupe) — free a slot and retry the same bid
+                    {
+                        ushort dropped = inv.DropJunk(keep);
+                        if (dropped == 0) { Console.WriteLine($"[ah] inventory full and nothing droppable — cannot buy {itemId}"); return false; }
+                        await Task.Delay(1500, ct);   // let the drop apply (server resends the slot at qty 0)
+                        continue;
+                    }
+                    break;   // 0xC5 (no listing <= this bid) -> escalate to the next rung; or no result -> next stack
                 }
             }
         }
         return HasItem(p, itemId);
+    }
+
+    // Wait for the AH result (0x04C) or the item to land in inventory. Returns the result byte
+    // (0x01 bought / 0xC5 no-listing / 0xE5 inventory-full) or 0 on timeout.
+    static async Task<int> WaitResult(IPerception p, ushort itemId, CancellationToken ct)
+    {
+        for (int i = 0; i < 10 && !ct.IsCancellationRequested; i++)
+        {
+            await Task.Delay(400, ct);
+            if (HasItem(p, itemId)) return 0x01;
+            if (p.World.AucResult != 0) return p.World.AucResult;
+        }
+        return 0;
     }
 }
