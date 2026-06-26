@@ -37,12 +37,11 @@ public static class ShopRoutines
                     Console.WriteLine($"[ah] bid {bid} for {itemId} (single={single})");
                     int r = await WaitResult(p, itemId, ct);
                     if (HasItem(p, itemId)) { Console.WriteLine($"[ah] acquired {itemId} for <= {bid}"); return true; }
-                    if (r == 0xE5)   // inventory full (or rare dupe) — free a slot and retry the same bid
+                    if (r == 0xE5)   // inventory full — sell a junk item for gil to free a slot, then retry
                     {
-                        ushort dropped = inv.DropJunk(keep);
-                        if (dropped == 0) { Console.WriteLine($"[ah] inventory full and nothing droppable — cannot buy {itemId}"); return false; }
-                        await Task.Delay(1500, ct);   // let the drop apply (server resends the slot at qty 0)
-                        continue;
+                        ushort sold = await inv.SellJunk(keep, ct);
+                        if (sold == 0) { Console.WriteLine($"[ah] inventory full and nothing sellable — cannot buy {itemId}"); return false; }
+                        continue;   // SellJunk already waited for the sale to apply
                     }
                     break;   // 0xC5 (no listing <= this bid) -> escalate to the next rung; or no result -> next stack
                 }
