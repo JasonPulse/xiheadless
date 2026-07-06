@@ -35,6 +35,7 @@ public sealed class RoamController(INavigation nav, IPerception p, ICombat comba
     double _heading;                                // committed direction so roaming travels, not circles
     byte _lastLvl;
     float _lastX, _lastZ; int _stalls;              // detect roam steps that produce no displacement (mesh pocket)
+    float _netAnchorX, _netAnchorZ; int _netStuckSteps;   // detect OSCILLATION: hops that "move" but make no NET progress
     readonly List<(float x, float z)> _trail = new();      // recent committed hop ORIGINS (known-walkable) — backtrack targets + anti-revisit
     readonly List<(float x, float z)> _preySeen = new();   // where in-band mobs were conned — free roam that LEARNS
     int _boxed;                                            // consecutive fully-blocked steps → backtrack
@@ -226,6 +227,34 @@ public sealed class RoamController(INavigation nav, IPerception p, ICombat comba
             int purged = _preySeen.RemoveAll(m => !nav.CanReach(m.x, p.World.Y, m.z));
             _heading += Math.PI;
             Log($"still pinned — BLIND escape (purged {purged} unreachable prey memories, ignoring prey pull)");
+        }
+
+        // NET-STUCK / OSCILLATION escape: the per-hop _stalls counter (and _boxed/_desperate) all reset whenever
+        // a hop "moves" (>2f) — so a bot bouncing between two ~16y-apart reachable points while a visible-but-
+        // UNREACHABLE prey pulls the heading back never escalates and oscillates forever (observed live on BLM:
+        // (-92,-253)<->(-93,-232), "180y escape" always falling to the reachable floor). Track NET displacement
+        // from an anchor; if we haven't gotten >60y from it in 12 hops despite moving each step, force a FULL-PATH
+        // relocation (MoveTo runs full pathfinding — it routes out of a pocket the radial fan can't). Prefer the
+        // trail origin (was walkable, outside the pocket) or the FARTHEST remembered prey, else scan far rings.
+        var wp = p.World;
+        if (Geometry.Dist2D(wp.X, wp.Z, _netAnchorX, _netAnchorZ) > 60f) { _netAnchorX = wp.X; _netAnchorZ = wp.Z; _netStuckSteps = 0; }
+        else if (++_netStuckSteps >= 12)
+        {
+            _netStuckSteps = 0;
+            _preySeen.RemoveAll(m => !nav.CanReach(m.x, wp.Y, m.z));   // drop unreachable prey that keeps pulling us back
+            (float x, float z)? far = _trail.Count > 0 ? _trail[0]
+                : _preySeen.Count > 0 ? _preySeen.OrderByDescending(m => Geometry.Dist2D(m.x, m.z, wp.X, wp.Z)).First()
+                : null;
+            if (far is { } f) { nav.MoveTo(f.x, f.z); if (nav.IsMoving) { _trail.Clear(); _netAnchorX = wp.X; _netAnchorZ = wp.Z; Log($"net-stuck (oscillating, no net progress in 12 hops) -> full-path relocating to ({f.x:F0},{f.z:F0})"); return; } }
+            foreach (float r in new[] { 150f, 250f, 100f })
+                for (int i = 0; i < 16; i++)
+                {
+                    double a = i * (Math.PI / 8); float tx = wp.X + (float)Math.Cos(a) * r, tz = wp.Z + (float)Math.Sin(a) * r;
+                    if (!nav.CanReach(tx, wp.Y, tz)) continue;
+                    nav.MoveTo(tx, tz);
+                    if (nav.IsMoving) { _heading = a; _netAnchorX = wp.X; _netAnchorZ = wp.Z; Log($"net-stuck -> far-ring escape to ({tx:F0},{tz:F0}) at {r:F0}y"); return; }
+                }
+            Log("net-stuck oscillation but no far reachable point/path in 250y — truly walled (will retry)");
         }
 
         // Discover: /check the nearest unknown mobs so the threat map fills in as we travel. Unknown mobs
