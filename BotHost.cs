@@ -78,7 +78,7 @@ public static class BotHost
         var autoEvents = AutoCompleteEvents(caps, autoCts.Token);
         var autoParty = AutoAcceptParty(caps, autoCts.Token);
         var autoDeath = AutoHandleDeath(caps, autoCts.Token);   // CORE: any death -> Home Point (every brain)
-        var adminLog = AdminLogToggle(caps, autoCts.Token);     // CORE: admin /tell flips verbose logging live
+        var logToggle = LogToggle(caps, autoCts.Token);         // CORE: /tell "log on"/"log off" flips verbose logging live
 
         // New-char home point (CORE setup): a freshly-created char lands in its start city and that zone's
         // onZoneIn starts an opening cutscene whose finish calls setHomePoint(). We can't SEE that event
@@ -197,32 +197,31 @@ public static class BotHost
         catch (OperationCanceledException) { }
     }
 
-    // CORE runtime log toggle (every brain, no per-brain code): the fleet runs QUIET in production
-    // (XIBOT_LOG=0), but an operator can turn a SINGLE bot verbose live — without restarting it — by
-    // sending it an in-game /tell "log on" (or "debug on"/"verbose on"; "log off" to re-quiet). Only a tell
-    // from the env-configured admin (XIBOT_ADMIN) is honored — the tell's sender is authoritative, so no one
-    // else can flip logging. If XIBOT_ADMIN is unset the toggle is DISABLED (no sender is trusted). Reuses the
-    // already-parsed WorldState.Tells + IChat (like GmBrain) — no new chat parsing.
-    static async Task AdminLogToggle(CapabilitySet caps, CancellationToken ct)
+    // CORE runtime log toggle (every brain, no per-brain code): the fleet runs QUIET (XIBOT_LOG=0), but an
+    // operator can turn a bot verbose live — without restarting it — by sending it an in-game /tell "log on"
+    // (or "debug on"/"verbose on"; "log off" to re-quiet). Any tell works; the reply goes to whoever asked.
+    // Reuses the already-parsed WorldState.Tells + IChat — no new chat parsing.
+    static async Task LogToggle(CapabilitySet caps, CancellationToken ct)
     {
-        var admin = Environment.GetEnvironmentVariable("XIBOT_ADMIN");
-        if (string.IsNullOrWhiteSpace(admin)) return;   // no trusted sender configured -> toggle disabled
         var w = caps.Perception.World;
-        long lastMs = long.MinValue;   // last admin tell timestamp we've acted on (act once per new tell)
+        var seen = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);   // last tell ms acted on, per sender
         try
         {
             while (!ct.IsCancellationRequested)
             {
                 await Task.Delay(1000, ct);
-                if (!w.Tells.TryGetValue(admin, out var tell) || tell.ms <= lastMs) continue;
-                lastMs = tell.ms;
-                var m = tell.msg.Trim().ToLowerInvariant();
-                bool? on = m is "log on" or "debug on" or "verbose on" ? true
-                         : m is "log off" or "debug off" or "verbose off" ? false
-                         : (bool?)null;
-                if (on is not bool set) continue;   // not a log command — ignore
-                Log.SetVerbose(set);
-                caps.Chat.Tell(admin, $"verbose logging {(set ? "ON" : "OFF")}");
+                foreach (var (sender, tell) in w.Tells.ToArray())
+                {
+                    if (seen.TryGetValue(sender, out var last) && tell.ms <= last) continue;
+                    seen[sender] = tell.ms;
+                    var m = tell.msg.Trim().ToLowerInvariant();
+                    bool? on = m is "log on" or "debug on" or "verbose on" ? true
+                             : m is "log off" or "debug off" or "verbose off" ? false
+                             : (bool?)null;
+                    if (on is not bool set) continue;   // not a log command — ignore
+                    Log.SetVerbose(set);
+                    caps.Chat.Tell(sender, $"verbose logging {(set ? "ON" : "OFF")}");
+                }
             }
         }
         catch (OperationCanceledException) { }
