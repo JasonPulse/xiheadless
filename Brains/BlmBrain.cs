@@ -1,6 +1,7 @@
 namespace XiHeadless.Brains;
 
-/// BLM leveling brain — the WHM character's SUBJOB grind (goal: BLM 18 so WHM/BLM has a full sub at 36+).
+/// BLM leveling brain — the WHM character's SUBJOB grind (BLM 18 gives WHM/BLM a full sub at 36+; leveled
+/// open-ended past that so the char keeps gaining while online).
 /// A basic job (no unlock), leveled as BLM/WHM through the shared JobLifecycle:
 ///   * SubJob = WHM so the mage can self-Cure in a fight (BLM can't cast Cure alone) AND so a post-death
 ///     recovery travels back AS the WHM (aggro-free above the mobs) — both hard-won BlmBrain patterns, now
@@ -8,8 +9,9 @@ namespace XiHeadless.Brains;
 ///     SafeTravelJobFor picking the leveled WHM). The old Mhaura home-point flag / stealth-trek band-aids are
 ///     gone: in the fresh-start model the level-gated Windurst nursery + safe recovery handle the return.
 ///   * Stone is the ranged pull + in-fight nuke (BLM's real damage — without it the bot meleed and died).
-/// Stops at BLM 18 and logs out. When the char's WHM is already high (its real main), the seesaw never
-/// levels WHM — it just carries BLM to 18.
+/// Levels BLM open-ended (MainTarget = 0) so it keeps grinding while online instead of self-completing and
+/// login-looping at 18. When the char's WHM is already high (its real main), the seesaw never levels WHM —
+/// it just carries BLM up.
 public sealed class BlmBrain(
     IPerception p, INavigation nav, ICombat combat, IMagic magic, IZoning zoning, IGear gear,
     IAuctionHouse ah, IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs, ILifecycle lifecycle,
@@ -18,17 +20,18 @@ public sealed class BlmBrain(
     // Stealth consumables + seals are never junk (the bag clear SOLD the oils once and the crossings killed us).
     static readonly HashSet<ushort> BlmKeep = new() { 1126, 1127, StealthRoutines.SilentOil, StealthRoutines.PrismPowder };
 
-    const byte TargetLevel = 18;   // BLM 18 = full WHM/BLM sub at WHM main 36+ (user goal: WHM 38 w/ BLM 18)
     const byte ClubSkill = 11;
 
     // Full arc via the shared JobLifecycle: basic BLM leveled as BLM/WHM (WHM enables self-Cure + safe-job
     // recovery). The level-gated nursery (a lv9 BLM dies net-zero in Tahrongi — the plan keeps it in West/East
-    // Sarutabaruta until ~15) + baby phase come for free. Stops at 18 and logs out.
+    // Sarutabaruta until ~15) + baby phase come for free. MainTarget = 0 (OPEN-ENDED): BLM 18 gave a full
+    // WHM/BLM sub, but capping there just idled/login-looped once reached — so keep leveling BLM while online
+    // (the user steers when to stop); the seesaw only carries WHM along if WHM isn't already the higher main.
     public Task RunAsync(CancellationToken ct) =>
         new JobLifecycle(p, nav, combat, zoning, gear, ah, delivery, inv, shop, jobs, null, null, events,
             new JobLifecycle.Config
             {
-                MainJob = Job.Blm, SubJob = Job.Whm, Advanced = false, MainTarget = TargetLevel,
+                MainJob = Job.Blm, SubJob = Job.Whm, Advanced = false, MainTarget = 0,
                 GrindCfgFor = _ => Cfg(), Tag = "blm",
             }, lifecycle).RunAsync(ct);
 

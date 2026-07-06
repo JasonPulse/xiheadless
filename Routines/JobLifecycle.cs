@@ -174,6 +174,13 @@ public sealed class JobLifecycle(
     // boundaries so a single stint carries a baby up through the whole nursery to its `done`.
     async Task RunGrindStint(byte job, Func<bool> done, CancellationToken ct)
     {
+        // PROACTIVE home-point set: a stint begins right after the seesaw's job change (JobLeveling) or
+        // EnsureMain — both route through the HomeCity Mog House, so on a FRESH run the char is standing in
+        // the HomeCity, alive, here. Set the revive point NOW, before the first death — otherwise a stale
+        // distant default (e.g. BLM's farm-era Mhaura) sends every revive across a hostile-zone gauntlet, and
+        // the home point only got corrected AFTER a death dragged us back to Windurst (the re-trek death-loop).
+        // Self-gates on being in the HomeCity + a once-only flag, so field stints and later runs are no-ops.
+        await EnsureHomePointAtHomeCity(ct);
         while (!ct.IsCancellationRequested && !done())
         {
             var plan = cfg.HuntZonePlan(p.World.MainJobLevel);
@@ -319,21 +326,29 @@ public sealed class JobLifecycle(
             Log($"recovery: walking to {cfg.HomeCity}");
             await zoning.GoTo(cfg.HomeCity, ct);
         }
-        // Home-point at the HomeCity while we're here (user rule: home-point at a safe city near the hunt
-        // grounds, NOT the field or a stale distant default like BLM's farm-era Mhaura). Piggybacks on this
-        // recovery (already at Windurst) — no extra dangerous trek. Once set, every death resets HERE,
-        // adjacent to the hunt zones, and this safe-job recovery collapses to a short walk. Flag-gated once.
-        string lvlHpFlag = $"/tmp/xibot_lvlhp_{p.World.MyId:X}.done";
-        if (events is not null && zoning.CurrentZone == cfg.HomeCityId && !File.Exists(lvlHpFlag))
-        {
-            Log($"setting home point at {cfg.HomeCity} (safe city near the hunt grounds)");
-            if (await HomePointRoutines.SetHere(p, nav, events, combat, cfg.HomeCityId, ct)) File.WriteAllText(lvlHpFlag, "set");
-        }
+        // Home-point at the HomeCity while we're here — piggybacks on this recovery (already at Windurst), no
+        // extra dangerous trek. Same flow the stint start uses proactively (see EnsureHomePointAtHomeCity).
+        await EnsureHomePointAtHomeCity(ct);
         // Enter a safe-gated zone (West Sarutabaruta) via Port Windurst, not the east goblin belt.
         Log($"recovery: heading to the active hunt zone {zone} ({id})");
         if (id == cfg.SafeGateZoneId && cfg.SafeGateVia != 0 && zoning.CurrentZone != cfg.SafeGateVia && zoning.CurrentZone != id)
             await zoning.ToZone(cfg.SafeGateVia, ct);
         await zoning.GoTo(zone, ct);
+    }
+
+    // Set the home point at the HomeCity crystal ONCE (flag-gated), reusing the shared HomePointRoutines.SetHere
+    // (do NOT re-fork it — it was just de-duplicated). No-op unless we're standing in the HomeCity: called both
+    // PROACTIVELY at stint start (fresh run, char just changed jobs in the HomeCity — set the revive point
+    // BEFORE the first death) and during recovery (the safe-job return lands us in the HomeCity anyway). Once
+    // set, every death resets HERE, adjacent to the gated hunt zones — user rule: home-point at a safe city
+    // near the hunt grounds, NOT the field or a stale distant default like BLM's farm-era Mhaura. Generic:
+    // reads cfg.HomeCity/HomeCityId, so it targets whatever nation-city a brain configures (Windurst by default).
+    async Task EnsureHomePointAtHomeCity(CancellationToken ct)
+    {
+        string lvlHpFlag = $"/tmp/xibot_lvlhp_{p.World.MyId:X}.done";
+        if (events is null || zoning.CurrentZone != cfg.HomeCityId || File.Exists(lvlHpFlag)) return;
+        Log($"setting home point at {cfg.HomeCity} (safe city near the hunt grounds)");
+        if (await HomePointRoutines.SetHere(p, nav, events, combat, cfg.HomeCityId, ct)) File.WriteAllText(lvlHpFlag, "set");
     }
 
     // A job already leveled high enough to cross hostile ground aggro-free (mobs ignore chars far above them).

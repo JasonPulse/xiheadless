@@ -307,13 +307,21 @@ public sealed class RoamController(INavigation nav, IPerception p, ICombat comba
         // for whole rounds). The tether still gates each leg, so the healer keeps up.
         if (!anyInBand) hop = MathF.Max(hop, 66f);
 
-        // Candidate headings fan out around the committed one; first pass insists on threat-free, full-length
-        // hops, then a shorter and a SHORT pass (thread out of narrow mesh pockets a long hop can't escape).
+        // Candidate headings fan out around the committed one; the ladder samples several DISTANCES (largest
+        // first — we want the farthest reachable relocation), threat-free and CanReach-gated at every rung.
         // Score = prey near the hop target; with none in view, remembered prey ground (_preySeen) pulls the
         // heading back toward known hunting areas instead of blind wandering. CanReach gates every candidate:
         // without it, a target in the void snaps to the mesh point we're already standing on and MoveTo
         // "succeeds" with a degenerate zero-length path.
-        foreach (float dist in blind ? new[] { hop, hop * 0.6f } : new[] { hop, hop * 0.6f, 8f })
+        //   FLOOR = 16y, NOT 8y: CanReach's arrival tolerance is 8y (Navigator.CanReach), so an OFF-mesh point
+        //   ~8y away passes it — its path stops at our feet, still within 8y of the target — a false success
+        //   that committed a zero-displacement "hop" and logged `hop -> [8y]` to the SAME coords forever (the
+        //   stall/escape loop: the 450y escape rung failed CanReach, then the 8y rung "succeeded" without ever
+        //   relocating). A 16y rung still threads a narrow pocket (a 10y-reachable path lands 6y from a 16y
+        //   target = within tolerance, so it commits the real 10y walk) but a genuine snap-back (path at feet,
+        //   16y from target) is now correctly rejected. A mid rung (hop*0.3) closes the gap so a long escape
+        //   that fails CanReach still finds a reachable mid-range hop instead of dropping straight to the floor.
+        foreach (float dist in blind ? new[] { hop, hop * 0.6f } : new[] { hop, hop * 0.6f, hop * 0.3f, 16f })
         {
             (double ang, float tx, float tz, int score) best = (double.NaN, 0, 0, int.MinValue);
             for (int i = 0; i < 8; i++)
