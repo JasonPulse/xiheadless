@@ -253,8 +253,12 @@ public sealed class JobLifecycle(
         // from Ordelle's). Falls back to the Jeuno hub if the quest zone has no mapped crystal.
         if (events is not null)
         {
-            ushort hpZone = HomePointRoutines.Crystal.ContainsKey(zoning.CurrentZone) ? zoning.CurrentZone
-                          : HomePointRoutines.Crystal.ContainsKey(cfg.UnlockTrekZoneId) ? cfg.UnlockTrekZoneId
+            // ALWAYS the quest nation (not the current zone): the char must revive at San d'Oria for a San
+            // d'Oria quest even if a death dragged it to a different crystal city (Windurst) first — else it
+            // home-points on the wrong continent and re-treks. Only fall back to current/hub if the quest zone
+            // has no mapped crystal.
+            ushort hpZone = HomePointRoutines.Crystal.ContainsKey(cfg.UnlockTrekZoneId) ? cfg.UnlockTrekZoneId
+                          : HomePointRoutines.Crystal.ContainsKey(zoning.CurrentZone) ? zoning.CurrentZone
                           : cfg.HubZoneId;
             if (zoning.CurrentZone != hpZone && Game.Zonelines.Name(hpZone) is { } hz) { Log($"routing to {hz} ({hpZone}) to set the home point"); await zoning.GoTo(hz, ct); }
             if (zoning.CurrentZone == hpZone) await HomePointRoutines.SetHere(p, nav, events, combat, hpZone, ct);
