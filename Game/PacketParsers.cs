@@ -118,8 +118,15 @@ public static class PacketParsers
             case 0x017: ChatStd(sub, w); break;           // GP_SERV_COMMAND_CHAT_STD (incoming chat; party chat = fleet message bus)
             case 0x105: BazaarItem(sub, w); break;        // GP_SERV_COMMAND_BAZAAR_LIST (one item of a browsed player bazaar)
             case 0x056: QuestMissionLog(sub, w); break;   // GP_SERV_COMMAND_MISSION::OTHER (per-area quest accept/complete bitmaps)
+            default:
+                // DIAGNOSTIC: a received opcode with no handler — surfaced ONCE per id so we can see what the
+                // server sends that we ignore (protocol-gap discovery). Deduped -> negligible noise.
+                if (_unhandledSeen.Add(id)) Log.Always($"[parse] UNHANDLED opcode 0x{id:X3} (len {sub.Length}B) — received, no handler (first sighting)");
+                break;
         }
     }
+
+    static readonly HashSet<int> _unhandledSeen = new();
 
     // 0x0DD/0x0DF group packets: UniqueNo@4, Hp@8, Mp@12, Tp@16, Hpp@22, Mpp@23 (i32/u8).
     // For our own id this is the authoritative source of current absolute HP/MP/TP.
