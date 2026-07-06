@@ -86,8 +86,8 @@ public sealed class JobLifecycle(
         public static (string zone, ushort id)? DefaultWindurstPlan(int lvl) =>
             lvl < 12 ? ("West_Sarutabaruta", (ushort)115)
           : lvl < 15 ? ("East_Sarutabaruta", (ushort)116)
-          : lvl < 20 ? ("Tahrongi_Canyon", (ushort)117)      // LIVE EVIDENCE 2026-07-05: THF gained a full level (80->700+) at 18 in Tahrongi on con-3 bats, then went NET-ZERO the instant it hit Meriphataud at 18 (deaths, no xp). Tahrongi is productive/survivable through ~19; Meriphataud's lv18+ mobs are a DEATH WALL at 18-19. Keep the grind in Tahrongi until 20 (ForceAdvance/RoamDeeper handles thinning); escalate to Meriphataud at 20 where it's genuinely survivable.
-          : lvl < 25 ? ("Meriphataud_Mountains", (ushort)119)  // ~18-30 mobs; only survivable ~20+, NOT at 18 (was: "survivable once 18+" — disproven live)
+          : lvl < 19 ? ("Tahrongi_Canyon", (ushort)117)      // LIVE EVIDENCE 2026-07-05/06: THF gained a full level at 18 in Tahrongi on con-3 bats, but at 19 Tahrongi's common mobs con 0 (too weak -> net-zero starve). Meriphataud at 18 was a death-wall; enter it at 19 (a level stronger + con-skipping avoids the worst). So: Tahrongi through 18, Meriphataud from 19.
+          : lvl < 25 ? ("Meriphataud_Mountains", (ushort)119)  // ~18-30 mobs; entered at 19 (18 was a death-wall; 19+ survivable with con-skipping)
           : null;
     }
 
