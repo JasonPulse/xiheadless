@@ -197,7 +197,7 @@ public static class BotHost
         catch (OperationCanceledException) { }
     }
 
-    // CORE runtime log toggle (every brain, no per-brain code): the fleet runs QUIET (XIBOT_LOG=0), but an
+    // CORE runtime log toggle (every brain, no per-brain code): the fleet runs QUIET (XIBOT_VERBOSE=0), but an
     // operator can turn a bot verbose live — without restarting it — by sending it an in-game /tell "log on"
     // (or "debug on"/"verbose on"; "log off" to re-quiet). Any tell works; the reply goes to whoever asked.
     // Reuses the already-parsed WorldState.Tells + IChat — no new chat parsing.
