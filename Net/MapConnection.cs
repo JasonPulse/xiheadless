@@ -238,13 +238,17 @@ public sealed class MapConnection : ISession
 
     void HandleInbound(byte[] pkt)
     {
-        // track server packet id from header[0:2] for our ack
+        // server packet id from header[0:2] — echoed back as our ack (offset 2 outbound). ACK-AFTER-VALIDATE:
+        // we must NOT advance the ack until the datagram passes md5, or a corrupt datagram gets acked and its
+        // content is lost (the server, single-in-flight lockstep, thinks it was delivered and moves on). On an
+        // md5-fail we return WITHOUT advancing, so the server resends it. No contiguity check (that would stall
+        // on the legit zone-in sequence reset, e.g. 176->1) — we simply follow the last VALIDATED sid.
         ushort sid = BinaryPrimitives.ReadUInt16LittleEndian(pkt);
-        if (sid != 0) _serverId = sid;
 
         _bf.DecipherBuffer(pkt, PH);
         var bodyMd5 = MD5.HashData(pkt.AsSpan(PH, pkt.Length - PH - 16));
-        if (!bodyMd5.AsSpan().SequenceEqual(pkt.AsSpan(pkt.Length - 16))) { Log.Always($"    [md5-fail] sid={sid} len={pkt.Length} — datagram DROPPED (an event frame lost here reads as a reception gap)"); return; }
+        if (!bodyMd5.AsSpan().SequenceEqual(pkt.AsSpan(pkt.Length - 16))) { Log.Always($"    [md5-fail] sid={sid} len={pkt.Length} — datagram DROPPED, ack held so the server RESENDS it"); return; }
+        if (sid != 0) _serverId = sid;   // validated -> safe to ack
         if (Dbg) Log.Info($"    [decrypted-ok] sid={sid} len={pkt.Length}");
         uint bits = BinaryPrimitives.ReadUInt32LittleEndian(pkt.AsSpan(pkt.Length - 20));
         var dec = _dec.Decompress(pkt.AsSpan(PH), bits);
