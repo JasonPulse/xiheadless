@@ -213,7 +213,12 @@ public sealed class JobLifecycle(
     // change. Returns true once the char is actually the advanced main.
     async Task<bool> TryUnlock(CancellationToken ct)
     {
-        if (await JobRoutines.ChangeJobViaMogHouse(jobs, zoning, cfg.MainJob, cfg.SubJob, cfg.HomeCity, ct)) return true;
+        // The unlock quest operates out of the QUEST nation, NOT the far home city. A Windurst char doing the
+        // San d'Oria PLD quest must probe/change jobs, home-point, and revive in San d'Oria — never trek
+        // cross-continent to Windurst (and die on the way). Route Mog House ops to the quest nation when set;
+        // same-nation unlocks (UnlockTrekZone null) fall back to HomeCity unchanged.
+        string unlockCity = cfg.UnlockTrekZone ?? cfg.HomeCity;
+        if (await JobRoutines.ChangeJobViaMogHouse(jobs, zoning, cfg.MainJob, cfg.SubJob, unlockCity, ct)) return true;
         Log($"{JN(cfg.MainJob)} locked — attempting the unlock quest");
 
         // Stock quest items + stealth at the home AH before the trek (fragile 30-40 zones one-shot a death
@@ -240,20 +245,19 @@ public sealed class JobLifecycle(
             await Task.Delay(2000, ct);
         }
 
-        // HOME POINT at the quest nation the MOMENT we arrive (user rule, ~5h overdue): set it ONCE (flag
-        // file) so every death mid-quest resets HERE — a short, clean hop to the quest + cave — instead of
-        // re-trekking cross-continent from Windurst. For PLD that's Southern San d'Oria (230, next to Balasiel
-        // + one region from Ordelle's); a fresh spawn here also crosses the west gate clean (no accumulated
-        // stuck gate-events). Falls back to the Jeuno hub if the quest zone has no mapped crystal.
-        string hpFlag = $"/tmp/xibot_hub_{p.World.MyId:X}.done";
-        if (events is not null && !File.Exists(hpFlag))
+        // HOME POINT at the quest nation (user rule): set it EVERY unlock run so every death mid-quest revives
+        // HERE — a short clean hop to the quest + cave — instead of re-trekking cross-continent from the far
+        // default. NOT flag-gated: the blind set is unverified, and a stale "done" flag from a set that never
+        // took is exactly why the char kept reviving at its old Mhaura/Windurst default and re-trekking (user:
+        // "it can't ever home point"). For PLD that's Southern San d'Oria (230, next to Balasiel, one region
+        // from Ordelle's). Falls back to the Jeuno hub if the quest zone has no mapped crystal.
+        if (events is not null)
         {
             ushort hpZone = HomePointRoutines.Crystal.ContainsKey(zoning.CurrentZone) ? zoning.CurrentZone
                           : HomePointRoutines.Crystal.ContainsKey(cfg.UnlockTrekZoneId) ? cfg.UnlockTrekZoneId
                           : cfg.HubZoneId;
             if (zoning.CurrentZone != hpZone && Game.Zonelines.Name(hpZone) is { } hz) { Log($"routing to {hz} ({hpZone}) to set the home point"); await zoning.GoTo(hz, ct); }
-            if (zoning.CurrentZone == hpZone && await HomePointRoutines.SetHere(p, nav, events, combat, hpZone, ct))
-                File.WriteAllText(hpFlag, "home point set");
+            if (zoning.CurrentZone == hpZone) await HomePointRoutines.SetHere(p, nav, events, combat, hpZone, ct);
         }
 
         if (cfg.BeforeUnlock is { } bu) await bu(ct);
@@ -290,8 +294,9 @@ public sealed class JobLifecycle(
         }
         finally { zoning.BeforeLeg = null; }
 
-        // Post-quest: the quest ends far from town — route back to the Mog House to apply the change.
-        return await JobRoutines.ChangeJobViaMogHouse(jobs, zoning, cfg.MainJob, cfg.SubJob, cfg.HomeCity, ct);
+        // Post-quest: the quest ends far from town — route to the NEAREST Mog House city to apply the change
+        // (ChangeJobViaMogHouse picks the closest city itself; unlockCity is just the fallback hint).
+        return await JobRoutines.ChangeJobViaMogHouse(jobs, zoning, cfg.MainJob, cfg.SubJob, unlockCity, ct);
     }
 
     // Post-death return for a baby whose home point is across hostile ground (crystal relocation is
