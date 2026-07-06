@@ -36,7 +36,7 @@ public sealed class RoamController(INavigation nav, IPerception p, ICombat comba
     byte _lastLvl;
     float _lastX, _lastZ; int _stalls;              // detect roam steps that produce no displacement (mesh pocket)
     float _netAnchorX, _netAnchorZ; int _netStuckSteps;   // detect OSCILLATION: hops that "move" but make no NET progress
-    int _walledCount;                                     // consecutive "truly walled" detections (disconnected mesh island)
+    int _walledCount; bool _walledGaveUp;                 // truly-walled (disconnected mesh island) detection + give-up latch
     readonly List<(float x, float z)> _trail = new();      // recent committed hop ORIGINS (known-walkable) — backtrack targets + anti-revisit
     readonly List<(float x, float z)> _preySeen = new();   // where in-band mobs were conned — free roam that LEARNS
     int _boxed;                                            // consecutive fully-blocked steps → backtrack
@@ -206,6 +206,15 @@ public sealed class RoamController(INavigation nav, IPerception p, ICombat comba
     public async Task StepAsync(CancellationToken ct)
     {
         if (nav.IsMoving) return;
+        // Walled give-up: on a disconnected island we've confirmed unrecoverable, idle FULLY (every step, not
+        // just at the net-stuck check) so we don't oscillate/spam. Only resume if something external moved us
+        // off it (GM warp, knockback, relaunch to a good spawn) — detected as a >60y jump from the walled spot.
+        if (_walledGaveUp)
+        {
+            if (Geometry.Dist2D(p.World.X, p.World.Z, _netAnchorX, _netAnchorZ) > 60f)
+            { _walledGaveUp = false; _walledCount = 0; _netStuckSteps = 0; XiHeadless.Log.Always("roam un-walled (moved off the island) — resuming"); }
+            else return;
+        }
         ClearOnLevelUp();
         LoadMemory();
 
@@ -266,12 +275,17 @@ public sealed class RoamController(INavigation nav, IPerception p, ICombat comba
             // escape it, so roaming is futile. After SUSTAINED confirmation, self-exit so the babysitter relaunches:
             // a fresh login re-spawns at the last SAVED position (pre-island, a valid spot), escaping the island.
             // (A dirty exit is deliberate here — a graceful logout would SAVE the island position and re-trap it.)
+            // A persisted disconnected-island position CANNOT self-recover: the char can't walk out (no path)
+            // and can't die to Home Point (mobs can't reach it either), and a relaunch just re-spawns on the
+            // saved island position -> a relaunch loop (login churn) would be WORSE. So after sustained
+            // confirmation, GIVE UP QUIETLY: announce ONCE (needs a GM warp / manual move), then idle without
+            // spamming. This needs a human/GM rescue + points at an off-mesh nav-gating gap that let it path here.
             if (++_walledCount >= 4)
             {
-                XiHeadless.Log.Always($"[FATAL] roam WALLED at ({wp.X:F0},{wp.Z:F0}) zone {p.World.ZoneId} — no reachable point in 450y after {_walledCount} checks (off-mesh island). Exiting for a fresh relaunch.");
-                Environment.Exit(70);
+                if (!_walledGaveUp) { _walledGaveUp = true; XiHeadless.Log.Always($"[STUCK] roam WALLED at ({wp.X:F0},{wp.Z:F0}) zone {p.World.ZoneId} — on a disconnected mesh island (no reachable point in 450y). Cannot self-recover (can't path out, can't die to Home Point). NEEDS a GM warp or manual move; root = an off-mesh nav-gating gap."); }
+                return;   // idle quietly — don't churn or spam
             }
-            XiHeadless.Log.Always($"net-stuck: NO reachable point within 450y — pocket appears walled (check {_walledCount}/4 before self-exit)");
+            XiHeadless.Log.Always($"net-stuck: NO reachable point within 450y — pocket appears walled (check {_walledCount}/4)");
         }
 
         // Discover: /check the nearest unknown mobs so the threat map fills in as we travel. Unknown mobs
