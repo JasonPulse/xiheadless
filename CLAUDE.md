@@ -67,7 +67,7 @@ target snaps back to the bot's own feet and "succeeds" with a zero-length path =
   - **Do NOT "fix" the junk-char behavior in code** — create-on-empty is intentional fleet-deploy behavior, and the
     bot takes ONLY `XIBOT_ACCOUNT`/`PASSWORD`/`brain` — **there is NO character-name env var and we are not to add one.**
     The fix is purely operational: clean 40s logout, and ≥5 min wait after any early end.
-- **Never use GM commands** (the bot). Everything legit/in-game. (User provisioning levels/gear/spells is the user's call.)
+- **AMBIANCE bots never use GM commands.** Everything legit/in-game (farm/AH for items+gil; self-quest job unlocks). The ONE sanctioned exception (user, 2026-07-06): a single dedicated **central GM bot** (`GmBrain`, restricted `gmlevel` 1) that grants ONLY **job unlocks** (`!grantjob`) and **limit-breaks/level-caps** (`!setcap`) — the two things bots can't self-do (Maat at 70) — to fleet bots that request them via the localhost-only `GmIntake` queue (POST {player,kind,value}, port 8089). NEVER items/gil (those stay farmed/AH). All grants are runtime/post-login (no char-creation). The GM-grant endpoint is **localhost-only** — never widen that bind. Server commands live in `xiserver/scripts/commands/{grantjob,setcap}.lua`.
 - **Con is the SOLE arbiter of what to fight — NO mob name allow/block lists** (no goblin-avoid, no Dhalmel/Sylvestre
   allow-list, no NM list). Engage the winnable con band (2–4), **skip ≥5 (too tough) / ≤1 (too weak) BY CON**, and
   **never blacklist a mob because a kill failed** (winnable mobs stay eligible; clear con-skips on level-up). That's
