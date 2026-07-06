@@ -137,7 +137,7 @@ public sealed class Inventory(ISession s) : IInventory
                 await Task.Delay(200, ct);
                 if (!s.State.Inventory.TryGetValue((0, fromSlot), out var nn) || nn != id)
                 {
-                    Console.WriteLine($"[inv] moved item {id} (slot {fromSlot}) -> container {toContainer}");
+                    Log.Info($"[inv] moved item {id} (slot {fromSlot}) -> container {toContainer}");
                     return true;
                 }
             }
@@ -188,7 +188,7 @@ public sealed class Inventory(ISession s) : IInventory
             }
             if (soldIt)
             {
-                sold++; Console.WriteLine($"[inv] SOLD {pid} x{pqty} (slot {pslot}) +{(long)s.State.Gil - gilBefore}g -> gil {s.State.Gil}");
+                sold++; Log.Info($"[inv] SOLD {pid} x{pqty} (slot {pslot}) +{(long)s.State.Gil - gilBefore}g -> gil {s.State.Gil}");
                 continue;
             }
 
@@ -203,8 +203,8 @@ public sealed class Inventory(ISession s) : IInventory
                     dropped = !s.State.Inventory.TryGetValue((pc, pslot), out var nn) || nn != pid;
                 }
             }
-            if (dropped) { sold++; Console.WriteLine($"[inv] dropped {pid} x{pqty} (slot {pslot}) — unsellable junk"); }
-            else { _stuck.Add((pc, pslot)); Console.WriteLine($"[inv] item {pid} (slot {pslot}) won't sell or drop (equipped/locked) — skipping"); }
+            if (dropped) { sold++; Log.Info($"[inv] dropped {pid} x{pqty} (slot {pslot}) — unsellable junk"); }
+            else { _stuck.Add((pc, pslot)); Log.Info($"[inv] item {pid} (slot {pslot}) won't sell or drop (equipped/locked) — skipping"); }
         }
         if (sold == 0)
         {
@@ -216,9 +216,9 @@ public sealed class Inventory(ISession s) : IInventory
                 if (c != 0 || slot == 0 || id == 0) continue;
                 residue.Add($"{slot}:{id}{(keep.Contains(id) ? "K" : _stuck.Contains((c, slot)) ? "S" : "?")}");
             }
-            Console.WriteLine($"[inv] bag residue ({residue.Count}): {string.Join(" ", residue)}");
+            Log.Info($"[inv] bag residue ({residue.Count}): {string.Join(" ", residue)}");
         }
-        Console.WriteLine($"[inv] junk clear done — sold {sold} item(s) for gil");
+        Log.Info($"[inv] junk clear done — sold {sold} item(s) for gil");
         return sold;
     }
 }

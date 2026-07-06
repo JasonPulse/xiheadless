@@ -80,6 +80,6 @@ public sealed class BstBrain(
     async Task Equip(CancellationToken ct)
     {
         var (n, total) = await GearRoutines.EquipByLevel(gear, p, Gear, ct);
-        Console.WriteLine($"[bst] equipped {n}/{total} (job {p.World.MainJob} lvl {p.World.MainJobLevel}, axe={gear.SkillLevel(AxeSkill)})");
+        Log.Info($"[bst] equipped {n}/{total} (job {p.World.MainJob} lvl {p.World.MainJobLevel}, axe={gear.SkillLevel(AxeSkill)})");
     }
 }

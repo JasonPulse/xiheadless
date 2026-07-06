@@ -16,20 +16,20 @@ public sealed class ClearBagBrain(IPerception p, IInventory inv, IShop shop, INa
 
         if (!Game.Zonelines.HasAuctionHouse(zoning.CurrentZone))
         {
-            Console.WriteLine("[clearbag] traveling to an AH zone to buy the test item");
+            Log.Info("[clearbag] traveling to an AH zone to buy the test item");
             await zoning.GoTo("Windurst Woods", ct);
             await Task.Delay(2000, ct);
         }
 
         // Buy a guaranteed-sellable item (Fire Crystal 4096) so there's something to verify selling against.
-        Console.WriteLine("[clearbag] buying a Fire Crystal (4096) as a sellable test item");
+        Log.Info("[clearbag] buying a Fire Crystal (4096) as a sellable test item");
         await ShopRoutines.BuyItem(ah, p, inv, 4096, Keep,
             c => ShopRoutines.SellNearby(shop, nav, zoning, inv, p, Keep, c), ct);
 
-        Console.WriteLine($"[clearbag] before: gil={p.World.Gil}, inventory items={p.World.Inventory.Count}");
+        Log.Info($"[clearbag] before: gil={p.World.Gil}, inventory items={p.World.Inventory.Count}");
         // The whole sell flow in one call — find nearest vendor, travel, open shop, sell all junk.
         int sold = await ShopRoutines.SellNearby(shop, nav, zoning, inv, p, Keep, ct);
-        Console.WriteLine($"[clearbag] after: sold {sold} items, gil={p.World.Gil}, inventory items={p.World.Inventory.Count}");
+        Log.Info($"[clearbag] after: sold {sold} items, gil={p.World.Gil}, inventory items={p.World.Inventory.Count}");
         lifecycle.Logout();
     }
 }

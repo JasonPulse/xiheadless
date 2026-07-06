@@ -12,7 +12,7 @@ public sealed class IdleBrain(IPerception p) : IBrain
         while (!ct.IsCancellationRequested)
         {
             var w = p.World;
-            Console.WriteLine($"[idle] zone={w.ZoneId} pos=({w.X:F0},{w.Y:F0},{w.Z:F0}) event={(w.EventActive ? w.EventId : 0)}");
+            Log.Info($"[idle] zone={w.ZoneId} pos=({w.X:F0},{w.Y:F0},{w.Z:F0}) event={(w.EventActive ? w.EventId : 0)}");
             await Task.Delay(3000, ct);
         }
     }

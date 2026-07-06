@@ -43,7 +43,7 @@ public sealed class Reunion(IPerception p, INavigation nav, IZoning zoning, IPar
     /// out in-zone). The next SplitDetected poll returns true and RunAsync consumes the latch.
     public void Force() => _forced = true;
 
-    void Log(string m) => Console.WriteLine($"[{cfg.Tag}] {m}");
+    void Log(string m) => XiHeadless.Log.Auto($"[{cfg.Tag}] {m}");
 
     PartyMember? Partner => p.World.PartyMembers.TryGetValue(cfg.PartnerId, out var pm) ? pm : null;
 

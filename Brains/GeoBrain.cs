@@ -86,6 +86,6 @@ public sealed class GeoBrain(
         // GEO phases park the Matre Bell in the ranged slot (geomancy focus; the unlock reward).
         (byte slot, ushort item)? phase = p.World.MainJob == Job.Geo ? (EquipSlot.Ranged, MatreBell) : null;
         var (n, total) = await GearRoutines.EquipByLevel(gear, p, Gear, ct, phase);
-        Console.WriteLine($"[geo] equipped {n}/{total} (job {p.World.MainJob} lvl {p.World.MainJobLevel}, club={gear.SkillLevel(ClubSkill)})");
+        Log.Info($"[geo] equipped {n}/{total} (job {p.World.MainJob} lvl {p.World.MainJobLevel}, club={gear.SkillLevel(ClubSkill)})");
     }
 }

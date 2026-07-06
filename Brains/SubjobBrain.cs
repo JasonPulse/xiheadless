@@ -86,7 +86,7 @@ public sealed class SubjobBrain(
         gset.AddRange(WarBrain.Armor.Select(g => (g.slot, (uint)g.item)));
         gset.AddRange(WarBrain.Armor21.Select(g => (g.slot, (uint)g.item)));
         int eq = await gear.EquipSet(gset, ct);
-        Console.WriteLine($"[subjob] equipped {eq}/{gset.Count} gear pieces (lvl {p.World.MainJobLevel})");
+        Log.Info($"[subjob] equipped {eq}/{gset.Count} gear pieces (lvl {p.World.MainJobLevel})");
     }
 
     // The 21/24-bracket shopping list: Neckchopper (lv20 here) + the Beetle set + Spike Necklace (lv21),
@@ -117,7 +117,7 @@ public sealed class SubjobBrain(
         var atk = p.Nearest(e => e.IsMob && e.Hpp > 0
             && p.World.Attackers.TryGetValue(e.Id, out var a) && a.target == WhmId && now - a.ms <= 6000);
         if (atk is null) return false;
-        Console.WriteLine($"[subjob] RESCUE WHM — '{atk.Name}' is on the healer ({p.DistanceTo(atk.X, atk.Z):F0}y) — Provoke-peeling it onto us");
+        Log.Info($"[subjob] RESCUE WHM — '{atk.Name}' is on the healer ({p.DistanceTo(atk.X, atk.Z):F0}y) — Provoke-peeling it onto us");
         for (int t = 0; t < 25 && !combat.Dead && !ct.IsCancellationRequested; t++)
         {
             if (!p.World.Entities.TryGetValue(atk.Id, out var cur) || cur.Hpp == 0) return true;
@@ -126,7 +126,7 @@ public sealed class SubjobBrain(
             await Task.Delay(300, ct);
         }
         if (await combat.UseAbility(Ability.Provoke, atk.Id, ct))
-            Console.WriteLine($"[subjob] Provoke -> peeled '{atk.Name}' off the WHM onto the WAR");
+            Log.Info($"[subjob] Provoke -> peeled '{atk.Name}' off the WHM onto the WAR");
         // FIGHT TO THE DEATH — hate is unshakeable, so a 30%-HP break-off just meant standing there taking
         // hits WITHOUT swinging (a guaranteed death vs a Gambler at 77%). Swinging at least finishes weaker
         // adds; a truly unwinnable one kills us either way and the reunion recovers it.
@@ -137,10 +137,10 @@ public sealed class SubjobBrain(
     public async Task RunAsync(CancellationToken ct)
     {
         await Task.Delay(4000, ct);
-        Console.WriteLine($"[subjob] char='{p.World.MyName}' lvl={p.World.MainJobLevel} dead={combat.Dead} zone={zoning.CurrentZone}");
-        if (p.World.MainJobLevel < 18) { Console.WriteLine("[subjob] need lv18; abort"); lifecycle.Logout(); return; }
+        Log.Info($"[subjob] char='{p.World.MyName}' lvl={p.World.MainJobLevel} dead={combat.Dead} zone={zoning.CurrentZone}");
+        if (p.World.MainJobLevel < 18) { Log.Info("[subjob] need lv18; abort"); lifecycle.Logout(); return; }
 
-        if (combat.Dead) { Console.WriteLine("[subjob] logged in dead — homepointing"); await combat.Homepoint(ct); await Task.Delay(6000, ct); }
+        if (combat.Dead) { Log.Info("[subjob] logged in dead — homepointing"); await combat.Homepoint(ct); await Task.Delay(6000, ct); }
         // Wait for the inventory to stream before ANY bag-derived decision — an early empty read made
         // BracketBuys() think the whole gear set was missing and sent the WAR on a phantom Windurst trip.
         for (int t = 0; t < 40 && !p.World.Inventory.ToArray().Any(kv => kv.Key.container == 0 && kv.Value != 0) && !ct.IsCancellationRequested; t++)
@@ -151,14 +151,14 @@ public sealed class SubjobBrain(
         // the WAR in Buburimu and the WHM in Mhaura), so walking both bots to Mhaura to shake hands burned 5+
         // minutes per launch for nothing. Party up from wherever we logged in; the Reunion protocol owns
         // physical co-location at the grind-zone zone-in.
-        Console.WriteLine("[subjob] waiting for the WHM's party invite (cross-zone, no staging)");
+        Log.Info("[subjob] waiting for the WHM's party invite (cross-zone, no staging)");
         for (int t = 0; t < 180 && party.MemberCount == 0 && !ct.IsCancellationRequested; t++)
         {
             if (party.InvitePending) party.AcceptInvite();
-            if (t % 15 == 0) Console.WriteLine($"[subjob] awaiting party... MemberCount={party.MemberCount} invitePending={party.InvitePending}");
+            if (t % 15 == 0) Log.Info($"[subjob] awaiting party... MemberCount={party.MemberCount} invitePending={party.InvitePending}");
             await Task.Delay(1000, ct);
         }
-        Console.WriteLine($"[subjob] party={party.MemberCount} — proceeding");
+        Log.Info($"[subjob] party={party.MemberCount} — proceeding");
 
         // The subjob-unlock quest ("The Old Lady") is a shared LIFE-GOAL routine — this brain only supplies
         // the farm; SubjobQuest owns quest state + the accept/trade-completion drive (same instance WhmBrain
@@ -238,7 +238,7 @@ public sealed class SubjobBrain(
                     if (p.AttackersOn(p.World.MyId) > 0) return false;
                     if (!good)
                     {
-                        Console.WriteLine("[subjob] tether timeout — forcing a rally to regroup");
+                        Log.Info("[subjob] tether timeout — forcing a rally to regroup");
                         reunion.Force();
                         return false;
                     }
@@ -258,7 +258,7 @@ public sealed class SubjobBrain(
                 SellAtItems = 24,
                 OnKill = _ =>   // per-kill farm telemetry: drop progress visible mid-run, not just at the end
                 {
-                    Console.WriteLine($"[subjob] tally: tail={inv.CountOf(QuestDefs.WildRabbitTail)}/{ItemTarget} cup={inv.CountOf(QuestDefs.CupOfDhalmelSaliva)}/{ItemTarget} robe={inv.CountOf(QuestDefs.BloodyRobe)}/{ItemTarget} lvl={p.World.MainJobLevel}");
+                    Log.Info($"[subjob] tally: tail={inv.CountOf(QuestDefs.WildRabbitTail)}/{ItemTarget} cup={inv.CountOf(QuestDefs.CupOfDhalmelSaliva)}/{ItemTarget} robe={inv.CountOf(QuestDefs.BloodyRobe)}/{ItemTarget} lvl={p.World.MainJobLevel}");
                     return Task.CompletedTask;
                 },
                 // Rest healthier than the solo defaults: the aggro belt between camps and the dropper clusters
@@ -269,14 +269,14 @@ public sealed class SubjobBrain(
                 Tag = "subjob",
             };
             await new LevelGrind(p, nav, combat, zoning, gear, ah, delivery, inv, shop, cfg).RunAsync(ct);
-            Console.WriteLine($"[subjob] farm done: tail={inv.CountOf(QuestDefs.WildRabbitTail)} cup={inv.CountOf(QuestDefs.CupOfDhalmelSaliva)} robe={inv.CountOf(QuestDefs.BloodyRobe)}");
+            Log.Info($"[subjob] farm done: tail={inv.CountOf(QuestDefs.WildRabbitTail)} cup={inv.CountOf(QuestDefs.CupOfDhalmelSaliva)} robe={inv.CountOf(QuestDefs.BloodyRobe)}");
         }
 
         // Drive the quest through the shared SubjobQuest.Advance — the powder-stock + stealth-cross to Mhaura
         // + accept-or-trade-completion sequence lives there ONCE (WhmBrain drives it the same way). No inline
         // copy of the crossing/QuestRunner call here.
         bool ok = await sjq.Advance(ct);
-        Console.WriteLine($"[subjob] flow done (ok={ok}, dead={combat.Dead}, lastEvent={p.World.EventId})");
+        Log.Info($"[subjob] flow done (ok={ok}, dead={combat.Dead}, lastEvent={p.World.EventId})");
         lifecycle.Logout();
     }
 }

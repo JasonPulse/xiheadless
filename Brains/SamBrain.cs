@@ -81,6 +81,6 @@ public sealed class SamBrain(
         // WAR phases keep the proven Great Axe kit (owned already).
         (byte slot, ushort item)? phase = p.World.MainJob == Job.War ? (EquipSlot.Main, WarBrain.Weapon20) : null;
         var (n, total) = await GearRoutines.EquipByLevel(gear, p, Gear, ct, phase, basePieces);
-        Console.WriteLine($"[sam] equipped {n}/{total} (job {p.World.MainJob} lvl {p.World.MainJobLevel}, gkatana={gear.SkillLevel(GreatKatanaSkill)})");
+        Log.Info($"[sam] equipped {n}/{total} (job {p.World.MainJob} lvl {p.World.MainJobLevel}, gkatana={gear.SkillLevel(GreatKatanaSkill)})");
     }
 }

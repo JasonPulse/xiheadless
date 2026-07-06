@@ -8,6 +8,63 @@ using System.Text.Json;
 
 namespace XiHeadless;
 
+/// Runtime-controllable logging facility for the fleet. The fleet runs QUIET by default in production
+/// (XIBOT_LOG=0) to cut log volume, but verbose per-tick/per-action spam can be turned back on either at
+/// launch (XIBOT_LOG env) or LIVE via an in-game /tell to a specific bot (BotHost's tell-toggle) so an
+/// operator can troubleshoot one bot without restarting it.
+///  - Log.Info   = the GATED channel: high-volume hunting/nav/con/event spam. Silent unless Verbose.
+///  - Log.Always = the UNGATED channel: operational milestones + errors the babysitter/monitors grep for.
+public static class Log
+{
+    // Runtime gate. Initialized from XIBOT_LOG: "1"/"on"/"true" => true, "0"/"off"/"false" => false.
+    // DEFAULT when unset = true (preserve today's behavior; the fleet opts INTO quiet via XIBOT_LOG=0).
+    public static volatile bool Verbose = ParseEnv(Environment.GetEnvironmentVariable("XIBOT_LOG"));
+
+    static bool ParseEnv(string? v) => v?.Trim().ToLowerInvariant() switch
+    {
+        "1" or "on" or "true" => true,
+        "0" or "off" or "false" => false,
+        _ => true,   // unset / unrecognized => verbose (today's behavior)
+    };
+
+    /// GATED: high-volume per-tick/per-action spam. Printed only when Verbose.
+    public static void Info(string msg) { if (Verbose) Console.WriteLine(msg); }
+
+    /// UNGATED: operational milestones + errors that monitors/babysitter depend on. Always printed.
+    public static void Always(string msg) => Console.WriteLine(msg);
+
+    // Low-volume operational/error markers the babysitter + level/death monitors + crash-detection grep for.
+    // A line carrying any of these stays UNGATED even in quiet mode (used by Auto, below).
+    static readonly string[] KeepUngated =
+    {
+        "session ended cleanly", "stopping ->", "graceful logout",
+        "LEVEL UP", "[exp] lvl ",
+        "KO'd", "revived at home point", "[death]",
+        "goal met", "goal reached", "grind complete",
+        "seesaw", "subjob set", "nursery done",
+        "[zone] ", "selected char", "[gm] ", "[job] now ",
+        "Exception", "Unhandled", "0xA2", "FATAL", "CRASHED",
+        "[md5-fail]", "[recv-sockerr]", "[zonein-sockerr]",
+        "re-zone FAILED", "[decompress-truncated]",
+    };
+
+    /// Classify then log: milestone/error markers (KeepUngated) go Always; everything else is gated.
+    /// Used by the per-tag Log helpers in Routines/ whose output is MOSTLY per-tick chatter (Info) but
+    /// occasionally an operational milestone (LEVEL UP / goal reached / seesaw) monitors must still see.
+    public static void Auto(string msg)
+    {
+        foreach (var s in KeepUngated) if (msg.Contains(s, StringComparison.Ordinal)) { Always(msg); return; }
+        Info(msg);
+    }
+
+    /// Flip the runtime gate (from the launch env or a live admin /tell). Announced via the ungated channel.
+    public static void SetVerbose(bool on)
+    {
+        Verbose = on;
+        Always($"[log] verbose {(on ? "ON" : "OFF")}");
+    }
+}
+
 /// Offline dev/test subcommands (crypto round-trips, spell resolution, packet decrypt).
 /// Returns an exit code if it handled a dev command, else null.
 public static class Diagnostics

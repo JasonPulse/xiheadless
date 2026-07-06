@@ -21,13 +21,13 @@ public sealed class BazaarBrain(IPerception p, IBazaar bazaar) : IBrain
             // Container 0 = main inventory; skip the gil slot (0 / item 65535) and empty slots.
             if (container != 0 || slot == 0 || itemId is 0 or 0xFFFF) continue;
             bazaar.SetPrice(slot, Price);
-            Console.WriteLine($"[bazaar] price item {itemId} @ inv slot {slot} = {Price} gil");
+            Log.Info($"[bazaar] price item {itemId} @ inv slot {slot} = {Price} gil");
             priced++;
             await Task.Delay(300, ct);
         }
 
         bazaar.Open();   // finish editing -> bazaar visible to buyers (even with 0 priced, this just closes the menu)
-        Console.WriteLine(priced > 0 ? $"[bazaar] opened with {priced} item(s) for sale" : "[bazaar] no sellable items in inventory");
+        Log.Info(priced > 0 ? $"[bazaar] opened with {priced} item(s) for sale" : "[bazaar] no sellable items in inventory");
 
         await Task.Delay(Timeout.Infinite, ct);   // keep the bazaar open
     }

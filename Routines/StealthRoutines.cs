@@ -51,7 +51,7 @@ public static class StealthRoutines
     {
         while (!ct.IsCancellationRequested)
         {
-            if (!HasPowders(inv)) { Console.WriteLine("[stealth] out of powders!"); return; }
+            if (!HasPowders(inv)) { Log.Info("[stealth] out of powders!"); return; }
             await Apply(inv, p, ct);
             try { await Task.Delay(90000, ct); } catch (OperationCanceledException) { return; }
         }

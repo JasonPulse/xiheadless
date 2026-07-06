@@ -21,12 +21,12 @@ public sealed class BotApi : IGilGrant
     {
         if (amount < 1 || amount > 999999999)
         {
-            Console.WriteLine($"[botapi] grant_gil refused: amount {amount} out of range (1..999999999)");
+            Log.Info($"[botapi] grant_gil refused: amount {amount} out of range (1..999999999)");
             return false;
         }
         if (string.IsNullOrEmpty(_baseUrl) || string.IsNullOrEmpty(_token))
         {
-            Console.WriteLine($"[botapi] grant_gil STUB (set XIBOT_API_URL + XIBOT_API_TOKEN to enable): would grant {amount} gil to '{player}' (reason={reason})");
+            Log.Info($"[botapi] grant_gil STUB (set XIBOT_API_URL + XIBOT_API_TOKEN to enable): would grant {amount} gil to '{player}' (reason={reason})");
             return false;
         }
         try
@@ -38,12 +38,12 @@ public sealed class BotApi : IGilGrant
             req.Headers.Add("X-Bot-Token", _token);
             var resp = await _http.SendAsync(req, ct);
             bool ok = resp.StatusCode == HttpStatusCode.Accepted; // 202
-            Console.WriteLine($"[botapi] grant_gil '{player}' +{amount} (reason={reason}) -> {(int)resp.StatusCode} {(ok ? "queued" : resp.ReasonPhrase)}");
+            Log.Info($"[botapi] grant_gil '{player}' +{amount} (reason={reason}) -> {(int)resp.StatusCode} {(ok ? "queued" : resp.ReasonPhrase)}");
             return ok;
         }
         catch (Exception e)
         {
-            Console.WriteLine($"[botapi] grant_gil '{player}' +{amount} FAILED: {e.Message}");
+            Log.Info($"[botapi] grant_gil '{player}' +{amount} FAILED: {e.Message}");
             return false;
         }
     }

@@ -73,6 +73,6 @@ public sealed class SmnBrain(
     async Task Equip(CancellationToken ct)
     {
         var (n, total) = await GearRoutines.EquipByLevel(gear, p, Gear, ct);
-        Console.WriteLine($"[smn] equipped {n}/{total} (job {p.World.MainJob} lvl {p.World.MainJobLevel}, club={gear.SkillLevel(ClubSkill)})");
+        Log.Info($"[smn] equipped {n}/{total} (job {p.World.MainJob} lvl {p.World.MainJobLevel}, club={gear.SkillLevel(ClubSkill)})");
     }
 }

@@ -32,10 +32,10 @@ public sealed class Gear(ISession s, IInventory inv) : IGear
         ushort slot = inv.SlotOf((ushort)itemId);   // container 0 (main inventory) only — that's what EQUIP_SET reads
         if (slot == 0)
         {
-            Console.WriteLine($"[gear] item {itemId} not in inventory");
+            Log.Info($"[gear] item {itemId} not in inventory");
             return false;
         }
-        Console.WriteLine($"[gear] equip item {itemId} (container 0 slot {slot}) -> equip slot {equipSlot}");
+        Log.Info($"[gear] equip item {itemId} (container 0 slot {slot}) -> equip slot {equipSlot}");
         s.Enqueue(EquipPacket.Build((byte)slot, equipSlot, 0));
         await Task.Delay(800, ct);
         return true;

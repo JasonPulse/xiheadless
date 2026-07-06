@@ -33,10 +33,10 @@ public sealed class TradeNpc(ISession s) : ITradeNpc
             byte? slot = null;
             foreach (var ((container, s2), id) in s.State.Inventory)
                 if (container == 0 && id == itemId) { slot = s2; break; }
-            if (slot is null) { Console.WriteLine($"[trade] item {itemId} not in inventory — abort"); return Task.FromResult(false); }
+            if (slot is null) { Log.Info($"[trade] item {itemId} not in inventory — abort"); return Task.FromResult(false); }
             slots.Add((slot.Value, qty));
         }
-        Console.WriteLine($"[trade] {items.Count} item(s) -> npc 0x{npcId:X} idx={npcIndex}");
+        Log.Info($"[trade] {items.Count} item(s) -> npc 0x{npcId:X} idx={npcIndex}");
         s.Enqueue(TradePacket.Build(npcId, npcIndex, slots));
         return Task.FromResult(true);
     }

@@ -79,6 +79,6 @@ public sealed class BrdBrain(
         // WHM phases can't hold BRD daggers — swing the wand instead.
         (byte slot, ushort item)? phase = p.World.MainJob == Job.Whm ? (EquipSlot.Main, MapleWand) : null;
         var (n, total) = await GearRoutines.EquipByLevel(gear, p, Gear, ct, phase);
-        Console.WriteLine($"[brd] equipped {n}/{total} (job {p.World.MainJob} lvl {p.World.MainJobLevel}, dagger={gear.SkillLevel(DaggerSkill)})");
+        Log.Info($"[brd] equipped {n}/{total} (job {p.World.MainJob} lvl {p.World.MainJobLevel}, dagger={gear.SkillLevel(DaggerSkill)})");
     }
 }

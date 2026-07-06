@@ -21,20 +21,20 @@ public sealed class PartyLeechBrain(
     public async Task RunAsync(CancellationToken ct)
     {
         await Task.Delay(4000, ct);
-        Console.WriteLine($"[leech] char='{p.World.MyName}' lvl={p.World.MainJobLevel} zone={zoning.CurrentZone}");
+        Log.Info($"[leech] char='{p.World.MyName}' lvl={p.World.MainJobLevel} zone={zoning.CurrentZone}");
 
         // Stock Sneak/Invis powders ONLY if we're already standing at an AH (don't detour — the only AH is across
         // the very crossing we'd need them for). Maintain keeps them up across the session, so buy a full dozen.
         if ((inv.CountOf(StealthRoutines.SilentOil) < 12 || inv.CountOf(StealthRoutines.PrismPowder) < 12) && Game.Zonelines.HasAuctionHouse(zoning.CurrentZone))
         {
             await StealthRoutines.EnsureStock(ah, p, inv, 12, Keep, ShopRoutines.NoFree, ct);
-            Console.WriteLine($"[leech] powders: oil={inv.CountOf(StealthRoutines.SilentOil)} prism={inv.CountOf(StealthRoutines.PrismPowder)}");
+            Log.Info($"[leech] powders: oil={inv.CountOf(StealthRoutines.SilentOil)} prism={inv.CountOf(StealthRoutines.PrismPowder)}");
         }
 
         // SPELL-KNOWLEDGE DIAGNOSTIC: the user GM-granted ALL spells 3 days ago, yet Paralyze never casts —
         // so either the 0x0AA bitmap doesn't carry the bit or our decode is off. Print the ground truth once.
-        Console.WriteLine($"[leech] spells known: Cure={magic.Known(Spell.Cure)} CureII={magic.Known(Spell.CureII)} CureIII={magic.Known(Spell.CureIII)} Dia={magic.Known(Spell.Dia)} Paralyze={magic.Known(Spell.Paralyze)} Protect={magic.Known(Spell.Protect)}");
-        Console.WriteLine($"[leech] spell bitmap[0..16]: {Convert.ToHexString(p.World.KnownSpellBits.Take(16).ToArray())} (len={p.World.KnownSpellBits.Length})");
+        Log.Info($"[leech] spells known: Cure={magic.Known(Spell.Cure)} CureII={magic.Known(Spell.CureII)} CureIII={magic.Known(Spell.CureIII)} Dia={magic.Known(Spell.Dia)} Paralyze={magic.Known(Spell.Paralyze)} Protect={magic.Known(Spell.Protect)}");
+        Log.Info($"[leech] spell bitmap[0..16]: {Convert.ToHexString(p.World.KnownSpellBits.Take(16).ToArray())} (len={p.World.KnownSpellBits.Length})");
 
         // LEARN PARALYZE the moment we possess the scroll (a GM-provisioned one is learned automatically at
         // login; we also buy it whenever we happen to be at an AH). PartySupport's enfeeble cascade casts it
@@ -49,17 +49,17 @@ public sealed class PartyLeechBrain(
         // NO TOWN STAGING — the char-id invite lands CROSS-ZONE (proven live), so invite immediately from
         // wherever we logged in. The Reunion protocol co-locates the duo at the grind-zone zone-in afterward.
         var stealthCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        Console.WriteLine($"[leech] inviting WAR id={WarId} (cross-zone, no staging)");
+        Log.Info($"[leech] inviting WAR id={WarId} (cross-zone, no staging)");
         for (int t = 0; t < 300 && party.MemberCount == 0 && !ct.IsCancellationRequested; t++)
         {
             if (t % 3 == 0) party.Invite(WarId);
-            if (t % 15 == 0) Console.WriteLine($"[leech] awaiting party... MemberCount={party.MemberCount}");
+            if (t % 15 == 0) Log.Info($"[leech] awaiting party... MemberCount={party.MemberCount}");
             await Task.Delay(1000, ct);
         }
         // NO solo crossing: zone entry belongs to the Reunion protocol (the WAR's grind loop forces a rally
         // and both bots cross together from the crystal). We just hand off to the support loop; its Reunion
         // check answers the WAR's RALLY.
-        Console.WriteLine($"[leech] party={party.MemberCount} — handing off to PartySupport (Reunion owns the {GrindZone} entry)");
+        Log.Info($"[leech] party={party.MemberCount} — handing off to PartySupport (Reunion owns the {GrindZone} entry)");
 
         // ITEM REPORTER: the quest items are Rare/EX — the WAR can never see this bag, so broadcast our
         // tally over party chat ("SJITEMS tail cup robe", cross-zone) every ~90s. The WAR's farm-done
@@ -74,7 +74,7 @@ public sealed class PartyLeechBrain(
                     // Each step individually guarded: ONE exception in the bag chain silently killed this
                     // whole task (reporter went dark; the WAR farmed blind with whm:no-report for a session).
                     try { chat.Party($"SJITEMS {inv.CountOf(QuestDefs.WildRabbitTail)} {inv.CountOf(QuestDefs.CupOfDhalmelSaliva)} {inv.CountOf(QuestDefs.BloodyRobe)}"); }
-                    catch (Exception e) { Console.WriteLine($"[leech] reporter send failed: {e.Message}"); }
+                    catch (Exception e) { Log.Info($"[leech] reporter send failed: {e.Message}"); }
                     // BAG MAINTENANCE (every ~4.5 min): this brain had NONE — days of pool-junk lot shares
                     // filled the 30 slots and Rare/EX pool drops (the WHM's own TAIL/ROBE!) bounce off a
                     // full bag exactly like the WAR's cup did. Sell junk in place + stash surplus seals.
@@ -87,7 +87,7 @@ public sealed class PartyLeechBrain(
                             await inv.SellAllJunk(Keep, ct);
                         }
                         catch (OperationCanceledException) { throw; }
-                        catch (Exception e) { Console.WriteLine($"[leech] bag maintenance failed (retrying next cycle): {e.Message}"); }
+                        catch (Exception e) { Log.Info($"[leech] bag maintenance failed (retrying next cycle): {e.Message}"); }
                     }
                     await Task.Delay(90_000, ct);
                 }

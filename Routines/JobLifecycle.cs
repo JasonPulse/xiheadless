@@ -99,7 +99,7 @@ public sealed class JobLifecycle(
         { "NON","WAR","MNK","WHM","BLM","RDM","THF","PLD","DRK","BST","BRD","RNG","SAM","NIN","DRG","SMN","BLU","COR","PUP","DNC","SCH","GEO","RUN" };
     static string JN(byte j) => j < JobNames.Length ? JobNames[j] : j.ToString();
 
-    void Log(string m) => Console.WriteLine($"[{cfg.Tag}] {m}");
+    void Log(string m) => XiHeadless.Log.Auto($"[{cfg.Tag}] {m}");
     int LevelOf(byte job) => p.World.JobLevels.TryGetValue(job, out var l) ? l : 0;
     byte SubFor(byte job) => job == cfg.MainJob ? cfg.SubJob : (byte)0;   // sub set only when leveling the main
 

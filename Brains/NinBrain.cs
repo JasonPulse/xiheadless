@@ -79,6 +79,6 @@ public sealed class NinBrain(
     {
         (byte slot, ushort item)? phase = p.World.MainJob == Job.War ? (EquipSlot.Main, WarBrain.Weapon20) : null;
         var (n, total) = await GearRoutines.EquipByLevel(gear, p, Gear, ct, phase);
-        Console.WriteLine($"[nin] equipped {n}/{total} (job {p.World.MainJob} lvl {p.World.MainJobLevel}, katana={gear.SkillLevel(KatanaSkill)})");
+        Log.Info($"[nin] equipped {n}/{total} (job {p.World.MainJob} lvl {p.World.MainJobLevel}, katana={gear.SkillLevel(KatanaSkill)})");
     }
 }

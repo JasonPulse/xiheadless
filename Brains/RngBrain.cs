@@ -86,6 +86,6 @@ public sealed class RngBrain(
     {
         (byte slot, ushort item)? phase = p.World.MainJob == Job.War ? (EquipSlot.Main, WarBrain.Weapon20) : null;
         var (n, total) = await GearRoutines.EquipByLevel(gear, p, Gear, ct, phase);
-        Console.WriteLine($"[rng] equipped {n}/{total} (job {p.World.MainJob} lvl {p.World.MainJobLevel}, axe={gear.SkillLevel(AxeSkill)} archery={gear.SkillLevel(ArcherySkill)})");
+        Log.Info($"[rng] equipped {n}/{total} (job {p.World.MainJob} lvl {p.World.MainJobLevel}, axe={gear.SkillLevel(AxeSkill)} archery={gear.SkillLevel(ArcherySkill)})");
     }
 }

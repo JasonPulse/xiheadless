@@ -11,28 +11,28 @@ public sealed class PldTestBrain(IPerception p, IZoning zoning, IJobChange jobs,
     public async Task RunAsync(CancellationToken ct)
     {
         await Task.Delay(4000, ct);
-        Console.WriteLine($"[pldtest] start: char='{p.World.MyName}' job={p.World.MainJob}/{p.World.SubJob} lvl={p.World.MainJobLevel}");
+        Log.Info($"[pldtest] start: char='{p.World.MyName}' job={p.World.MainJob}/{p.World.SubJob} lvl={p.World.MainJobLevel}");
 
         // v2 (07-05): the Mhaura street-moogle attempt was a WRONG-CHANNEL refusal — this server applies
         // job changes only INSIDE the Mog House (proven by the WHM/BLM set). Route home and enter the MH.
         if (zoning.CurrentZone != 241)
         {
-            Console.WriteLine("[pldtest] routing to Windurst Woods");
-            if (!await zoning.GoTo("Windurst_Woods", ct)) { Console.WriteLine("[pldtest] FAILED to reach Windurst — aborting"); lifecycle.Logout(); return; }
+            Log.Info("[pldtest] routing to Windurst Woods");
+            if (!await zoning.GoTo("Windurst_Woods", ct)) { Log.Info("[pldtest] FAILED to reach Windurst — aborting"); lifecycle.Logout(); return; }
         }
 
-        Console.WriteLine("[pldtest] requesting main job = PLD (advanced job, unlock quest NOT done)");
+        Log.Info("[pldtest] requesting main job = PLD (advanced job, unlock quest NOT done)");
         bool accepted = await jobs.ChangeJob(Job.Pld, 0, ct);
-        Console.WriteLine(accepted
+        Log.Info(accepted
             ? $"[pldtest] RESULT: ACCEPTED — server allows advanced jobs by packet (now {p.World.MainJob}/{p.World.SubJob} lvl {p.World.MainJobLevel})"
             : "[pldtest] RESULT: REFUSED — advanced jobs appear quest-gated server-side");
 
         if (p.World.MainJob != Job.War)
         {
-            Console.WriteLine("[pldtest] restoring WAR main");
+            Log.Info("[pldtest] restoring WAR main");
             await jobs.ChangeJob(Job.War, 0, ct);
         }
-        Console.WriteLine($"[pldtest] done: job={p.World.MainJob}/{p.World.SubJob} lvl={p.World.MainJobLevel} — logging out");
+        Log.Info($"[pldtest] done: job={p.World.MainJob}/{p.World.SubJob} lvl={p.World.MainJobLevel} — logging out");
         lifecycle.Logout();
     }
 }

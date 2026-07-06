@@ -83,6 +83,6 @@ public sealed class DrgBrain(
         // WAR phases keep the proven Great Axe kit (owned already).
         (byte slot, ushort item)? phase = p.World.MainJob == Job.War ? (EquipSlot.Main, WarBrain.Weapon20) : null;
         var (n, total) = await GearRoutines.EquipByLevel(gear, p, Gear, ct, phase, basePieces);
-        Console.WriteLine($"[drg] equipped {n}/{total} (job {p.World.MainJob} lvl {p.World.MainJobLevel}, polearm={gear.SkillLevel(PolearmSkill)})");
+        Log.Info($"[drg] equipped {n}/{total} (job {p.World.MainJob} lvl {p.World.MainJobLevel}, polearm={gear.SkillLevel(PolearmSkill)})");
     }
 }

@@ -33,7 +33,7 @@ public static class BotHost
             }
             catch (Exception ex) when (attempt < 6 && (ex is System.Net.Sockets.SocketException || ex is System.IO.IOException || ex.InnerException is System.Net.Sockets.SocketException))
             {
-                Console.WriteLine($"[lobby] connect attempt {attempt} failed ({ex.GetType().Name}: {ex.Message}) — retrying in 3s");
+                Log.Info($"[lobby] connect attempt {attempt} failed ({ex.GetType().Name}: {ex.Message}) — retrying in 3s");
                 await Task.Delay(3000);
             }
         }
@@ -57,9 +57,9 @@ public static class BotHost
         using var onTerm = PosixSignalRegistration.Create(PosixSignal.SIGTERM, c => { c.Cancel = true; stop.Set(); });
         using var onInt = PosixSignalRegistration.Create(PosixSignal.SIGINT, c => { c.Cancel = true; stop.Set(); });
 
-        Console.WriteLine("zoning in...");
+        Log.Info("zoning in...");
         bool zoned = conn.ZoneInSync();
-        Console.WriteLine(zoned ? $"IN ZONE: {conn.State}" : "did not receive zone-in");
+        Log.Info(zoned ? $"IN ZONE: {conn.State}" : "did not receive zone-in");
         conn.Start();
 
         // onLogout = the same stop signal SIGTERM uses, so a brain can end its own session (ILifecycle).
@@ -78,6 +78,7 @@ public static class BotHost
         var autoEvents = AutoCompleteEvents(caps, autoCts.Token);
         var autoParty = AutoAcceptParty(caps, autoCts.Token);
         var autoDeath = AutoHandleDeath(caps, autoCts.Token);   // CORE: any death -> Home Point (every brain)
+        var adminLog = AdminLogToggle(caps, autoCts.Token);     // CORE: admin /tell flips verbose logging live
 
         // New-char home point (CORE setup): a freshly-created char lands in its start city and that zone's
         // onZoneIn starts an opening cutscene whose finish calls setHomePoint(). We can't SEE that event
@@ -87,31 +88,31 @@ public static class BotHost
         if (Game.NewCharCutscene.EventFor(conn.State.ZoneId) is int csEv and >= 0)
         {
             await Task.Delay(2000);
-            Console.WriteLine($"[newchar] blind-finishing start-city cutscene {csEv} in zone {conn.State.ZoneId} -> setHomePoint");
+            Log.Info($"[newchar] blind-finishing start-city cutscene {csEv} in zone {conn.State.ZoneId} -> setHomePoint");
             await caps.Events.Finish(conn.State.MyId, 0, (ushort)csEv, 0);
         }
 
         var brain = BrainRegistry.Create(brainName, caps);
-        Console.WriteLine($"running brain: {brain.GetType().Name}");
+        Log.Info($"running brain: {brain.GetType().Name}");
         var runner = new BotRunner(brain);
         runner.Start();
 
         // Run until a stop signal — bounded by runSeconds for dev (logging state each tick), or
         // indefinitely for the fleet. stop.Wait returns true the moment a signal arrives.
         if (runSeconds is int sec)
-            for (int i = 0; i < sec && !stop.Wait(1000); i++) Console.WriteLine($"  state: {conn.State}");
+            for (int i = 0; i < sec && !stop.Wait(1000); i++) Log.Info($"  state: {conn.State}");
         else
             stop.Wait();
 
         // Graceful shutdown: stop the brain first (so it isn't acting mid-logout), then clean-logout.
-        Console.WriteLine("stopping -> cancel brain + graceful logout");
+        Log.Always("stopping -> cancel brain + graceful logout");
         runner.Stop();
         autoCts.Cancel();   // stop the event auto-completer so it isn't finishing events mid-logout
         // Never log out while KO'd — a dead logout re-strands the char in zone-0 limbo on next login.
         // Revive at the home point first (home point must be set; see EnsureNewCharSetup).
         if (caps.Combat.Dead)
         {
-            Console.WriteLine("stopping while KO'd -> homepoint-revive before logout");
+            Log.Always("stopping while KO'd -> homepoint-revive before logout");
             caps.Combat.Homepoint().GetAwaiter().GetResult();
             Thread.Sleep(8000);   // let the warp/revive land before we log out
         }
@@ -126,14 +127,14 @@ public static class BotHost
             {
                 float dx = st.X - near.X, dz = st.Z - near.Z;
                 float len = MathF.Max(0.5f, MathF.Sqrt(dx * dx + dz * dz));
-                Console.WriteLine($"stopping near '{near.Name}' ({caps.Perception.DistanceTo(near.X, near.Z):F0}y) -> retreating before the logout hold");
+                Log.Info($"stopping near '{near.Name}' ({caps.Perception.DistanceTo(near.X, near.Z):F0}y) -> retreating before the logout hold");
                 caps.Nav.MoveTo(st.X + dx / len * 35f, st.Z + dz / len * 35f);
                 for (int t = 0; t < 12000 && caps.Nav.IsMoving; t += 400) Thread.Sleep(400);
                 caps.Nav.Stop();
             }
         }
         conn.Stop();   // sends 0x0E7 and holds ~40s for the server to complete the logout
-        Console.WriteLine("session ended cleanly.");
+        Log.Always("session ended cleanly.");
         return 0;
     }
 
@@ -155,7 +156,7 @@ public static class BotHost
                 await Task.Delay(1000, ct);
                 if (caps.Party.InvitePending)
                 {
-                    Console.WriteLine($"[auto-party] invite from '{caps.Party.InviterName}' -> accepting");
+                    Log.Info($"[auto-party] invite from '{caps.Party.InviterName}' -> accepting");
                     caps.Party.AcceptInvite();
                     await Task.Delay(2000, ct);
                 }
@@ -183,14 +184,45 @@ public static class BotHost
                 await Task.Delay(2000, ct);
                 if (!caps.Combat.Dead) continue;
                 caps.Nav.Stop();
-                Console.WriteLine("[death] KO'd -> Home Point (core death handler)");
+                Log.Always("[death] KO'd -> Home Point (core death handler)");
                 while (caps.Combat.Dead && !ct.IsCancellationRequested)
                 {
                     await caps.Combat.Homepoint(ct);
                     await Task.Delay(8000, ct);
                 }
                 caps.Perception.World.RevivedMs = caps.Perception.World.NowMs;   // starts the weakness hold (no new pulls)
-                Console.WriteLine("[death] revived at home point");
+                Log.Always("[death] revived at home point");
+            }
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    // CORE runtime log toggle (every brain, no per-brain code): the fleet runs QUIET in production
+    // (XIBOT_LOG=0), but an operator can turn a SINGLE bot verbose live — without restarting it — by
+    // sending it an in-game /tell "log on" (or "debug on"/"verbose on"; "log off" to re-quiet). Only a tell
+    // from the env-configured admin (XIBOT_ADMIN) is honored — the tell's sender is authoritative, so no one
+    // else can flip logging. If XIBOT_ADMIN is unset the toggle is DISABLED (no sender is trusted). Reuses the
+    // already-parsed WorldState.Tells + IChat (like GmBrain) — no new chat parsing.
+    static async Task AdminLogToggle(CapabilitySet caps, CancellationToken ct)
+    {
+        var admin = Environment.GetEnvironmentVariable("XIBOT_ADMIN");
+        if (string.IsNullOrWhiteSpace(admin)) return;   // no trusted sender configured -> toggle disabled
+        var w = caps.Perception.World;
+        long lastMs = long.MinValue;   // last admin tell timestamp we've acted on (act once per new tell)
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                await Task.Delay(1000, ct);
+                if (!w.Tells.TryGetValue(admin, out var tell) || tell.ms <= lastMs) continue;
+                lastMs = tell.ms;
+                var m = tell.msg.Trim().ToLowerInvariant();
+                bool? on = m is "log on" or "debug on" or "verbose on" ? true
+                         : m is "log off" or "debug off" or "verbose off" ? false
+                         : (bool?)null;
+                if (on is not bool set) continue;   // not a log command — ignore
+                Log.SetVerbose(set);
+                caps.Chat.Tell(admin, $"verbose logging {(set ? "ON" : "OFF")}");
             }
         }
         catch (OperationCanceledException) { }
@@ -226,7 +258,7 @@ public static class BotHost
                 // no-op. Every cutscene/menu/level-up/mission/ROV/proximity-gate CS clears through this one path.
                 if (w.EventId != 0)
                 {
-                    Console.WriteLine($"[auto-event] event {w.EventId} lingered (status={w.ServerStatus}) with no brain action -> auto-finishing by parsed id");
+                    Log.Info($"[auto-event] event {w.EventId} lingered (status={w.ServerStatus}) with no brain action -> auto-finishing by parsed id");
                     await caps.Events.FinishEvent(0, ct);   // FinishEvent(selection) ends st.EventId
                 }
                 else
@@ -238,7 +270,7 @@ public static class BotHost
                     // (Game/NewCharCutscene) so the home point gets set. If this line fires OUTSIDE that
                     // startup window, the reception gap has widened -> fix 0x32/0x34 RECEPTION (do NOT
                     // reintroduce a hardcoded end-list; that's the anti-pattern this replaced).
-                    Console.WriteLine($"[auto-event] stuck in-event (status={w.ServerStatus}) but no event id ever parsed (0x32/0x34 lost in login window) -> see NewCharCutscene startup handler; nothing to end generically");
+                    Log.Info($"[auto-event] stuck in-event (status={w.ServerStatus}) but no event id ever parsed (0x32/0x34 lost in login window) -> see NewCharCutscene startup handler; nothing to end generically");
                 }
                 activeSince = DateTime.MaxValue;
             }
@@ -252,8 +284,8 @@ public static class BotHost
                   ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Code/Lua/personal/temp/server/navmeshes");
         var name = Game.Zonelines.Name(zoneId);
         var path = Path.Combine(dir, name + ".nav");
-        if (!File.Exists(path)) { Console.WriteLine($"navmesh not found for zone {zoneId} ({name}): {path}"); return null; }
-        Console.WriteLine($"loaded navmesh {name}.nav for zone {zoneId}");
+        if (!File.Exists(path)) { Log.Info($"navmesh not found for zone {zoneId} ({name}): {path}"); return null; }
+        Log.Info($"loaded navmesh {name}.nav for zone {zoneId}");
         return NavMesh.Load(path);
     }
 
@@ -262,7 +294,7 @@ public static class BotHost
     {
         var client = await ConnectLobby(account, password);
         client.DeleteAllChars();
-        Console.WriteLine("cleanup done.");
+        Log.Info("cleanup done.");
         return 0;
     }
 
@@ -272,7 +304,7 @@ public static class BotHost
     {
         var client = await ConnectLobby(account, password);
         client.CreateChar(job, nation);   // generates a name, creates, verifies by re-selecting; throws on failure
-        Console.WriteLine($"provision: character created (job={job} nation={nation}; now in the account's char-list).");
+        Log.Info($"provision: character created (job={job} nation={nation}; now in the account's char-list).");
         return 0;
     }
 }

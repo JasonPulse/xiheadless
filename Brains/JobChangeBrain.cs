@@ -12,21 +12,21 @@ public sealed class JobChangeBrain(IPerception p, IJobChange jobs, ILifecycle li
     public async Task RunAsync(CancellationToken ct)
     {
         await Task.Delay(4000, ct);   // let job/zone state stream in
-        Console.WriteLine($"[jobchange] char='{p.World.MyName}' job={p.World.MainJob}/{p.World.SubJob} zone={p.World.ZoneId}");
+        Log.Info($"[jobchange] char='{p.World.MyName}' job={p.World.MainJob}/{p.World.SubJob} zone={p.World.ZoneId}");
 
         // EMPIRICAL server behavior: street-side moogle-menu job changes are silently dropped (Mhaura
         // attempts failed despite MISC_MOGMENU) — every confirmed change happened INSIDE the Mog House.
         // Route home and enter the MH explicitly before asking.
         if (zoning.CurrentZone != 241)
         {
-            Console.WriteLine("[jobchange] routing to Windurst Woods for the Mog House");
+            Log.Info("[jobchange] routing to Windurst Woods for the Mog House");
             await zoning.GoTo("Windurst_Woods", ct);
         }
-        if (!await delivery.EnterMogHouse(ct)) { Console.WriteLine("[jobchange] couldn't enter the Mog House — aborting"); lifecycle.Logout(); return; }
+        if (!await delivery.EnterMogHouse(ct)) { Log.Info("[jobchange] couldn't enter the Mog House — aborting"); lifecycle.Logout(); return; }
 
         bool ok = await jobs.ChangeJob(TargetMain, TargetSub, ct);
         await delivery.ExitMogHouse(ct);
-        Console.WriteLine($"[jobchange] {(ok ? "OK" : "FAILED")} -> now {p.World.MainJob}/{p.World.SubJob}");
+        Log.Info($"[jobchange] {(ok ? "OK" : "FAILED")} -> now {p.World.MainJob}/{p.World.SubJob}");
 
         lifecycle.Logout();
     }

@@ -16,8 +16,8 @@ public sealed class QuestRunner(
         for (int i = 0; i < steps.Count && !ct.IsCancellationRequested; i++)
         {
             var step = steps[i];
-            Console.WriteLine($"[{tag}] step {i + 1}/{steps.Count} [{step.Kind}]: {step.Label}");
-            if (!await Do(step, tag, ct)) { Console.WriteLine($"[{tag}] step failed — stopping"); return false; }
+            Log.Info($"[{tag}] step {i + 1}/{steps.Count} [{step.Kind}]: {step.Label}");
+            if (!await Do(step, tag, ct)) { Log.Info($"[{tag}] step failed — stopping"); return false; }
             await Task.Delay(1200, ct);
         }
         return true;
@@ -37,7 +37,7 @@ public sealed class QuestRunner(
 
     async Task<bool> EnsureZone(string zone, string tag, CancellationToken ct)
     {
-        if (Game.Zonelines.Resolve(zone) is not ushort id) { Console.WriteLine($"[{tag}] unknown zone '{zone}'"); return false; }
+        if (Game.Zonelines.Resolve(zone) is not ushort id) { Log.Info($"[{tag}] unknown zone '{zone}'"); return false; }
         if (zoning.CurrentZone == id) return true;
         return await zoning.GoTo(zone, ct);
     }
@@ -57,7 +57,7 @@ public sealed class QuestRunner(
         }
         if (p.DistanceTo(step.X, step.Z) > 12f)
         {
-            Console.WriteLine($"[{tag}] couldn't reach step coords ({step.X:F0},{step.Z:F0}) — stopped {p.DistanceTo(step.X, step.Z):F0}y away");
+            Log.Info($"[{tag}] couldn't reach step coords ({step.X:F0},{step.Z:F0}) — stopped {p.DistanceTo(step.X, step.Z):F0}y away");
             return default;
         }
         // Just-arrived NPC entities often haven't sent their position update yet (they read as (0,0) until
@@ -81,9 +81,9 @@ public sealed class QuestRunner(
             }
             if (npc is null)
             {
-                Console.WriteLine($"[{tag}] no entity within 6y of ({step.X:F0},{step.Z:F0}); nearest:");
+                Log.Info($"[{tag}] no entity within 6y of ({step.X:F0},{step.Z:F0}); nearest:");
                 foreach (var e in p.World.Entities.Values.OrderBy(e => (e.X - step.X) * (e.X - step.X) + (e.Z - step.Z) * (e.Z - step.Z)).Take(6))
-                    Console.WriteLine($"[{tag}]   0x{e.Id:X} '{e.Name}' ({e.X:F0},{e.Z:F0}) mob={e.IsMob} typed={e.TypeKnown} alleg={e.Allegiance}");
+                    Log.Info($"[{tag}]   0x{e.Id:X} '{e.Name}' ({e.X:F0},{e.Z:F0}) mob={e.IsMob} typed={e.TypeKnown} alleg={e.Allegiance}");
                 return default;
             }
             // VERTICAL-LAYER correction: Ordelle's pool sits UNDER a walkable overhang — the planar walk
@@ -98,12 +98,12 @@ public sealed class QuestRunner(
             }
             if (MathF.Abs(p.World.Y - npc.Y) > 5f || p.DistanceTo(npc.X, npc.Z) > 6f)
             {
-                Console.WriteLine($"[{tag}] WRONG LEVEL/RANGE: me ({p.World.X:F0},{p.World.Y:F0},{p.World.Z:F0}) vs object ({npc.X:F0},{npc.Y:F0},{npc.Z:F0}) — failing step honestly");
+                Log.Info($"[{tag}] WRONG LEVEL/RANGE: me ({p.World.X:F0},{p.World.Y:F0},{p.World.Z:F0}) vs object ({npc.X:F0},{npc.Y:F0},{npc.Z:F0}) — failing step honestly");
                 return default;
             }
             nav.Face(npc.Id);
             await Task.Delay(1500, ct);
-            Console.WriteLine($"[{tag}] at object 0x{npc.Id:X} '{npc.Name}' ({p.DistanceTo(npc.X, npc.Z):F1}y, dY={MathF.Abs(p.World.Y - npc.Y):F1}) idx={npc.Index}");
+            Log.Info($"[{tag}] at object 0x{npc.Id:X} '{npc.Name}' ({p.DistanceTo(npc.X, npc.Z):F1}y, dY={MathF.Abs(p.World.Y - npc.Y):F1}) idx={npc.Index}");
             return new NpcArrival(npc.Id, npc.Index, true);
         }
         for (int t = 0; t < 10000 && npc is null && !ct.IsCancellationRequested; t += 500)
@@ -121,7 +121,7 @@ public sealed class QuestRunner(
             var near = p.Nearest(e => e.Id != p.World.MyId && e.Name.Length > 0 && p.DistanceTo(e.X, e.Z) <= 30f);
             if (near is not null)
             {
-                Console.WriteLine($"[{tag}] '{near.Name}' visible at {p.DistanceTo(near.X, near.Z):F0}y — approaching directly");
+                Log.Info($"[{tag}] '{near.Name}' visible at {p.DistanceTo(near.X, near.Z):F0}y — approaching directly");
                 nav.MoveTo(near.X, near.Z);
                 for (int t = 0; t < 20000 && nav.IsMoving && !ct.IsCancellationRequested; t += 200) await Task.Delay(200, ct);
                 nav.Stop();
@@ -131,16 +131,16 @@ public sealed class QuestRunner(
         }
         if (npc is null)
         {
-            Console.WriteLine($"[{tag}] no NPC/object in reach at ({step.X:F0},{step.Z:F0}) after wait. {p.World.Entities.Count} entities; nearest:");
+            Log.Info($"[{tag}] no NPC/object in reach at ({step.X:F0},{step.Z:F0}) after wait. {p.World.Entities.Count} entities; nearest:");
             foreach (var e in p.World.Entities.Values.OrderBy(e => p.DistanceTo(e.X, e.Z)).Take(6))
-                Console.WriteLine($"[{tag}]   0x{e.Id:X} '{e.Name}' ({e.X:F0},{e.Z:F0}) d={p.DistanceTo(e.X, e.Z):F0} mob={e.IsMob} typed={e.TypeKnown} alleg={e.Allegiance}");
+                Log.Info($"[{tag}]   0x{e.Id:X} '{e.Name}' ({e.X:F0},{e.Z:F0}) d={p.DistanceTo(e.X, e.Z):F0} mob={e.IsMob} typed={e.TypeKnown} alleg={e.Allegiance}");
             return default;
         }
         // Face the NPC and settle a moment: the server triggers Talk by ActIndex with a distance<=6y check
         // against OUR position, so make sure it has our final (arrived) position + heading before we Talk.
         nav.Face(npc.Id);
         await Task.Delay(2500, ct);
-        Console.WriteLine($"[{tag}] at NPC 0x{npc.Id:X} '{npc.Name}' ({p.DistanceTo(npc.X, npc.Z):F1}y) idx={npc.Index}");
+        Log.Info($"[{tag}] at NPC 0x{npc.Id:X} '{npc.Name}' ({p.DistanceTo(npc.X, npc.Z):F1}y) idx={npc.Index}");
         return new NpcArrival(npc.Id, npc.Index, true);
     }
 
@@ -161,7 +161,7 @@ public sealed class QuestRunner(
                 await events.Trigger(a.Id, ct);
                 await Task.Delay(1000, ct);
             }
-            Console.WriteLine($"[{tag}] examined qm 0x{a.Id:X} (messageSpecial, trigger-only x4) — verify via effect/key item");
+            Log.Info($"[{tag}] examined qm 0x{a.Id:X} (messageSpecial, trigger-only x4) — verify via effect/key item");
             return true;
         }
 
@@ -174,12 +174,12 @@ public sealed class QuestRunner(
             await events.Examine(a.Id, ct);                                       // 0x1A Talk -> onTrigger -> progressEvent(EventId)
             await events.Finish(a.Id, a.Index, step.EventId, step.Option, ct);    // 0x5B EVENTEND -> onEventFinish(EventId, option)
             await Task.Delay(2000, ct);                                           // let the server push the updated quest-log
-            Console.WriteLine($"[{tag}] blind-finished ev{step.EventId} opt={step.Option} at 0x{a.Id:X} — verify via [quest-log]");
+            Log.Info($"[{tag}] blind-finished ev{step.EventId} opt={step.Option} at 0x{a.Id:X} — verify via [quest-log]");
             return true;
         }
 
         bool started = await quests.TalkTo(a.Id, step.Option, ct);
-        Console.WriteLine($"[{tag}] talked to 0x{a.Id:X} opt={step.Option} -> event {p.World.EventId} (started={started})");
+        Log.Info($"[{tag}] talked to 0x{a.Id:X} opt={step.Option} -> event {p.World.EventId} (started={started})");
         return started;
     }
 
@@ -187,7 +187,7 @@ public sealed class QuestRunner(
     {
         // Item gone = this trade already happened on a previous run (quest materials are Keep-protected, so
         // consumption is the only way they leave the bag). Skip instead of failing the whole chain forever.
-        if (!inv.Has(step.ItemId)) { Console.WriteLine($"[{tag}] item {step.ItemId} absent — assuming already traded, skipping"); return true; }
+        if (!inv.Has(step.ItemId)) { Log.Info($"[{tag}] item {step.ItemId} absent — assuming already traded, skipping"); return true; }
         var a = await WalkToNpc(step, tag, ct);
         if (!a.Ok) return false;
         bool traded = await trade.Trade(a.Id, a.Index, new[] { (step.ItemId, (uint)step.Count) }, ct);
@@ -198,7 +198,7 @@ public sealed class QuestRunner(
             await Task.Delay(1500, ct);
             await events.Finish(a.Id, a.Index, step.EventId, step.Option, ct);
             await Task.Delay(2000, ct);
-            Console.WriteLine($"[{tag}] traded {step.ItemId} + blind-finished ev{step.EventId} — verify via [quest-log]");
+            Log.Info($"[{tag}] traded {step.ItemId} + blind-finished ev{step.EventId} — verify via [quest-log]");
         }
         return traded;
     }
@@ -218,7 +218,7 @@ public sealed class QuestRunner(
             if (await KillRoutine.Fight(combat, p, nav, gear, mob, fightCon: 4, hooks, breakOffHpp: 0, ct))
             {
                 killed++;
-                if (killed % 10 == 0) Console.WriteLine($"[{tag}] kill objective {killed}/{count}");
+                if (killed % 10 == 0) Log.Info($"[{tag}] kill objective {killed}/{count}");
             }
         }
         return killed >= count;

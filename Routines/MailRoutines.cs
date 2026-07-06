@@ -33,16 +33,16 @@ public static class MailRoutines
         int excess = slots.Count - keepMax;
         if (excess <= 0) return 0;
 
-        Console.WriteLine($"[stash] {slots.Count} slots of item {itemId} — moving {excess} to container {container} (keeping {keepMax})");
+        Log.Info($"[stash] {slots.Count} slots of item {itemId} — moving {excess} to container {container} (keeping {keepMax})");
         int moved = 0;
         foreach (var (slot, qty) in slots.Take(excess))
         {
             if (ct.IsCancellationRequested) break;
             if (await inv.MoveToContainer(slot, container, qty, ct)) moved++;
-            else { Console.WriteLine($"[stash] container {container} refused the move (full?) — stopping this pass"); break; }
+            else { Log.Info($"[stash] container {container} refused the move (full?) — stopping this pass"); break; }
             await Task.Delay(400, ct);
         }
-        Console.WriteLine($"[stash] moved {moved}/{excess} slot(s) of item {itemId} to container {container}");
+        Log.Info($"[stash] moved {moved}/{excess} slot(s) of item {itemId} to container {container}");
         return moved;
     }
 
@@ -54,7 +54,7 @@ public static class MailRoutines
         int excess = slots.Count - keepMax;
         if (excess <= 0) return 0;
 
-        Console.WriteLine($"[mail] {slots.Count} slots of item {itemId} — mailing {excess} to '{recipient}' (keeping {keepMax})");
+        Log.Info($"[mail] {slots.Count} slots of item {itemId} — mailing {excess} to '{recipient}' (keeping {keepMax})");
         int sent = 0;
         foreach (var (slot, qty) in slots.Take(excess))
         {
@@ -62,7 +62,7 @@ public static class MailRoutines
             if (await delivery.SendItem(recipient, slot, qty, ct)) sent++;
             await Task.Delay(700, ct);
         }
-        Console.WriteLine($"[mail] sent {sent}/{excess} parcel(s) of item {itemId}");
+        Log.Info($"[mail] sent {sent}/{excess} parcel(s) of item {itemId}");
         return sent;
     }
 }

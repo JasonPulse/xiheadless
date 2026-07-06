@@ -18,7 +18,7 @@ public sealed class FfxiBlowfish
     {
         var s = new uint[1024];
         for (int i = 0; i < 1024; i++) s[i] = BinaryPrimitives.ReadUInt32LittleEndian(Subkey.AsSpan(72 + i * 4));
-        foreach (var x in idx) Console.WriteLine($"S{x}={s[x]:x8}");
+        foreach (var x in idx) Log.Info($"S{x}={s[x]:x8}");
     }
 
     public static void DebugFirstEncipher(byte[] key)
@@ -28,14 +28,14 @@ public sealed class FfxiBlowfish
         for (int i = 0; i < 1024; i++) S[i] = BinaryPrimitives.ReadUInt32LittleEndian(Subkey.AsSpan(72 + i * 4));
         int j = 0;
         for (int i = 0; i < 18; i++) { uint d = 0; for (int k = 0; k < 4; k++) { d = (d << 8) | key[j]; j = (j + 1) % key.Length; } P[i] ^= d; }
-        Console.WriteLine($"TT(0x44372433)={TT(0x44372433, S):x8}");
+        Log.Info($"TT(0x44372433)={TT(0x44372433, S):x8}");
         uint Xl = 0, Xr = 0;
         unchecked
         {
             for (int i = 0; i < 16; i++) { Xl ^= P[i]; Xr = TT(Xl, S) ^ Xr; (Xl, Xr) = (Xr, Xl); }
             (Xl, Xr) = (Xr, Xl); Xr ^= P[16]; Xl ^= P[17];
         }
-        Console.WriteLine($"firstenc dl={Xl:x8} dr={Xr:x8}");
+        Log.Info($"firstenc dl={Xl:x8} dr={Xr:x8}");
     }
 
     static uint TT(uint w, uint[] S)
@@ -77,7 +77,7 @@ public sealed class FfxiBlowfish
     {
         for (int i = 0; i < 18; i++) P[i] = BinaryPrimitives.ReadUInt32LittleEndian(Subkey.AsSpan(i * 4));
         for (int i = 0; i < 1024; i++) S[i] = BinaryPrimitives.ReadUInt32LittleEndian(Subkey.AsSpan(72 + i * 4));
-        if (Environment.GetEnvironmentVariable("BF_DEBUG") == "1") Console.WriteLine($"[load] P0={P[0]:x8}");
+        if (Environment.GetEnvironmentVariable("BF_DEBUG") == "1") Log.Info($"[load] P0={P[0]:x8}");
         int j = 0;
         for (int i = 0; i < 18; i++)
         {
@@ -87,7 +87,7 @@ public sealed class FfxiBlowfish
             for (int k = 0; k < 4; k++) { d = (d << 8) | (uint)(sbyte)key[j]; j = (j + 1) % key.Length; }
             P[i] ^= d;
         }
-        if (Environment.GetEnvironmentVariable("BF_DEBUG") == "1") Console.WriteLine($"[xor]  P0={P[0]:x8}");
+        if (Environment.GetEnvironmentVariable("BF_DEBUG") == "1") Log.Info($"[xor]  P0={P[0]:x8}");
         uint dl = 0, dr = 0;
         for (int i = 0; i < 18; i += 2) { Encipher(ref dl, ref dr); P[i] = dl; P[i + 1] = dr; }
         for (int b = 0; b < 4; b++)

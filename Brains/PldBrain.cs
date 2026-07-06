@@ -42,7 +42,7 @@ public sealed class PldBrain(
         // to resume. See memory: pld-westgate-event-block.
         if (File.Exists("/tmp/xibot_pld_hold"))
         {
-            Console.WriteLine("[pld] HOLD — unlock blocked at the S.San d'Oria west-gate event; parked (rm /tmp/xibot_pld_hold to resume)");
+            Log.Info("[pld] HOLD — unlock blocked at the S.San d'Oria west-gate event; parked (rm /tmp/xibot_pld_hold to resume)");
             // KEEP THE CONNECTION ALIVE while parked: a pure Task.Delay idle got dropped by the server, which
             // left a stale session -> next login 0xA2/0x24 crash -> self-perpetuating loop (junk-char risk).
             // A small periodic nav nudge keeps position packets flowing so the session stays valid.
@@ -55,7 +55,7 @@ public sealed class PldBrain(
                 await Task.Delay(20000, ct);
             }
             if (ct.IsCancellationRequested) return;
-            Console.WriteLine("[pld] HOLD cleared — exiting to relaunch into the unlock attempt");
+            Log.Info("[pld] HOLD cleared — exiting to relaunch into the unlock attempt");
             lifecycle.Logout();
             return;
         }
@@ -104,6 +104,6 @@ public sealed class PldBrain(
         // WAR sub-to-30 phase keeps the proven Great Axe kit (owned already).
         (byte slot, ushort item)? phase = p.World.MainJob == Job.War ? (EquipSlot.Main, WarBrain.Weapon20) : null;
         var (n, total) = await GearRoutines.EquipByLevel(gear, p, Gear, ct, phase);
-        Console.WriteLine($"[pld] equipped {n}/{total} (job {p.World.MainJob} lvl {p.World.MainJobLevel}, sword={gear.SkillLevel(SwordSkill)})");
+        Log.Info($"[pld] equipped {n}/{total} (job {p.World.MainJob} lvl {p.World.MainJobLevel}, sword={gear.SkillLevel(SwordSkill)})");
     }
 }

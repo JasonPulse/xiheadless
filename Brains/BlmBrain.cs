@@ -56,7 +56,7 @@ public sealed class BlmBrain(
     async Task<bool> EmergencyHeal(CancellationToken ct)
     {
         if (p.World.Hpp >= 50 || p.World.Mpp < 10 || !magic.Ready(Spell.Cure)) return false;
-        Console.WriteLine($"[blm] Cure self (HP {p.World.Hpp}% MP {p.World.Mpp}%)");
+        Log.Info($"[blm] Cure self (HP {p.World.Hpp}% MP {p.World.Mpp}%)");
         magic.Cast(Spell.Cure, p.World.MyId);
         await Task.Delay(2500, ct);
         return true;
@@ -66,7 +66,7 @@ public sealed class BlmBrain(
     {
         if (!magic.Ready(Spell.Stone)) return;
         if (!p.World.Entities.TryGetValue(mobId, out var e) || p.DistanceTo(e.X, e.Z) > 18f) return;
-        Console.WriteLine($"[blm] Stone pull on 0x{mobId:X}");
+        Log.Info($"[blm] Stone pull on 0x{mobId:X}");
         magic.Cast(Spell.Stone, mobId);
         await Task.Delay(3000, ct);
     }

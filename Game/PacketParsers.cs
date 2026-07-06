@@ -69,7 +69,7 @@ public static class PacketParsers
                 {
                     w.LastHeal = (actor, tgt, value, w.NowMs);
                     if (actor == w.MyId || w.PartyMembers.ContainsKey(actor) || tgt == w.MyId || w.PartyMembers.ContainsKey(tgt))
-                        Console.WriteLine($"[land] heal 0x{actor:X} -> 0x{tgt:X} +{value}HP");
+                        Log.Info($"[land] heal 0x{actor:X} -> 0x{tgt:X} +{value}HP");
                 }
                 if (BitsBE(b, ref bit, 1) != 0) BitsBE(b, ref bit, 6 + 4 + 17 + 10);   // proc block
                 if (BitsBE(b, ref bit, 1) != 0) BitsBE(b, ref bit, 6 + 4 + 14 + 10);   // reaction block
@@ -85,7 +85,7 @@ public static class PacketParsers
         // Harden the parse thread: an unhandled exception in a handler (e.g. a bad offset / short packet)
         // aborts the whole process (SIGABRT/exit 134). Catch + log which packet threw instead of crashing.
         try { DispatchInner(id, sub, w); }
-        catch (System.Exception ex) { System.Console.WriteLine($"[parse] 0x{id:X} threw {ex.GetType().Name}: {ex.Message}"); }
+        catch (System.Exception ex) { Log.Always($"[parse] 0x{id:X} threw {ex.GetType().Name}: {ex.Message}"); }
     }
 
     static void DispatchInner(int id, ReadOnlySpan<byte> sub, WorldState w)
@@ -130,7 +130,7 @@ public static class PacketParsers
         if (who != w.MyId)
         {
             // A party member's vitals. Record presence + HP/MP — confirms the party formed and feeds healing.
-            if (!w.PartyMembers.TryGetValue(who, out var pm)) { pm = new PartyMember { Id = who }; w.PartyMembers[who] = pm; Console.WriteLine($"[party] +member 0x{who:X} (roster now {w.PartyMembers.Count})"); }
+            if (!w.PartyMembers.TryGetValue(who, out var pm)) { pm = new PartyMember { Id = who }; w.PartyMembers[who] = pm; Log.Info($"[party] +member 0x{who:X} (roster now {w.PartyMembers.Count})"); }
             // Hpp/Mpp offset DIFFERS by packet: 0x0DD (group_list) has a 4-byte GAttr field so Hpp@body25 (b[29]);
             // 0x0DF (group_attr) has NO GAttr so Hpp@body18 (b[22]). Parsing 0x0DF at b[29] read garbage (the
             // 0/100 flicker that blocked the WHM from ever curing the WAR). Use the right offset per packet.
@@ -140,7 +140,7 @@ public static class PacketParsers
             // phantom-death regroup bug). 0x0DF is only sent for same-zone members and has no filled zone field.
             if (!isAttr && b.Length >= 34 && U16(b, 32) is ushort zn && zn != 0)
             {
-                if (pm.Zone != zn) Console.WriteLine($"[party] member 0x{who:X} is in zone {zn} (not ours)");
+                if (pm.Zone != zn) Log.Info($"[party] member 0x{who:X} is in zone {zn} (not ours)");
                 pm.Zone = zn;
                 pm.LastSeenMs = w.NowMs;
                 return;
@@ -184,7 +184,7 @@ public static class PacketParsers
         if (name.Length == 0 || msg.Length == 0) return;
         if (kind == 3) w.Tells[name] = (msg, w.NowMs);
         else w.PartyChat[name] = (msg, w.NowMs);
-        Console.WriteLine($"[chat] {(kind == 3 ? "(tell) " : "")}<{name}> {msg}");
+        Log.Info($"[chat] {(kind == 3 ? "(tell) " : "")}<{name}> {msg}");
     }
 
     // Null-terminated ASCII string at [off, off+max).
@@ -206,7 +206,7 @@ public static class PacketParsers
         ushort itemNo = U16(b, 14);
         byte idx = b[16];
         w.BazaarList[idx] = (itemNo, price, num);
-        Console.WriteLine($"[bazaar] browse: slot {idx} = item {itemNo} x{num} @ {price}g");
+        Log.Info($"[bazaar] browse: slot {idx} = item {itemNo} x{num} @ {price}g");
     }
 
     // 0x0AA magic_data: MagicDataTbl (m_SpellList bitmap) right after the 4-byte header.
@@ -298,13 +298,13 @@ public static class PacketParsers
         if (b.Length >= 24)
         {
             if (Environment.GetEnvironmentVariable("XI_DEBUG") == "1")
-                Console.WriteLine($"    [0x00A floats] x@12={F32(b,12):F3} z@16={F32(b,16):F3} y@20={F32(b,20):F3}");
+                Log.Info($"    [0x00A floats] x@12={F32(b,12):F3} z@16={F32(b,16):F3} y@20={F32(b,20):F3}");
             w.X = F32(b, 12); w.Z = F32(b, 16); w.Y = F32(b, 20);
         }
         // Zone id at offset 48. Reflect it as-is (including 0) — masking a 0 hid that a homepoint with no
         // home point set warps the char into zone-0 limbo. ZoneNo=0 here = unset home point / limbo.
         if (b.Length >= 52) w.ZoneId = (ushort)U32(b, 48);
-        Console.WriteLine($"[zone-in] len={b.Length} zone@48={w.ZoneId}");
+        Log.Info($"[zone-in] len={b.Length} zone@48={w.ZoneId}");
         w.InZone = true;
     }
 
@@ -318,7 +318,7 @@ public static class PacketParsers
         w.EventNpcIndex = U16(b, idxOff);
         w.EventId = U16(b, idOff);
         w.EventActive = true;
-        Console.WriteLine($"[event] start id={w.EventId} npc=0x{w.EventNpcId:X}#{w.EventNpcIndex} (0x{(num ? 0x34 : 0x32):x2})");
+        Log.Info($"[event] start id={w.EventId} npc=0x{w.EventNpcId:X}#{w.EventNpcIndex} (0x{(num ? 0x34 : 0x32):x2})");
     }
 
     // 0x062 GP_SERV_COMMAND_CLISTATUS2: CommandRecast[31]@4 (124B), then skill_base[64] (u16) @128.
@@ -341,7 +341,7 @@ public static class PacketParsers
         w.SynthCount = b[6];
         w.SynthResult = res;
         string name = res < _synthResult.Length ? _synthResult[res] : res == 13 ? "MustWaitLonger" : res == 14 ? "InterruptedCritical" : $"code{res}";
-        Console.WriteLine($"[synth] result={name} item={w.SynthItemNo} x{w.SynthCount}");
+        Log.Info($"[synth] result={name} item={w.SynthItemNo} x{w.SynthCount}");
     }
 
     // 0x01E GP_SERV_COMMAND_ITEM_NUM: ItemNum(qty)@4, Category(container)@8, ItemIndex(slot)@9. Quantity-only
@@ -395,7 +395,7 @@ public static class PacketParsers
         w.AucResultItem = U16(b, 12);
         w.AucResult = b[6];
         string meaning = b[6] == 0x01 ? "bought" : b[6] == 0xC5 ? "no-listing" : b[6] == 0xE5 ? "inventory-full/rare" : $"0x{b[6]:X2}";
-        Console.WriteLine($"[auc] result={meaning} item={w.AucResultItem}");
+        Log.Info($"[auc] result={meaning} item={w.AucResultItem}");
     }
 
     // 0x03D GP_SERV_COMMAND_SHOP_SELL: reply to our 0x084 SHOP_SELL_REQ. Price@4(u32), PropertyItemIndex@8(u8).
@@ -405,7 +405,7 @@ public static class PacketParsers
         if (b.Length < 9) return;
         w.SellAppraiseSlot = b[8];
         w.SellAppraisePrice = (int)U32(b, 4);
-        Console.WriteLine($"[sell-appraise] slot {b[8]} price {U32(b, 4)}");
+        Log.Info($"[sell-appraise] slot {b[8]} price {U32(b, 4)}");
     }
 
     // 0x029 GP_SERV_COMMAND_BATTLE_MESSAGE (s2c/0x029): UniqueNoCas@4, UniqueNoTar@8, Data@12,
@@ -462,7 +462,7 @@ public static class PacketParsers
         if (msg == 38 && data < 64)
         {
             w.SkillGains[(int)data] += (int)data2;
-            Console.WriteLine($"[skill-up] {SkillName((int)data)} +{data2 / 10.0:0.0} (session +{w.SkillGains[(int)data] / 10.0:0.0})");
+            Log.Info($"[skill-up] {SkillName((int)data)} +{data2 / 10.0:0.0} (session +{w.SkillGains[(int)data] / 10.0:0.0})");
             return;
         }
         // /check reply (0x0DD): param(Data)=mob level, value(Data2)=64+difficulty. Capture it when
@@ -471,10 +471,10 @@ public static class PacketParsers
         {
             w.ConMobLevel = (byte)data;
             w.ConDifficulty = (int)(data2 - 64);
-            Console.WriteLine($"[con] mob 0x{tar:X} level={w.ConMobLevel} difficulty={w.ConDifficulty}");
+            Log.Info($"[con] mob 0x{tar:X} level={w.ConMobLevel} difficulty={w.ConDifficulty}");
             return;
         }
-        Console.WriteLine($"[battle-msg] num={msg} cas=0x{U32(b, 4):X} tar=0x{tar:X} data={data} data2={data2}");
+        Log.Info($"[battle-msg] num={msg} cas=0x{U32(b, 4):X} tar=0x{tar:X} data={data} data2={data2}");
     }
 
     // 0x056 GP_SERV_COMMAND_MISSION::OTHER (s2c/0x056_mission_other.h): PacketData{ uint32 Data[8]@4 (256-bit
@@ -499,7 +499,7 @@ public static class PacketParsers
         w.QuestLog[port] = bits;
         var set = new List<int>();
         for (int n = 0; n < 256; n++) if ((bits[n >> 3] & (1 << (n & 7))) != 0) set.Add(n);
-        Console.WriteLine($"[quest-log] {name} 0x{port:X}: {(set.Count == 0 ? "none" : string.Join(",", set))}");
+        Log.Info($"[quest-log] {name} 0x{port:X}: {(set.Count == 0 ? "none" : string.Join(",", set))}");
     }
 
     // 0x061 GP_SERV_COMMAND_CLISTATUS — CLISTATUS{ hpmax@4(i32), mpmax@8(i32), mjob_no@12(u8), mjob_lv@13(u8),
@@ -515,7 +515,7 @@ public static class PacketParsers
         {
             w.ExpNow = U16(b, 16);
             w.ExpNext = U16(b, 18);
-            Console.WriteLine($"[exp] lvl {w.MainJobLevel}: {w.ExpNow}/{w.ExpNext}");
+            Log.Always($"[exp] lvl {w.MainJobLevel}: {w.ExpNow}/{w.ExpNext}");
         }
     }
 }

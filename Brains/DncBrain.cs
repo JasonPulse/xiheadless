@@ -78,6 +78,6 @@ public sealed class DncBrain(
     {
         (byte slot, ushort item)? phase = p.World.MainJob == Job.War ? (EquipSlot.Main, WarBrain.Weapon20) : null;
         var (n, total) = await GearRoutines.EquipByLevel(gear, p, Gear, ct, phase);
-        Console.WriteLine($"[dnc] equipped {n}/{total} (job {p.World.MainJob} lvl {p.World.MainJobLevel}, dagger={gear.SkillLevel(DaggerSkill)})");
+        Log.Info($"[dnc] equipped {n}/{total} (job {p.World.MainJob} lvl {p.World.MainJobLevel}, dagger={gear.SkillLevel(DaggerSkill)})");
     }
 }

@@ -40,22 +40,22 @@ public sealed class SubjobQuest(
             if (inv.CountOf(StealthRoutines.SilentOil) < 6 || inv.CountOf(StealthRoutines.PrismPowder) < 6)
             {
                 if (!Game.Zonelines.HasAuctionHouse(zoning.CurrentZone))
-                { Console.WriteLine($"[sjquest] -> {AhZone} for powders"); await zoning.GoTo(AhZone, ct); }
+                { Log.Info($"[sjquest] -> {AhZone} for powders"); await zoning.GoTo(AhZone, ct); }
                 inv.Sort(); await Task.Delay(1500, ct);
                 await ShopRoutines.SellNearby(shop, nav, zoning, inv, p, Keep, ct);
                 Task<int> SellJunk(CancellationToken c) => ShopRoutines.SellNearby(shop, nav, zoning, inv, p, Keep, c);
                 await StealthRoutines.EnsureStock(ah, p, inv, 12, Keep, SellJunk, ct);
                 inv.Sort(); await Task.Delay(1500, ct);
             }
-            Console.WriteLine("[sjquest] stealth-crossing to Mhaura (Sneak + Invisible)");
+            Log.Info("[sjquest] stealth-crossing to Mhaura (Sneak + Invisible)");
             stealthCts = await StealthRoutines.BeginStealth(inv, p, ct);
         }
 
         var steps = accepted ? QuestDefs.SubjobComplete : QuestDefs.SubjobUnlock;
-        Console.WriteLine($"[sjquest] accepted={accepted} -> running {(accepted ? "completion trade-chain" : "accept")}");
+        Log.Info($"[sjquest] accepted={accepted} -> running {(accepted ? "completion trade-chain" : "accept")}");
         bool ok = await new QuestRunner(p, nav, zoning, quests, trade, combat, gear, events, inv).Run(steps, "sjquest", ct);
         stealthCts?.Cancel();
-        Console.WriteLine($"[sjquest] flow done (ok={ok}, lastEvent={p.World.EventId})");
+        Log.Info($"[sjquest] flow done (ok={ok}, lastEvent={p.World.EventId})");
         return ok;
     }
 }

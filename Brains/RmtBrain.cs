@@ -25,7 +25,7 @@ public sealed class RmtBrain(IPerception p, IChat chat, IDelivery delivery, IGil
     {
         var intake = new RmtIntake(Port);
         intake.Start();
-        Console.WriteLine($"[rmt] loop: spam /{(UseYell ? "yell" : "shout")} every {SpamIntervalSec}s + delivery intake on :{Port} (char='{p.World.MyName}')");
+        Log.Info($"[rmt] loop: spam /{(UseYell ? "yell" : "shout")} every {SpamIntervalSec}s + delivery intake on :{Port} (char='{p.World.MyName}')");
 
         var clock = System.Diagnostics.Stopwatch.StartNew();
         long lastSpamMs = -SpamIntervalSec * 1000L;   // spam immediately on start
@@ -50,13 +50,13 @@ public sealed class RmtBrain(IPerception p, IChat chat, IDelivery delivery, IGil
                                 ct); // credit the bot (stub until endpoint live)
                             bool sent = await delivery.SendGil(player, amount, ct);
                             if (sent) orders++;
-                            Console.WriteLine($"[rmt] deliver {amount} gil -> '{player}': {sent} ({orders} fulfilled)");
+                            Log.Info($"[rmt] deliver {amount} gil -> '{player}': {sent} ({orders} fulfilled)");
                         }
 
                         await delivery.ExitMogHouse(ct); // back to the city so /yell reaches again
                     }
                     else
-                        Console.WriteLine(
+                        Log.Info(
                             $"[rmt] can't deliver from zone {zoning.CurrentZone} (no Mog House here); dropped {batch.Count} request(s)");
 
                     lastSpamMs = clock.ElapsedMilliseconds; // don't spam the instant we get back
@@ -64,7 +64,7 @@ public sealed class RmtBrain(IPerception p, IChat chat, IDelivery delivery, IGil
                     // End check: fulfilled the quota -> log out from inside the brain (graceful shutdown).
                     if (MaxOrders > 0 && orders >= MaxOrders)
                     {
-                        Console.WriteLine($"[rmt] fulfilled {orders} orders (quota {MaxOrders}) -> logging out");
+                        Log.Info($"[rmt] fulfilled {orders} orders (quota {MaxOrders}) -> logging out");
                         lifecycle.Logout();
                         break;
                     }
@@ -76,7 +76,7 @@ public sealed class RmtBrain(IPerception p, IChat chat, IDelivery delivery, IGil
                     var msg = Lines[line++ % Lines.Length];
                     if (UseYell) chat.Yell(msg);
                     else chat.Shout(msg);
-                    Console.WriteLine($"[rmt] spam: {msg}");
+                    Log.Info($"[rmt] spam: {msg}");
                     lastSpamMs = clock.ElapsedMilliseconds;
                 }
 
@@ -86,7 +86,7 @@ public sealed class RmtBrain(IPerception p, IChat chat, IDelivery delivery, IGil
         finally
         {
             intake.Stop(); // close the storefront listener on stop (e.g. SIGTERM) so we exit cleanly
-            Console.WriteLine("[rmt] stopped (storefront closed)");
+            Log.Info("[rmt] stopped (storefront closed)");
         }
     }
 }

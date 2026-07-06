@@ -35,11 +35,11 @@ public sealed class Shop(ISession s) : IShop
                 await Task.Delay(100, ct);
             if (s.State.Shop.Count > 0)
             {
-                Console.WriteLine($"[shop] opened after {s.State.NowMs - start}ms, {s.State.Shop.Count} items (attempt {attempt + 1})");
+                Log.Info($"[shop] opened after {s.State.NowMs - start}ms, {s.State.Shop.Count} items (attempt {attempt + 1})");
                 return s.State.Shop;
             }
         }
-        Console.WriteLine($"[shop] FAILED to open after {s.State.NowMs - start}ms / 6 talks");
+        Log.Info($"[shop] FAILED to open after {s.State.NowMs - start}ms / 6 talks");
         return s.State.Shop;
     }
 

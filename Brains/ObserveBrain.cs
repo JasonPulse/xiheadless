@@ -14,7 +14,7 @@ public sealed class ObserveBrain(IPerception p) : IBrain
                 .OrderBy(e => p.DistanceTo(e.X, e.Z))
                 .Take(8)
                 .Select(e => $"id=0x{e.Id:X}#{e.Index} d={p.DistanceTo(e.X, e.Z):F0} hpp={e.Hpp} alg={e.Allegiance} mob={e.IsMob} pos=({e.X:F0},{e.Y:F0},{e.Z:F0}) '{e.Name}'");
-            Console.WriteLine($"[observe] zone={w.ZoneId} entities={w.Entities.Count}\n    " + string.Join("\n    ", near));
+            Log.Info($"[observe] zone={w.ZoneId} entities={w.Entities.Count}\n    " + string.Join("\n    ", near));
             await Task.Delay(2000, ct);
         }
     }

@@ -88,14 +88,14 @@ public sealed class ThfBrain(
         set.AddRange(WarBrain.Armor21.Select(g => (g.slot, (uint)g.item))); // Beetle + Spike at 21 replace leather
         set.Add((EquipSlot.Head, EmpressHairpin));                           // after Beetle: replaces the mask at 24
         int n = await gear.EquipSet(set, ct);
-        Console.WriteLine($"[thf] equipped {n}/{set.Count} (lvl {p.World.MainJobLevel}, wep={weapon} dagger={gear.SkillLevel(DaggerSkill)} sword={gear.SkillLevel(SwordSkill)})");
+        Log.Info($"[thf] equipped {n}/{set.Count} (lvl {p.World.MainJobLevel}, wep={weapon} dagger={gear.SkillLevel(DaggerSkill)} sword={gear.SkillLevel(SwordSkill)})");
     }
 
     // Sneak Attack (lv15, 60s): free burst when it lands (full effect needs to be behind the mob — the chase
     // loop often is). UseAbility gates job/level/recast, so calling every tick is safe.
     async Task UseAbilities(uint mob, int con, CancellationToken ct)
     {
-        if (con >= 2 && await combat.UseAbility(Ability.SneakAttack, mob, ct)) Console.WriteLine("[thf] Sneak Attack");
-        if (await combat.UseAbility(Ability.Steal, mob, ct)) Console.WriteLine("[thf] Steal");   // lv5: free loot, tiny hate
+        if (con >= 2 && await combat.UseAbility(Ability.SneakAttack, mob, ct)) Log.Info("[thf] Sneak Attack");
+        if (await combat.UseAbility(Ability.Steal, mob, ct)) Log.Info("[thf] Steal");   // lv5: free loot, tiny hate
     }
 }

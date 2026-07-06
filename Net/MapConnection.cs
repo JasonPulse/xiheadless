@@ -92,13 +92,13 @@ public sealed class MapConnection : ISession
             seq++;
             var login = BuildLogin0x0A(seq);
             _udp.Send(login);                                            // first creates session; later one flushes
-            if (Dbg && seq <= 6) Console.WriteLine($"    [zonein] sent 0x00A seq {seq} to {_mapServer}");
+            if (Dbg && seq <= 6) Log.Info($"    [zonein] sent 0x00A seq {seq} to {_mapServer}");
             try
             {
                 int n = _udp.Receive(buf);                               // inline receive between sends
-                if (n > PH + 16) { try { HandleInbound(buf[..n]); } catch (Exception ex) { if (Dbg) Console.WriteLine($"    [recv-err] {ex.Message}"); } }
+                if (n > PH + 16) { try { HandleInbound(buf[..n]); } catch (Exception ex) { if (Dbg) Log.Info($"    [recv-err] {ex.Message}"); } }
             }
-            catch (SocketException sx) { if (sx.SocketErrorCode != SocketError.TimedOut) Console.WriteLine($"[zonein-sockerr] {sx.SocketErrorCode} — handshake datagram DROPPED (a lost event burst reads as a reception gap)"); }
+            catch (SocketException sx) { if (sx.SocketErrorCode != SocketError.TimedOut) Log.Always($"[zonein-sockerr] {sx.SocketErrorCode} — handshake datagram DROPPED (a lost event burst reads as a reception gap)"); }
         }
         _clientId = (ushort)(seq + 1);
         if (State.InZone) Enqueue(BuildGameOk());
@@ -127,7 +127,7 @@ public sealed class MapConnection : ISession
     {
         _pendingZoneChange = false;
         _zoning = true;
-        Console.WriteLine("[zone] server requested zone change -> re-key + re-zone");
+        Log.Always("[zone] server requested zone change -> re-key + re-zone");
         ushort prevZone = State.ZoneId;
         State.InZone = false;
         State.Entities.Clear();
@@ -137,8 +137,8 @@ public sealed class MapConnection : ISession
         bool ok = Handshake0x0A(12000);
         _udp.ReceiveTimeout = 1000;
         _zoning = false;
-        if (ok) { Console.WriteLine($"[zone] {prevZone} -> {State.ZoneId}"); ZoneChanged?.Invoke(State.ZoneId); }
-        else Console.WriteLine("[zone] re-zone FAILED (no 0x00A reply)");
+        if (ok) { Log.Always($"[zone] {prevZone} -> {State.ZoneId}"); ZoneChanged?.Invoke(State.ZoneId); }
+        else Log.Always("[zone] re-zone FAILED (no 0x00A reply)");
     }
 
     // 0x00C gameok: 12 bytes = hdr(4) + ClientState@4(u32,=0) + DebugClientFlg@8(u32,=0).
@@ -191,7 +191,7 @@ public sealed class MapConnection : ISession
         if (State.InZone)
         {
             Enqueue(BuildReqLogout());
-            if (Dbg) Console.WriteLine("    [logout] sent 0x0E7, holding session 40s for the full logout to complete");
+            if (Dbg) Log.Info("    [logout] sent 0x0E7, holding session 40s for the full logout to complete");
             Thread.Sleep(40000);
         }
         _running = false;
@@ -220,11 +220,11 @@ public sealed class MapConnection : ISession
             State.NowMs = _clock.ElapsedMilliseconds; // runtime clock for entity aging / repath timing
             int n;
             try { n = _udp.Receive(buf); }
-            catch (SocketException sx) { if (sx.SocketErrorCode != SocketError.TimedOut) Console.WriteLine($"[recv-sockerr] {sx.SocketErrorCode} — datagram DROPPED (a lost event frame reads as a reception gap)"); continue; }
-            if (Dbg) Console.WriteLine($"    [recv] {n}B head={Convert.ToHexString(buf.AsSpan(0, Math.Min(8, n)))}");
+            catch (SocketException sx) { if (sx.SocketErrorCode != SocketError.TimedOut) Log.Always($"[recv-sockerr] {sx.SocketErrorCode} — datagram DROPPED (a lost event frame reads as a reception gap)"); continue; }
+            if (Dbg) Log.Info($"    [recv] {n}B head={Convert.ToHexString(buf.AsSpan(0, Math.Min(8, n)))}");
             if (n <= PH + 16) continue;
             var pkt = buf[..n];
-            try { HandleInbound(pkt); } catch (Exception ex) { if (Dbg) Console.WriteLine($"    [recv-err] {ex.Message}"); }
+            try { HandleInbound(pkt); } catch (Exception ex) { if (Dbg) Log.Info($"    [recv-err] {ex.Message}"); }
             if (_pendingZoneChange) DoZoneChange();   // re-key + re-zone on this same thread
         }
     }
@@ -233,54 +233,32 @@ public sealed class MapConnection : ISession
     {
         // track server packet id from header[0:2] for our ack
         ushort sid = BinaryPrimitives.ReadUInt16LittleEndian(pkt);
-        // DIAG: a SMALL forward jump in server seq = we missed the in-between datagram(s); the lockstep server
-        // treats our advanced ack as proof of delivery and won't resend them, so any 0x032 there is lost.
-        // Guarded to skip normal zone-in sequence RESETS (e.g. 176->1, which is not a gap). Remove once fixed.
-        if (sid != 0 && _serverId != 0 && sid > _serverId + 1 && sid - _serverId < 256)
-            Console.WriteLine($"[ack-gap] server sid {_serverId} -> {sid} (skipped {sid - _serverId - 1} datagram(s)) — un-acked frames incl. any 0x032 lost here");
         if (sid != 0) _serverId = sid;
 
         _bf.DecipherBuffer(pkt, PH);
         var bodyMd5 = MD5.HashData(pkt.AsSpan(PH, pkt.Length - PH - 16));
-        if (!bodyMd5.AsSpan().SequenceEqual(pkt.AsSpan(pkt.Length - 16))) { Console.WriteLine($"    [md5-fail] sid={sid} len={pkt.Length} — datagram DROPPED (an event frame lost here reads as a reception gap)"); return; }
-        if (Dbg) Console.WriteLine($"    [decrypted-ok] sid={sid} len={pkt.Length}");
+        if (!bodyMd5.AsSpan().SequenceEqual(pkt.AsSpan(pkt.Length - 16))) { Log.Always($"    [md5-fail] sid={sid} len={pkt.Length} — datagram DROPPED (an event frame lost here reads as a reception gap)"); return; }
+        if (Dbg) Log.Info($"    [decrypted-ok] sid={sid} len={pkt.Length}");
         uint bits = BinaryPrimitives.ReadUInt32LittleEndian(pkt.AsSpan(pkt.Length - 20));
         var dec = _dec.Decompress(pkt.AsSpan(PH), bits);
 
         int off = 0;
-        var ids = new List<string>();   // DIAG: full boundary trace so a desync (overrun) can be dumped
+        var ids = new List<string>();   // sub-packet boundary trace for the Dbg-gated [in sid=] line below
         while (off + 4 <= dec.Length)
         {
             ushort hdr = BinaryPrimitives.ReadUInt16LittleEndian(dec.AsSpan(off));
             var (id, words) = SubPacket.Parse(hdr);
             if (words == 0)
             {
-                if (Dbg || dec.Length - off > 8)
-                {
-                    Console.WriteLine($"      [split-stop words=0 @{off}/{dec.Length} hdr=0x{hdr:x4} id=0x{id:x3} tailrem={dec.Length - off}]");
-                    Console.WriteLine($"      [desync-walk {dec.Length}B] {string.Join(",", ids.Count > 22 ? ids.GetRange(ids.Count - 22, 22) : ids)}");
-                    int hs0 = Math.Max(0, off - 24), he0 = Math.Min(dec.Length, off + 16);
-                    Console.WriteLine($"      [desync-hex @{hs0}] {Convert.ToHexString(dec.AsSpan(hs0, he0 - hs0))}");
-                }
+                if (Dbg && dec.Length - off > 8) Log.Info($"      [split-stop words=0 @{off}/{dec.Length} tailrem={dec.Length - off}]");
                 break;
             }
             int len = words * 4;
-            // DIAGNOSTIC (event reception): if an event-start opcode reaches this loop but no "[event] start"
-            // follows, the bug is parse/dispatch; if it NEVER reaches here while ServerStatus flips to 4, the
-            // datagram was dropped upstream (socket/md5/decompress). Remove once reception is confirmed stable.
-            if (id is 0x032 or 0x033 or 0x034) Console.WriteLine($"[recv-event-opcode] 0x{id:x3} len={len} off={off}/{dec.Length} sid={sid} status={State.ServerStatus}");
             if (off + len > dec.Length)
             {
                 // id==0 here is the BENIGN 4-byte end-of-frame trailer (00 80 00 00 = hdr 0x8000) — expected
-                // padding, not a desync; stay silent. A NON-zero id overrunning is a genuine framing desync:
-                // dump the boundary trace + hex so the mis-sized sub-packet is visible.
-                if (id != 0)
-                {
-                    Console.WriteLine($"      [split-stop overrun @{off} id=0x{id:x3} len={len} rem={dec.Length - off}]");
-                    Console.WriteLine($"      [desync-walk {dec.Length}B] {string.Join(",", ids.Count > 22 ? ids.GetRange(ids.Count - 22, 22) : ids)}");
-                    int hs = Math.Max(0, off - 24), he = Math.Min(dec.Length, off + 16);
-                    Console.WriteLine($"      [desync-hex @{hs}] {Convert.ToHexString(dec.AsSpan(hs, he - hs))}");
-                }
+                // padding. A NON-zero id overrunning is a genuine framing desync (Dbg-gated one-liner).
+                if (Dbg && id != 0) Log.Info($"      [split-stop overrun @{off} id=0x{id:x3} len={len} rem={dec.Length - off}]");
                 break;
             }
             // 0x0B GP_SERV_COMMAND_LOGOUT: LogoutState@body0 == 2 (ZONECHANGE) -> re-zone after this packet.
@@ -289,7 +267,7 @@ public sealed class MapConnection : ISession
             PacketParsers.Dispatch(id, dec.AsSpan(off, len), State);
             off += len;
         }
-        if (Dbg && ids.Count > 0) Console.WriteLine($"      [in sid={sid} {dec.Length}B] {string.Join(",", ids)}");
+        if (Dbg && ids.Count > 0) Log.Info($"      [in sid={sid} {dec.Length}B] {string.Join(",", ids)}");
     }
 
     // ---- outbound: drain queue -> frame -> compress -> size -> md5 -> encrypt ----
@@ -346,7 +324,7 @@ public sealed class MapConnection : ISession
         {
             var ids = new List<string>();
             int o = 0; while (o + 4 <= bodyArr.Length) { ushort h = BinaryPrimitives.ReadUInt16LittleEndian(bodyArr.AsSpan(o)); var (sid2, wd) = SubPacket.Parse(h); if (wd == 0) break; ids.Add($"0x{sid2:x3}"); o += wd * 4; }
-            Console.WriteLine($"    [send] subs=[{string.Join(",", ids)}] clientId={_clientId} ack={_serverId}");
+            Log.Info($"    [send] subs=[{string.Join(",", ids)}] clientId={_clientId} ack={_serverId}");
         }
 
         // out buffer: [28 header][compressed + 4B size][16B md5]

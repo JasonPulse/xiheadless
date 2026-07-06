@@ -29,20 +29,20 @@ public static class ShopRoutines
     {
         if (Game.Vendors.Nearest(p.World.ZoneId) is not { } v)
         {
-            Console.WriteLine($"[sell] no known vendor reachable from zone {p.World.ZoneId} — keeping items");
+            Log.Info($"[sell] no known vendor reachable from zone {p.World.ZoneId} — keeping items");
             return 0;
         }
         if (p.World.ZoneId != v.Zone)
         {
-            Console.WriteLine($"[sell] traveling to {Game.Zonelines.Name(v.Zone)} to sell at {v.Name}");
+            Log.Info($"[sell] traveling to {Game.Zonelines.Name(v.Zone)} to sell at {v.Name}");
             if (!await zoning.GoTo(Game.Zonelines.Name(v.Zone), ct))
             {
-                Console.WriteLine($"[sell] couldn't reach {Game.Zonelines.Name(v.Zone)} — keeping items");
+                Log.Info($"[sell] couldn't reach {Game.Zonelines.Name(v.Zone)} — keeping items");
                 return 0;
             }
             await Task.Delay(2000, ct);   // let inventory/position resettle after the zone change
         }
-        Console.WriteLine($"[sell] walking to {v.Name} at ({v.X:F0},{v.Z:F0})");
+        Log.Info($"[sell] walking to {v.Name} at ({v.X:F0},{v.Z:F0})");
         nav.MoveTo(v.X, v.Y, v.Z);
         for (int t = 0; t < 60000 && p.DistanceTo(v.X, v.Z) > 5f && nav.IsMoving && !ct.IsCancellationRequested; t += 200)
             await Task.Delay(200, ct);
@@ -50,7 +50,7 @@ public static class ShopRoutines
         var stock = await shop.Open(v.NpcId, ct);
         if (stock.Count == 0)
         {
-            Console.WriteLine($"[sell] {v.Name}'s shop wouldn't open — keeping items");
+            Log.Info($"[sell] {v.Name}'s shop wouldn't open — keeping items");
             return 0;
         }
         return await inv.SellAllJunk(keep, ct);
@@ -70,7 +70,7 @@ public static class ShopRoutines
         if (inv.Has(itemId)) return true;
         foreach (var bid in BidLadder)
         {
-            if (bid > p.World.Gil) { Console.WriteLine($"[ah] bid {bid} > gil {p.World.Gil} — out of budget"); break; }
+            if (bid > p.World.Gil) { Log.Info($"[ah] bid {bid} > gil {p.World.Gil} — out of budget"); break; }
             foreach (var single in new[] { true, false })
             {
                 // Up to 2 tries at this (bid, single): a first 0xE5 triggers a drop, then we re-bid.
@@ -78,13 +78,13 @@ public static class ShopRoutines
                 {
                     p.World.AucResult = 0;
                     ah.Bid(itemId, bid, single);
-                    Console.WriteLine($"[ah] bid {bid} for {itemId} (single={single})");
+                    Log.Info($"[ah] bid {bid} for {itemId} (single={single})");
                     int r = await WaitResult(p, inv, itemId, ct);
-                    if (inv.Has(itemId)) { Console.WriteLine($"[ah] acquired {itemId} for <= {bid}"); return true; }
+                    if (inv.Has(itemId)) { Log.Info($"[ah] acquired {itemId} for <= {bid}"); return true; }
                     if (r == 0xE5)   // inventory full — clear ALL sellable junk for gil in one pass, then retry
                     {                 // (full clear, not one slot, so we don't thrash sell-one/buy-one/full-again)
                         int sold = freeSpace != null ? await freeSpace(ct) : await inv.SellAllJunk(keep, ct);
-                        if (sold == 0) { Console.WriteLine($"[ah] inventory full and nothing sellable — cannot buy {itemId}"); return false; }
+                        if (sold == 0) { Log.Info($"[ah] inventory full and nothing sellable — cannot buy {itemId}"); return false; }
                         continue;     // plenty of room now; retry the bid
                     }
                     break;   // 0xC5 (no listing <= this bid) -> escalate to the next rung; or no result -> next stack
@@ -110,18 +110,18 @@ public static class ShopRoutines
             bool progressed = false;
             foreach (var bid in BidLadder)
             {
-                if (bid > p.World.Gil) { Console.WriteLine($"[ah] bid {bid} > gil {p.World.Gil} — stop ({CountOf()}/{count} of {itemId})"); return CountOf() >= count; }
+                if (bid > p.World.Gil) { Log.Info($"[ah] bid {bid} > gil {p.World.Gil} — stop ({CountOf()}/{count} of {itemId})"); return CountOf() >= count; }
                 foreach (var single in new[] { false, true })   // stack first (efficient), then single
                 {
                     p.World.AucResult = 0;
                     ah.Bid(itemId, bid, single);
                     int r = await WaitResult(p, inv, itemId, ct);
-                    if (CountOf() > before) { Console.WriteLine($"[ah] bought {itemId} stack={!single} -> {CountOf()}/{count}"); progressed = true; break; }
+                    if (CountOf() > before) { Log.Info($"[ah] bought {itemId} stack={!single} -> {CountOf()}/{count}"); progressed = true; break; }
                     if (r == 0xE5) { int sold = freeSpace != null ? await freeSpace(ct) : await inv.SellAllJunk(keep, ct); if (sold == 0) return CountOf() >= count; }
                 }
                 if (progressed) break;   // got some at this rung; re-loop to check the count
             }
-            if (!progressed) { Console.WriteLine($"[ah] nothing more of {itemId} listed/affordable ({CountOf()}/{count})"); break; }
+            if (!progressed) { Log.Info($"[ah] nothing more of {itemId} listed/affordable ({CountOf()}/{count})"); break; }
         }
         return CountOf() >= count;
     }

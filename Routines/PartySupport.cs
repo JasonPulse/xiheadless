@@ -47,7 +47,7 @@ public sealed class PartySupport(IParty party, IPerception p, INavigation nav, I
         {
             nav.Stop();
             await Task.Delay(250, ct);            // settle: make sure we're not still gliding when the cast begins
-            Console.WriteLine($"[{cfg.Tag}] {why}");
+            Log.Info($"[{cfg.Tag}] {why}");
             long castMs0 = p.World.NowMs;
             magic.Cast(sp, tgt);
             await Task.Delay(cfg.CastHoldMs, ct);  // remain stationary through the cast (+ margin) so it resolves
@@ -55,9 +55,9 @@ public sealed class PartySupport(IParty party, IPerception p, INavigation nav, I
             {
                 var h = p.World.LastHeal;
                 if (h.actor == p.World.MyId && h.target == tgt && h.ms >= castMs0)
-                    Console.WriteLine($"[{cfg.Tag}] {sp} LANDED on 0x{tgt:X} (+{h.amount}HP)");
+                    Log.Info($"[{cfg.Tag}] {sp} LANDED on 0x{tgt:X} (+{h.amount}HP)");
                 else
-                    Console.WriteLine($"[{cfg.Tag}] {sp} MISSED (no recover event — interrupted/rejected?)");
+                    Log.Info($"[{cfg.Tag}] {sp} MISSED (no recover event — interrupted/rejected?)");
             }
             return true;
         }
@@ -84,7 +84,7 @@ public sealed class PartySupport(IParty party, IPerception p, INavigation nav, I
             // always goes through the rally protocol (either side's Force/RALLY pulls both bots in together).
             if (cfg.Reunion is null && zoning.CurrentZone != cfg.GrindZoneId)
             {
-                Console.WriteLine($"[{cfg.Tag}] in zone {zoning.CurrentZone} (not {cfg.GrindZone}) — re-crossing to rejoin the tank");
+                Log.Info($"[{cfg.Tag}] in zone {zoning.CurrentZone} (not {cfg.GrindZone}) — re-crossing to rejoin the tank");
                 await zoning.GoTo(cfg.GrindZone, ct);
                 converged = false; stuckTicks = 0;
                 continue;
@@ -99,7 +99,7 @@ public sealed class PartySupport(IParty party, IPerception p, INavigation nav, I
             if (tankDist > 15f && moved < 2f) stuckTicks++; else stuckTicks = 0;
             if (stuckTicks > 45)
             {
-                Console.WriteLine($"[{cfg.Tag}] STUCK reaching tank — regrouping");
+                Log.Info($"[{cfg.Tag}] STUCK reaching tank — regrouping");
                 if (cfg.Reunion is { } ru2) { await ru2.RunAsync(ct); converged = true; }
                 else { await combat.Homepoint(ct); await Task.Delay(6000, ct); converged = false; }
                 stuckTicks = 0;
@@ -109,11 +109,11 @@ public sealed class PartySupport(IParty party, IPerception p, INavigation nav, I
             bool hasCamp = cfg.CampX != 0 || cfg.CampZ != 0;   // legacy anchor; a Reunion-managed duo passes none
             if (!converged)
             {
-                if (tankVisible && tankDist < 25f) { converged = true; cfg.OnConverged?.Invoke(); Console.WriteLine($"[{cfg.Tag}] reached tank — supporting"); }
+                if (tankVisible && tankDist < 25f) { converged = true; cfg.OnConverged?.Invoke(); Log.Info($"[{cfg.Tag}] reached tank — supporting"); }
                 else if (tankVisible) nav.Follow(cfg.TankId);
                 else if (hasCamp && p.DistanceTo(cfg.CampX, cfg.CampZ) > 15f) nav.MoveTo(cfg.CampX, cfg.CampY, cfg.CampZ);  // 3-arg: camp ground-Y
                 else nav.Stop();   // no camp: hold — the tank walks to US (tether) or a split triggers the rally
-                if (tick % 8 == 0) Console.WriteLine($"[{cfg.Tag}] converging tankVisible={tankVisible} tankDist={(tankVisible ? tankDist : -1):F0} party={party.MemberCount}");
+                if (tick % 8 == 0) Log.Info($"[{cfg.Tag}] converging tankVisible={tankVisible} tankDist={(tankVisible ? tankDist : -1):F0} party={party.MemberCount}");
                 await Task.Delay(2000, ct);
                 continue;
             }
@@ -137,7 +137,7 @@ public sealed class PartySupport(IParty party, IPerception p, INavigation nav, I
             // for 10+ minutes) and no re-invite ever fired — both bots idled until a manual restart.
             if (tankPm is not null && p.World.SelfGroupListMs > tankPm.LastSeenMs + 3000)
             {
-                Console.WriteLine($"[{cfg.Tag}] roster refreshed without the tank — party dissolved; re-forming");
+                Log.Info($"[{cfg.Tag}] roster refreshed without the tank — party dissolved; re-forming");
                 p.World.PartyMembers.Remove(cfg.TankId);
                 if (cfg.Inviter) party.Invite(cfg.TankId);
                 await Task.Delay(3000, ct);
@@ -150,7 +150,7 @@ public sealed class PartySupport(IParty party, IPerception p, INavigation nav, I
                 && p.World.Tells.TryGetValue(cfg.TankName, out var tell)
                 && tell.msg.Contains("REFORM") && p.World.NowMs - tell.ms < 60_000)
             {
-                Console.WriteLine($"[{cfg.Tag}] REFORM tell from '{cfg.TankName}' — purging stale roster + re-inviting");
+                Log.Info($"[{cfg.Tag}] REFORM tell from '{cfg.TankName}' — purging stale roster + re-inviting");
                 p.World.Tells.Remove(cfg.TankName);
                 p.World.PartyMembers.Remove(cfg.TankId);
                 party.Invite(cfg.TankId);
@@ -173,7 +173,7 @@ public sealed class PartySupport(IParty party, IPerception p, INavigation nav, I
                        : cfg.Heal;
             bool canHeal = magic.Ready(heal);
 
-            if (tick % 10 == 0) Console.WriteLine($"[{cfg.Tag}] party={party.MemberCount} tankDist={(tankVisible ? tankDist : -1):F0} tankHP={tankHp}% tankAtk={tankAttackers} myHP={p.World.Hpp}% mp={p.World.Mpp}% lvl={p.World.MainJobLevel} exp={p.World.ExpNow}/{p.World.ExpNext}");
+            if (tick % 10 == 0) Log.Info($"[{cfg.Tag}] party={party.MemberCount} tankDist={(tankVisible ? tankDist : -1):F0} tankHP={tankHp}% tankAtk={tankAttackers} myHP={p.World.Hpp}% mp={p.World.Mpp}% lvl={p.World.MainJobLevel} exp={p.World.ExpNow}/{p.World.ExpNext}");
 
             if (tankHp > 0) sawTankAlive = true;
             // 0) TANK IS DEAD (Hpp==0) — legacy regroup, ONLY when no Reunion is configured (Reunion owns splits
@@ -187,7 +187,7 @@ public sealed class PartySupport(IParty party, IPerception p, INavigation nav, I
                     if (!tankInRange) { nav.Follow(cfg.TankId); await Task.Delay(500, ct); continue; }
                     await StandCast(Spell.Raise, cfg.TankId, "Raise tank (KO'd)"); continue;
                 }
-                Console.WriteLine($"[{cfg.Tag}] tank KO'd + no Raise — Home Pointing to regroup at the staging town (cross back together)");
+                Log.Always($"[{cfg.Tag}] tank KO'd + no Raise — Home Pointing to regroup at the staging town (cross back together)");
                 nav.Stop(); await combat.Homepoint(ct); await Task.Delay(6000, ct);
                 converged = false; sawTankAlive = false; continue;
             }
@@ -274,17 +274,17 @@ public sealed class PartySupport(IParty party, IPerception p, INavigation nav, I
                     // the peel duty yanks anything that follows. Step away only when the tank isn't visible.
                     if (p.World.Entities.TryGetValue(cfg.TankId, out var tankEnt) && tankEnt is not null && (tankEnt.X != 0 || tankEnt.Z != 0))
                     {
-                        Console.WriteLine($"[{cfg.Tag}] '{near.Name}' {p.DistanceTo(near.X, near.Z):F0}y away — resting AT the tank (peel range)");
+                        Log.Info($"[{cfg.Tag}] '{near.Name}' {p.DistanceTo(near.X, near.Z):F0}y away — resting AT the tank (peel range)");
                         nav.MoveTo(tankEnt.X, tankEnt.Z);
                     }
                     else
                     {
                         if (!RestRoutines.StepAway(nav, p, near.X, near.Z, 18f)) break;   // pinned against unwalkable ground — sit rather than freeze
-                        Console.WriteLine($"[{cfg.Tag}] '{near.Name}' {p.DistanceTo(near.X, near.Z):F0}y away — stepping off before resting");
+                        Log.Info($"[{cfg.Tag}] '{near.Name}' {p.DistanceTo(near.X, near.Z):F0}y away — stepping off before resting");
                     }
                     for (int w = 0; w < 12 && nav.IsMoving && !ct.IsCancellationRequested; w++) await Task.Delay(500, ct);
                 }
-                Console.WriteLine($"[{cfg.Tag}] resting MP ({p.World.Mpp}%) — no mobs on tank");
+                Log.Info($"[{cfg.Tag}] resting MP ({p.World.Mpp}%) — no mobs on tank");
                 nav.Stop();
                 // Abort the rest THE MOMENT the tank acquires attackers — UNLESS we're critically OOM (then
                 // only a genuine tank emergency, <35% HP, or an attack on US stands us up: aborting for every

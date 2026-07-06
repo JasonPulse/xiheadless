@@ -29,7 +29,7 @@ public sealed class BotRunner
             {
                 // Full ToString (type + message + STACK) — a bare Message left an overnight NullReference
                 // undiagnosable; the stack names the faulting routine.
-                Console.WriteLine($"[brain] CRASHED (restart {attempt + 1}): {e}");
+                Log.Always($"[brain] CRASHED (restart {attempt + 1}): {e}");
                 try { await Task.Delay(5000, _cts.Token); } catch (OperationCanceledException) { return; }
             }
         }

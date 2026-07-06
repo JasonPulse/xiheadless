@@ -83,7 +83,7 @@ public sealed class LevelGrind(
                                                          // fed it forever and the Rarab clusters were never trekked
                                                          // (41 kills, zero Rarab engagements in one overnight log).
 
-    void Log(string m) => Console.WriteLine($"[{cfg.Tag}] {m}");
+    void Log(string m) => XiHeadless.Log.Auto($"[{cfg.Tag}] {m}");
 
     public async Task RunAsync(CancellationToken ct)
     {

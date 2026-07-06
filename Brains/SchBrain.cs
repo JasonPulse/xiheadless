@@ -78,6 +78,6 @@ public sealed class SchBrain(
     async Task Equip(CancellationToken ct)
     {
         var (n, total) = await GearRoutines.EquipByLevel(gear, p, Gear, ct);
-        Console.WriteLine($"[sch] equipped {n}/{total} (job {p.World.MainJob} lvl {p.World.MainJobLevel}, club={gear.SkillLevel(ClubSkill)})");
+        Log.Info($"[sch] equipped {n}/{total} (job {p.World.MainJob} lvl {p.World.MainJobLevel}, club={gear.SkillLevel(ClubSkill)})");
     }
 }

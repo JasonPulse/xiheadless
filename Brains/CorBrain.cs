@@ -89,6 +89,6 @@ public sealed class CorBrain(
         (byte slot, ushort item)? phase = p.World.MainJob == Job.Rdm
             ? (EquipSlot.Main, lvl >= 18 ? FlameSword : lvl >= 11 ? BeeSpatha : WaxSword) : null;
         var (n, total) = await GearRoutines.EquipByLevel(gear, p, Gear, ct, phase);
-        Console.WriteLine($"[cor] equipped {n}/{total} (job {p.World.MainJob} lvl {lvl}, dagger={gear.SkillLevel(DaggerSkill)})");
+        Log.Info($"[cor] equipped {n}/{total} (job {p.World.MainJob} lvl {lvl}, dagger={gear.SkillLevel(DaggerSkill)})");
     }
 }

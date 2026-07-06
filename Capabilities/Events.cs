@@ -33,7 +33,7 @@ public sealed class Events(ISession s) : IEvents
     {
         s.State.LastEventDrivenUtc = DateTime.UtcNow;   // keep the auto-completer off anything this stirs up
         ushort idx = s.State.TargidOf(npcId);
-        Console.WriteLine($"[events] Trigger npc=0x{npcId:X} idx={idx} mypos=({s.State.X:F0},{s.State.Y:F0},{s.State.Z:F0})");
+        Log.Info($"[events] Trigger npc=0x{npcId:X} idx={idx} mypos=({s.State.X:F0},{s.State.Y:F0},{s.State.Z:F0})");
         s.Enqueue(ActionPacket.Build(ActionPacket.Talk, npcId, idx));
         await Task.Delay(600, ct);
     }
@@ -43,7 +43,7 @@ public sealed class Events(ISession s) : IEvents
         s.State.EventActive = false;
         s.State.LastEventDrivenUtc = DateTime.UtcNow;   // the brain is deliberately driving this event; keep the auto-completer off it
         ushort idx = s.State.TargidOf(npcId);
-        Console.WriteLine($"[events] Talk npc=0x{npcId:X} idx={idx} mypos=({s.State.X:F0},{s.State.Y:F0},{s.State.Z:F0})");
+        Log.Info($"[events] Talk npc=0x{npcId:X} idx={idx} mypos=({s.State.X:F0},{s.State.Y:F0},{s.State.Z:F0})");
         s.Enqueue(ActionPacket.Build(ActionPacket.Talk, npcId, idx));   // starts the NPC's event server-side
         for (int t = 0; t < 8000 && !s.State.EventActive; t += 100) await Task.Delay(100, ct);
         return s.State.EventActive;
@@ -59,7 +59,7 @@ public sealed class Events(ISession s) : IEvents
     // server matches on currentEvent's id, so EventPara must be the real csid.
     public async Task Finish(uint npcId, ushort npcIndex, ushort eventId, uint selection, CancellationToken ct = default)
     {
-        Console.WriteLine($"[events] EVENTEND npc=0x{npcId:X} idx={npcIndex} event={eventId} sel={selection}");
+        Log.Info($"[events] EVENTEND npc=0x{npcId:X} idx={npcIndex} event={eventId} sel={selection}");
         s.Enqueue(EventEndPacket.Build(npcId, npcIndex, eventId, selection));
         s.State.EventActive = false;
         s.State.LastEventDrivenUtc = DateTime.UtcNow;

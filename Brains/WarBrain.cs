@@ -82,7 +82,7 @@ public sealed class WarBrain(IPerception p, INavigation nav, ICombat combat, IZo
         set.AddRange(Armor.Select(g => (g.slot, (uint)g.item)));
         set.AddRange(Armor21.Select(g => (g.slot, (uint)g.item)));   // after Armor: replaces lv7 pieces once wearable
         int n = await gear.EquipSet(set, ct);
-        Console.WriteLine($"[war] equipped {n}/{set.Count} (lvl {p.World.MainJobLevel}, wep={weapon} sword={gear.SkillLevel(3)} ga={gear.SkillLevel(6)})");
+        Log.Info($"[war] equipped {n}/{set.Count} (lvl {p.World.MainJobLevel}, wep={weapon} sword={gear.SkillLevel(3)} ga={gear.SkillLevel(6)})");
     }
 
     // WAR job abilities — reused by the leveling brain (via cfg.UseAbilities) AND the subjob farm's KillTarget,
@@ -95,19 +95,19 @@ public sealed class WarBrain(IPerception p, INavigation nav, ICombat combat, IZo
         // Provoke (lv5, 30s recast) is HATE management, NOT a damage button — fire it ONLY when asked: at the
         // START of a fight (grab initial hate) or when a mob has switched to the HEALER (yank it back). The
         // caller decides; spamming it every recast (the old bug) wasted GCDs and did nothing once we had hate.
-        if (provoke && await combat.UseAbility(Ability.Provoke, mob, ct)) Console.WriteLine("[war] Provoke");  // lv5
+        if (provoke && await combat.UseAbility(Ability.Provoke, mob, ct)) Log.Info("[war] Provoke");  // lv5
         // Offensive buffs (Berserk +att, Aggressor +acc, Warcry party att): only on a real fight —
         // DecentChallenge+ (con >= 3). Trivial mobs don't need them and the 5-min recast is better saved.
         if (con >= 3)
         {
-            if (await combat.UseAbility(Ability.Berserk, mob, ct)) Console.WriteLine("[war] Berserk");      // lv15
-            if (await combat.UseAbility(Ability.Aggressor, mob, ct)) Console.WriteLine("[war] Aggressor");  // lv45
-            if (await combat.UseAbility(Ability.Warcry, mob, ct)) Console.WriteLine("[war] Warcry");        // lv35 (best in a party)
+            if (await combat.UseAbility(Ability.Berserk, mob, ct)) Log.Info("[war] Berserk");      // lv15
+            if (await combat.UseAbility(Ability.Aggressor, mob, ct)) Log.Info("[war] Aggressor");  // lv45
+            if (await combat.UseAbility(Ability.Warcry, mob, ct)) Log.Info("[war] Warcry");        // lv35 (best in a party)
         }
         // Mighty Strikes (2hr, ~1h recast): TRUE emergency only — low HP AND a genuine threat (con >= 3), so
         // it's never wasted on trash or thrown away in a hopeless fight against something we shouldn't fight.
         if (con >= 3 && hpp is > 0 and < 25 && await combat.UseAbility(Ability.MightyStrikes, mob, ct))
-            Console.WriteLine("[war] Mighty Strikes (2hr emergency)");
+            Log.Info("[war] Mighty Strikes (2hr emergency)");
     }
 
     // LevelGrind callback — delegates to the shared rotation with our live HP. Solo: no healer to protect, so

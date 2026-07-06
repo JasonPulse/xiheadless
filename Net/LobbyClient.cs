@@ -44,7 +44,7 @@ sealed class XiClient(string host, string clientVer)
 
     public async Task LoginAsync(string user, string pass)
     {
-        Console.WriteLine($"login -> {host} ({_serverIp}):54231 (TLS)");
+        Log.Info($"login -> {host} ({_serverIp}):54231 (TLS)");
         var tcp = new TcpClient();
         await tcp.ConnectAsync(_serverIp, 54231);
         var ssl = new SslStream(tcp.GetStream(), false, (_, _, _, _) => true);
@@ -69,12 +69,12 @@ sealed class XiClient(string host, string clientVer)
             throw new Exception($"login failed: {reply}");
         _accountId = root.GetProperty("account_id").GetUInt32();
         _sessionHash = root.GetProperty("session_hash").EnumerateArray().Select(e => (byte)e.GetInt32()).ToArray();
-        Console.WriteLine($"  ok: account_id={_accountId}, sessionHash={_sessionHash.Length}B");
+        Log.Info($"  ok: account_id={_accountId}, sessionHash={_sessionHash.Length}B");
     }
 
     public void LobbyDataConnect()
     {
-        Console.WriteLine($"lobby data -> {_serverIp}:54230");
+        Log.Info($"lobby data -> {_serverIp}:54230");
         var data = new TcpClient();
         data.Connect(_serverIp, 54230);
         _dataStream = data.GetStream();
@@ -89,7 +89,7 @@ sealed class XiClient(string host, string clientVer)
         // 0xA1 (0) — this first one carries the session hash
         Send_0xA1(withHash: true);
 
-        Console.WriteLine($"lobby view -> {_serverIp}:54001");
+        Log.Info($"lobby view -> {_serverIp}:54001");
         var view = new TcpClient();
         view.Connect(_serverIp, 54001);
         _viewStream = view.GetStream();
@@ -125,7 +125,7 @@ sealed class XiClient(string host, string clientVer)
         _viewStream.Write(p);
         var resp = new byte[40];
         ReadSome(_viewStream, resp);
-        Console.WriteLine($"  0x26 ok: expansions=0x{RU32(resp, 32):X}, features=0x{RU16(resp, 36):X}");
+        Log.Info($"  0x26 ok: expansions=0x{RU32(resp, 32):X}, features=0x{RU16(resp, 36):X}");
     }
 
     public void LobbyView_0x1F() => _viewStream.Write(ViewPkt(0x1F, 44));
@@ -140,7 +140,7 @@ sealed class XiClient(string host, string clientVer)
         _viewStream.Write(rsv);
         var r = new byte[0x20];
         _viewStream.ReadExactly(r, 0, 0x20); // reply is fixed 0x20
-        Console.WriteLine($"  0x22 reserve '{name}': result={r[8]}");
+        Log.Info($"  0x22 reserve '{name}': result={r[8]}");
     }
 
     // 0x21 create the reserved char (race@48 job@50 nation@54 size@57 face@60). job + nation are passed in
@@ -158,7 +158,7 @@ sealed class XiClient(string host, string clientVer)
         _viewStream.Write(cr);
         var r = new byte[0x20];
         _viewStream.ReadExactly(r, 0, 0x20);
-        Console.WriteLine($"  0x21 create: job={job} nation={cr[54]} result={r[8]}");
+        Log.Info($"  0x21 create: job={job} nation={cr[54]} result={r[8]}");
     }
 
     public void DeleteAllChars()
@@ -176,7 +176,7 @@ sealed class XiClient(string host, string clientVer)
             _viewStream.Write(p);
             var r = new byte[0x20];
             try { _viewStream.ReadExactly(r, 0, 0x20); } catch { }
-            Console.WriteLine($"  deleted {nm} ({cid}): result={r[8]}");
+            Log.Info($"  deleted {nm} ({cid}): result={r[8]}");
             Thread.Sleep(200);
         }
     }
@@ -254,11 +254,11 @@ sealed class XiClient(string host, string clientVer)
     {
         for (int i = 1; i <= 5; i++)
         {
-            if (TrySelectBest(FetchCharList())) { Console.WriteLine($"  selected char id={_charId} '{_charName}' (read attempt {i})"); return false; }
-            Console.WriteLine($"  no char in char-list (attempt {i}/5)");
+            if (TrySelectBest(FetchCharList())) { Log.Always($"  selected char id={_charId} '{_charName}' (read attempt {i})"); return false; }
+            Log.Info($"  no char in char-list (attempt {i}/5)");
             if (i < 5) Thread.Sleep(500);
         }
-        Console.WriteLine("  account is empty -> provisioning a character");
+        Log.Info("  account is empty -> provisioning a character");
         return CreateChar();
     }
 
@@ -270,10 +270,10 @@ sealed class XiClient(string host, string clientVer)
         for (int t = 1; t <= 5; t++)
         {
             var name = NameGen.Next();
-            Console.WriteLine($"  creating char '{name}' (try {t}/5)");
+            Log.Info($"  creating char '{name}' (try {t}/5)");
             ReserveName(name);
             CreateCharBody(job, nation);
-            if (TrySelectBest(FetchCharList())) { Console.WriteLine($"  created + selected char id={_charId} '{_charName}'"); return true; }
+            if (TrySelectBest(FetchCharList())) { Log.Always($"  created + selected char id={_charId} '{_charName}'"); return true; }
         }
         throw new Exception($"failed to create a character on account {_accountId} after 5 tries");
     }
@@ -295,7 +295,7 @@ sealed class XiClient(string host, string clientVer)
         var zoneIp = new IPAddress(resp[0x38..0x3C]);
         ushort zonePort = RU16(resp, 0x3C);
         _mapServer = new IPEndPoint(zoneIp, zonePort);
-        Console.WriteLine($"  zone server = {_mapServer}");
+        Log.Info($"  zone server = {_mapServer}");
         if (zonePort == 0) throw new Exception("null zone handoff (0.0.0.0) — char-select did not register");
     }
 }

@@ -55,7 +55,7 @@ public static class PartyRoutines
                         && pm.Zone == 0 && pm.Hpp >= minHp && pm.Mpp >= minMp;
             if (dist <= within && good) { if (weFollowed) nav.Stop(); return true; }
             if (visible) { nav.Follow(partnerId); weFollowed = true; }   // close the gap ourselves — Navigator.Follow repaths continuously on-mesh
-            if (w % 8 == 0) Console.WriteLine($"[tether] waiting for partner good (dist={dist:F0} hp={pm?.Hpp ?? 0}% mp={pm?.Mpp ?? 0}% zone={pm?.Zone ?? 0})");
+            if (w % 8 == 0) Log.Info($"[tether] waiting for partner good (dist={dist:F0} hp={pm?.Hpp ?? 0}% mp={pm?.Mpp ?? 0}% zone={pm?.Zone ?? 0})");
             await Task.Delay(2000, ct);
         }
         nav.Stop();

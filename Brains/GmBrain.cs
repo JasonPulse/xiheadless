@@ -28,7 +28,7 @@ public sealed class GmBrain(IPerception p, IChat chat, ILifecycle lifecycle) : I
 
     public async Task RunAsync(CancellationToken ct)
     {
-        Console.WriteLine($"[gm] grant bot up (char='{p.World.MyName}') — listening for /tell requests: 'grantjob <JOB>' or 'setcap <1-99>'");
+        Log.Always($"[gm] grant bot up (char='{p.World.MyName}') — listening for /tell requests: 'grantjob <JOB>' or 'setcap <1-99>'");
         int grants = 0;
 
         try
@@ -48,14 +48,14 @@ public sealed class GmBrain(IPerception p, IChat chat, ILifecycle lifecycle) : I
                     string cmd = kind == "job" ? $"!grantjob {sender} {value}" : $"!setcap {sender} {value}";
                     chat.Say(cmd);
                     grants++;
-                    Console.WriteLine($"[gm] {sender} requested '{msg}' -> issued: {cmd} ({grants} issued)");
+                    Log.Always($"[gm] {sender} requested '{msg}' -> issued: {cmd} ({grants} issued)");
                     chat.Tell(sender, kind == "job" ? $"granted job {value}" : $"set cap {value}");
 
                     await Task.Delay(CommandSpacingMs, ct); // let the server process one command per tick
 
                     if (MaxGrants > 0 && grants >= MaxGrants)
                     {
-                        Console.WriteLine($"[gm] issued {grants} grants (quota {MaxGrants}) -> logging out");
+                        Log.Always($"[gm] issued {grants} grants (quota {MaxGrants}) -> logging out");
                         lifecycle.Logout();
                         return;
                     }
@@ -66,7 +66,7 @@ public sealed class GmBrain(IPerception p, IChat chat, ILifecycle lifecycle) : I
         }
         finally
         {
-            Console.WriteLine("[gm] stopped");
+            Log.Always("[gm] stopped");
         }
     }
 

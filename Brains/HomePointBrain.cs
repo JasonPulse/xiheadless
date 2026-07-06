@@ -20,15 +20,15 @@ public sealed class HomePointBrain(IPerception p, INavigation nav, IZoning zonin
         // (Prism Powder) so a low-level char (the lv9 WHM) survives the crossing — "using items to get there".
         if (zoning.CurrentZone != TargetZone)
         {
-            if (!combat.Dead && p.World.Hpp < 90) { Console.WriteLine($"[hp] resting to full HP ({p.World.Hpp}%) before crossing to Mhaura"); await combat.Rest(95, 0, null, ct); }
+            if (!combat.Dead && p.World.Hpp < 90) { Log.Info($"[hp] resting to full HP ({p.World.Hpp}%) before crossing to Mhaura"); await combat.Rest(95, 0, null, ct); }
             if (inv.CountOf(StealthRoutines.SilentOil) < 6 || inv.CountOf(StealthRoutines.PrismPowder) < 6)
             {
-                if (!Game.Zonelines.HasAuctionHouse(zoning.CurrentZone)) { Console.WriteLine("[hp] -> Windurst Woods for stealth powders"); await zoning.GoTo("Windurst Woods", ct); }
+                if (!Game.Zonelines.HasAuctionHouse(zoning.CurrentZone)) { Log.Info("[hp] -> Windurst Woods for stealth powders"); await zoning.GoTo("Windurst Woods", ct); }
                 await StealthRoutines.EnsureStock(ah, p, inv, 12, Keep, ShopRoutines.NoFree, ct);
-                Console.WriteLine($"[hp] powders: oil={inv.CountOf(StealthRoutines.SilentOil)} prism={inv.CountOf(StealthRoutines.PrismPowder)}");
+                Log.Info($"[hp] powders: oil={inv.CountOf(StealthRoutines.SilentOil)} prism={inv.CountOf(StealthRoutines.PrismPowder)}");
             }
             _ = await StealthRoutines.BeginStealth(inv, p, ct);
-            Console.WriteLine("[hp] crossing to Mhaura under Sneak+Invis to set the home point");
+            Log.Info("[hp] crossing to Mhaura under Sneak+Invis to set the home point");
             await zoning.GoTo("Mhaura", ct);
         }
         // Crystal-set MECHANICS (walk to the crystal, clear blocking zone-in events, Examine + blind EVENTEND
@@ -36,7 +36,7 @@ public sealed class HomePointBrain(IPerception p, INavigation nav, IZoning zonin
         // old inline flow. This brain only CHOOSES to set at Mhaura and drove the crossing above.
         ushort zone = zoning.CurrentZone;
         if (!await HomePointRoutines.SetHere(p, nav, events, combat, zone, ct))
-            Console.WriteLine($"[hp] home point NOT set for zone {zone} (no crystal mapped, or arrived out of range)");
+            Log.Info($"[hp] home point NOT set for zone {zone} (no crystal mapped, or arrived out of range)");
         await Task.Delay(2500, ct);
         lifecycle.Logout();
     }

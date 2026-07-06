@@ -73,6 +73,6 @@ public sealed class Chat(ISession s) : IChat
         System.Text.Encoding.ASCII.GetBytes(to, 0, System.Math.Min(to.Length, 14), p, 6);
         text.CopyTo(p, 21);
         s.Enqueue(p);
-        Console.WriteLine($"[chat] tell -> '{to}': {msg}");
+        Log.Info($"[chat] tell -> '{to}': {msg}");
     }
 }

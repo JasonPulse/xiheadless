@@ -42,7 +42,7 @@ public sealed class FfxiDecompress
             outBuf[w++] = (byte)_jump[pos + 3];                   // leaf data
             pos = _jump[0];
         }
-        if (w == maxOut) Console.WriteLine($"[decompress-truncated] hit {maxOut}B ceiling ({bits} bits) — tail sub-packets (possibly an event) may be lost");
+        if (w == maxOut) Log.Always($"[decompress-truncated] hit {maxOut}B ceiling ({bits} bits) — tail sub-packets (possibly an event) may be lost");
         return outBuf[..w];
     }
 }

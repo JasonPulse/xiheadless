@@ -32,12 +32,12 @@ public sealed class JobChange(ISession s, IDelivery delivery) : IJobChange
         bool entered = false;
         if (!Game.Zonelines.HasMogMenu(zone))
         {
-            Console.WriteLine($"[job] zone {zone} has no Explorer Moogle — entering Mog House");
-            if (!await delivery.EnterMogHouse(ct)) { Console.WriteLine("[job] no Moogle access here — move to a city"); return false; }
+            Log.Info($"[job] zone {zone} has no Explorer Moogle — entering Mog House");
+            if (!await delivery.EnterMogHouse(ct)) { Log.Info("[job] no Moogle access here — move to a city"); return false; }
             entered = true;
         }
 
-        Console.WriteLine($"[job] requesting main={mainJob} sub={supportJob}");
+        Log.Info($"[job] requesting main={mainJob} sub={supportJob}");
         s.Enqueue(JobPacket.Build(mainJob, supportJob));
         bool ok = false;
         for (int t = 0; t < 8000 && !ok; t += 200)   // server reapplies + resends 0x1B JOB_INFO
@@ -45,11 +45,11 @@ public sealed class JobChange(ISession s, IDelivery delivery) : IJobChange
             await Task.Delay(200, ct);
             bool mainOk = mainJob == 0 || s.State.MainJob == mainJob;
             bool subOk = supportJob == 0 || s.State.SubJob == supportJob;
-            if (mainOk && subOk) { Console.WriteLine($"[job] now {s.State.MainJob}/{s.State.SubJob}"); ok = true; }
+            if (mainOk && subOk) { Log.Always($"[job] now {s.State.MainJob}/{s.State.SubJob}"); ok = true; }
         }
         // Always leave the Mog House if we entered it — otherwise we strand the bot inside (zone 0),
         // where it can't route out and every later login starts stuck in the Mog House.
-        if (entered) { await delivery.ExitMogHouse(ct); Console.WriteLine("[job] exited Mog House"); }
+        if (entered) { await delivery.ExitMogHouse(ct); Log.Info("[job] exited Mog House"); }
         if (!ok)
         {
             // The 0x1B JOB_INFO often lands during the exit re-zone, AFTER the window above — a real
@@ -59,10 +59,10 @@ public sealed class JobChange(ISession s, IDelivery delivery) : IJobChange
                 await Task.Delay(200, ct);
                 bool mainOk = mainJob == 0 || s.State.MainJob == mainJob;
                 bool subOk = supportJob == 0 || s.State.SubJob == supportJob;
-                if (mainOk && subOk) { Console.WriteLine($"[job] now {s.State.MainJob}/{s.State.SubJob} (confirmed post-exit)"); ok = true; }
+                if (mainOk && subOk) { Log.Always($"[job] now {s.State.MainJob}/{s.State.SubJob} (confirmed post-exit)"); ok = true; }
             }
         }
-        if (!ok) Console.WriteLine($"[job] not confirmed (now {s.State.MainJob}/{s.State.SubJob}) — job locked?");
+        if (!ok) Log.Info($"[job] not confirmed (now {s.State.MainJob}/{s.State.SubJob}) — job locked?");
         return ok;
     }
 }

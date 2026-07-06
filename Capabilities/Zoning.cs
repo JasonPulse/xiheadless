@@ -32,7 +32,7 @@ public sealed class Zoning(ISession s, INavigation nav) : IZoning
     {
         if (Zonelines.Resolve(zoneName) is not ushort target)
         {
-            Console.WriteLine($"[travel] unknown zone '{zoneName}'");
+            Log.Info($"[travel] unknown zone '{zoneName}'");
             return false;
         }
         await ToZone(target, ct);
@@ -42,7 +42,7 @@ public sealed class Zoning(ISession s, INavigation nav) : IZoning
     public async Task ToZone(ushort targetZone, CancellationToken ct = default)
     {
         var route = Zonelines.Route(CurrentZone, targetZone);
-        if (route is null) { Console.WriteLine($"[travel] no route {CurrentZone} -> {targetZone}"); return; }
+        if (route is null) { Log.Info($"[travel] no route {CurrentZone} -> {targetZone}"); return; }
         foreach (var hop in route)
         {
             ct.ThrowIfCancellationRequested();
@@ -53,7 +53,7 @@ public sealed class Zoning(ISession s, INavigation nav) : IZoning
                 await beforeLeg(ct);
             }
             ushort from = CurrentZone;
-            Console.WriteLine($"[travel] zone {from}: walking to the {hop.To} zone line (status={s.State.ServerStatus})");
+            Log.Info($"[travel] zone {from}: walking to the {hop.To} zone line (status={s.State.ServerStatus})");
             await WaitOutEvent(ct);   // don't walk (char is locked) or cross while in a cutscene
             await WalkTo(hop.TriggerX, hop.TriggerY, hop.TriggerZ, ct);
 
@@ -71,11 +71,11 @@ public sealed class Zoning(ISession s, INavigation nav) : IZoning
             }
             if (CurrentZone != hop.To)
             {
-                Console.WriteLine($"[travel] crossing to {hop.To} failed (now in {CurrentZone}, status={s.State.ServerStatus}, pos=({s.State.X:F0},{s.State.Y:F0},{s.State.Z:F0})); aborting route");
+                Log.Info($"[travel] crossing to {hop.To} failed (now in {CurrentZone}, status={s.State.ServerStatus}, pos=({s.State.X:F0},{s.State.Y:F0},{s.State.Z:F0})); aborting route");
                 return;
             }
             await Task.Delay(1500, ct);  // let the new zone's navmesh + initial packets settle
-            Console.WriteLine($"[travel] arrived in zone {CurrentZone}");
+            Log.Info($"[travel] arrived in zone {CurrentZone}");
         }
     }
 
@@ -103,7 +103,7 @@ public sealed class Zoning(ISession s, INavigation nav) : IZoning
         // normal/engaged state. If DEATH doesn't clear in the window, the death handler will homepoint us and
         // the route re-computes from the new zone next call.
         if (s.State.ServerStatus is not (3 or 4)) return;
-        Console.WriteLine($"[travel] status={s.State.ServerStatus} (3=death,4=cutscene) blocks the 0x5E; waiting to clear");
+        Log.Info($"[travel] status={s.State.ServerStatus} (3=death,4=cutscene) blocks the 0x5E; waiting to clear");
         await WaitFor(() => s.State.ServerStatus is not (3 or 4), 20000, ct);
     }
 }

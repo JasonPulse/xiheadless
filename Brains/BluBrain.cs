@@ -81,6 +81,6 @@ public sealed class BluBrain(
     {
         (byte slot, ushort item)? phase = p.World.MainJob == Job.War ? (EquipSlot.Main, WarBrain.Weapon20) : null;
         var (n, total) = await GearRoutines.EquipByLevel(gear, p, Gear, ct, phase);
-        Console.WriteLine($"[blu] equipped {n}/{total} (job {p.World.MainJob} lvl {p.World.MainJobLevel}, sword={gear.SkillLevel(SwordSkill)})");
+        Log.Info($"[blu] equipped {n}/{total} (job {p.World.MainJob} lvl {p.World.MainJobLevel}, sword={gear.SkillLevel(SwordSkill)})");
     }
 }

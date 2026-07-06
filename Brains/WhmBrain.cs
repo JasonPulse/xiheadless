@@ -116,7 +116,7 @@ public sealed class WhmBrain(
     {
         if (p.World.MainJobLevel < minLevel || p.World.Gil < minGil) return;
         if (inv.Has(id) || (learnsSpell is { } sp && magic.Known(sp))) return;   // already own / already learned
-        Console.WriteLine($"[whm] restock: buying {id} (gil {p.World.Gil})");
+        Log.Info($"[whm] restock: buying {id} (gil {p.World.Gil})");
         await ShopRoutines.BuyItem(ah, p, inv, id, Keep, ShopRoutines.NoFree, ct);
     }
 
@@ -145,7 +145,7 @@ public sealed class WhmBrain(
         if (set.Count > 0)
         {
             int n = await gear.EquipSet(set, ct);
-            Console.WriteLine($"[whm] equipped {n}/{set.Count} (lvl {p.World.MainJobLevel}, club skill {gear.SkillLevel(ClubSkill)})");
+            Log.Info($"[whm] equipped {n}/{set.Count} (lvl {p.World.MainJobLevel}, club skill {gear.SkillLevel(ClubSkill)})");
         }
         await LearnIfReady(ScrollDia, Spell.Dia, 3, ct);
         await LearnIfReady(ScrollCure, Spell.Cure, 5, ct);
@@ -162,7 +162,7 @@ public sealed class WhmBrain(
     {
         if (!magic.Ready(Spell.Dia)) return;
         if (!p.World.Entities.TryGetValue(mobId, out var e) || p.DistanceTo(e.X, e.Z) > 20f) return;
-        Console.WriteLine($"[whm] Dia pull on 0x{mobId:X}");
+        Log.Info($"[whm] Dia pull on 0x{mobId:X}");
         magic.Cast(Spell.Dia, mobId);
         await Task.Delay(3000, ct);
     }
@@ -173,7 +173,7 @@ public sealed class WhmBrain(
     {
         for (int i = 0; i < 4 && p.World.Hpp < 85 && p.World.Mpp > 20 && magic.Ready(Spell.Cure) && !ct.IsCancellationRequested; i++)
         {
-            Console.WriteLine($"[whm] post-kill Cure (HP {p.World.Hpp}% MP {p.World.Mpp}%)");
+            Log.Info($"[whm] post-kill Cure (HP {p.World.Hpp}% MP {p.World.Mpp}%)");
             magic.Cast(Spell.Cure, p.World.MyId);
             await Task.Delay(2500, ct);
         }
@@ -185,7 +185,7 @@ public sealed class WhmBrain(
     async Task<bool> EmergencyHeal(CancellationToken ct)
     {
         if (p.World.Hpp >= 60 || !magic.Ready(Spell.Cure)) return false;
-        Console.WriteLine($"[whm] Cure self (HP {p.World.Hpp}% MP {p.World.Mpp}%)");
+        Log.Info($"[whm] Cure self (HP {p.World.Hpp}% MP {p.World.Mpp}%)");
         magic.Cast(Spell.Cure, p.World.MyId);
         await Task.Delay(2500, ct);
         return true;

@@ -74,7 +74,7 @@ public sealed class RoamController(INavigation nav, IPerception p, ICombat comba
     // "fresh" and the duo ping-ponged between them (the short backtracking the user watched).
     static (int x, int z) Grid(float x, float z) => ((int)MathF.Round(x / 40f), (int)MathF.Round(z / 40f));
 
-    void Log(string m) => Console.WriteLine($"[{cfg.Tag}] {m}");
+    void Log(string m) => XiHeadless.Log.Auto($"[{cfg.Tag}] {m}");
 
     // Prey memory persists across sessions (per zone): a bot that hunted here before starts by heading back
     // to remembered prey ground instead of paying the blind-exploration tax every launch. Plain "x z" lines.

@@ -23,7 +23,7 @@ public static class HomePointRoutines
     public static async Task<bool> SetHere(IPerception p, INavigation nav, IEvents events, ICombat combat,
                                            ushort zone, CancellationToken ct)
     {
-        if (!Crystal.TryGetValue(zone, out var pos)) { Console.WriteLine($"[hp] no crystal mapped for zone {zone}"); return false; }
+        if (!Crystal.TryGetValue(zone, out var pos)) { Log.Info($"[hp] no crystal mapped for zone {zone}"); return false; }
 
         // Clear ANY blocking zone-in event first — this is the difference that made the original Mhaura set
         // work while the Windurst set failed: if some other event is the char's currentEvent, the crystal
@@ -37,7 +37,7 @@ public static class HomePointRoutines
         }
         await Task.Delay(1200, ct);
 
-        Console.WriteLine($"[hp] walking to the Home Point crystal in zone {zone} ({pos.x:F0},{pos.z:F0})");
+        Log.Info($"[hp] walking to the Home Point crystal in zone {zone} ({pos.x:F0},{pos.z:F0})");
         // ENFORCE arrival: the crystal's onTrigger has a ~6y server-side range check, and a short-stopped
         // city walk makes the whole set silently no-op (the BLM's first Windurst set never took — it still
         // revived in Mhaura). Retry the approach; refuse to attempt from out of range.
@@ -49,11 +49,11 @@ public static class HomePointRoutines
             await Task.Delay(500, ct);
         }
         float dist = p.DistanceTo(pos.x, pos.z);
-        Console.WriteLine($"[hp] at ({p.World.X:F0},{p.World.Z:F0}) — {dist:F1}y from the crystal");
-        if (dist > 6f) { Console.WriteLine("[hp] too far from the crystal — NOT attempting (the set would silently no-op)"); return false; }
+        Log.Info($"[hp] at ({p.World.X:F0},{p.World.Z:F0}) — {dist:F1}y from the crystal");
+        if (dist > 6f) { Log.Info("[hp] too far from the crystal — NOT attempting (the set would silently no-op)"); return false; }
 
         // setHomePoint() only runs while ALIVE — revive/heal first if we arrived KO'd.
-        if (combat.Dead) { Console.WriteLine("[hp] arrived KO'd — reviving before the set"); await combat.Rest(95, 0, null, ct); }
+        if (combat.Dead) { Log.Always("[hp] arrived KO'd — reviving before the set"); await combat.Rest(95, 0, null, ct); }
         ushort idx = p.World.TargidOf(pos.npcId);   // shared resolver (tracked-entity index, else id & 0xFFF)
         for (int attempt = 1; attempt <= 3 && !ct.IsCancellationRequested; attempt++)
         {
@@ -61,7 +61,7 @@ public static class HomePointRoutines
             await events.Finish(pos.npcId, idx, pos.csid, 1, ct); // EVENTEND option 1 = SET_HOMEPOINT
             await Task.Delay(1500, ct);
         }
-        Console.WriteLine($"[hp] home point set SENT at zone {zone} from {dist:F1}y (true verification = next death revives here)");
+        Log.Info($"[hp] home point set SENT at zone {zone} from {dist:F1}y (true verification = next death revives here)");
         return true;
     }
 }

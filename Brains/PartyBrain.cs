@@ -14,11 +14,11 @@ public sealed class PartyBrain(IParty party, IPerception p, INavigation nav, IZo
     public async Task RunAsync(CancellationToken ct)
     {
         await Task.Delay(3000, ct);
-        Console.WriteLine($"[party] char='{p.World.MyName}' id={p.World.MyId} zone={zoning.CurrentZone}");
+        Log.Info($"[party] char='{p.World.MyName}' id={p.World.MyId} zone={zoning.CurrentZone}");
 
         if (zoning.CurrentZone == 0)
         {
-            Console.WriteLine("[party] inside the Mog House — exiting to the city");
+            Log.Info("[party] inside the Mog House — exiting to the city");
             await delivery.ExitMogHouse(ct);
             await Task.Delay(2500, ct);
         }
@@ -26,7 +26,7 @@ public sealed class PartyBrain(IParty party, IPerception p, INavigation nav, IZo
         // Co-locate in the rendezvous zone (the char-id invite still wants both in the same zone).
         if (Game.Zonelines.Resolve(Rendezvous) is ushort rz && zoning.CurrentZone != rz)
         {
-            Console.WriteLine($"[party] traveling to rendezvous {Rendezvous}");
+            Log.Info($"[party] traveling to rendezvous {Rendezvous}");
             await zoning.GoTo(Rendezvous, ct);
         }
 
@@ -35,7 +35,7 @@ public sealed class PartyBrain(IParty party, IPerception p, INavigation nav, IZo
         // Single leader (lower char id) sends the invite; the other only accepts. Avoids a mutual-invite race
         // where both have an outgoing invite pending and neither side accepts.
         bool leader = p.World.MyId < partnerId;
-        Console.WriteLine($"[party] rendezvous reached (zone {zoning.CurrentZone}); partner='{partner.Key}' id={partnerId} role={(leader ? "leader/invite" : "member/accept")}");
+        Log.Info($"[party] rendezvous reached (zone {zoning.CurrentZone}); partner='{partner.Key}' id={partnerId} role={(leader ? "leader/invite" : "member/accept")}");
 
         // Converge on one fixed spot (by Manyny, the AH-area vendor) so we're near the partner — and so the
         // partner's entity (hence a real targid) is in view if the char-id-only lookup needs it.
@@ -43,7 +43,7 @@ public sealed class PartyBrain(IParty party, IPerception p, INavigation nav, IZo
         nav.MoveTo(MeetX, MeetZ);
         for (int i = 0; i < 90 && !ct.IsCancellationRequested && p.DistanceTo(MeetX, MeetZ) > 6f; i++) await Task.Delay(1000, ct);
         nav.Stop();
-        Console.WriteLine($"[party] at meet point dist={p.DistanceTo(MeetX, MeetZ):F0}; entities={p.World.Entities.Count}; partnerEntity={(p.World.Entities.ContainsKey(partnerId) ? "visible" : "no")}");
+        Log.Info($"[party] at meet point dist={p.DistanceTo(MeetX, MeetZ):F0}; entities={p.World.Entities.Count}; partnerEntity={(p.World.Entities.ContainsKey(partnerId) ? "visible" : "no")}");
 
         bool announced = false;
         for (int tick = 0; !ct.IsCancellationRequested; tick++)
@@ -51,20 +51,20 @@ public sealed class PartyBrain(IParty party, IPerception p, INavigation nav, IZo
             // Accept any incoming invite (private server, only our fleet is online).
             if (party.InvitePending)
             {
-                Console.WriteLine($"[party] invite from '{party.InviterName}' — accepting");
+                Log.Info($"[party] invite from '{party.InviterName}' — accepting");
                 party.AcceptInvite();
             }
 
             if (party.MemberCount > 0)
             {
-                if (!announced) { Console.WriteLine($"[party] PARTY FORMED — roster has {party.MemberCount} other member(s)"); announced = true; }
+                if (!announced) { Log.Info($"[party] PARTY FORMED — roster has {party.MemberCount} other member(s)"); announced = true; }
             }
             else if (leader)
             {
                 announced = false;
                 ushort targid = p.World.Entities.TryGetValue(partnerId, out var e) ? e.Index : (ushort)0;
                 party.Invite(partnerId, targid);
-                if (tick % 3 == 0) Console.WriteLine($"[party] invited id={partnerId} targid={targid} ({(targid != 0 ? "entity visible" : "by id, lookup")})");
+                if (tick % 3 == 0) Log.Info($"[party] invited id={partnerId} targid={targid} ({(targid != 0 ? "entity visible" : "by id, lookup")})");
             }
             else announced = false;
             await Task.Delay(3000, ct);

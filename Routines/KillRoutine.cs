@@ -34,7 +34,7 @@ public static class KillRoutine
         ICombat combat, IPerception p, INavigation nav, IGear gear,
         Entity mob, int fightCon, Hooks h, int breakOffHpp, CancellationToken ct)
     {
-        void Log(string m) => Console.WriteLine($"[{h.Tag}] {m}");
+        void Log(string m) => XiHeadless.Log.Auto($"[{h.Tag}] {m}");
 
         nav.Face(mob.Id);
         await Task.Delay(250, ct);   // let the facing apply before we start swinging (must face to hit)

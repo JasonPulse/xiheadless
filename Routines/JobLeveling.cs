@@ -18,7 +18,7 @@ public sealed class JobLeveling(IPerception p, IJobChange jobs, IZoning zoning)
         public string Tag = "joblevel";
     }
 
-    void Log(Config c, string m) => Console.WriteLine($"[{c.Tag}] {m}");
+    void Log(Config c, string m) => XiHeadless.Log.Auto($"[{c.Tag}] {m}");
 
     /// The level this character has attained on `job` (server tracks all jobs; 0x1B carries the table).
     public int LevelOf(byte job) => p.World.JobLevels.TryGetValue(job, out var l) ? l : 0;

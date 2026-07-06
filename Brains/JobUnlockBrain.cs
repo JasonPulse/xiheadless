@@ -13,18 +13,18 @@ public sealed class JobUnlockBrain(
         await Task.Delay(4000, ct);
         if (!QuestDefs.Unlock.TryGetValue(Target, out var steps))
         {
-            Console.WriteLine($"[jobunlock] no quest data for job {Target}");
+            Log.Info($"[jobunlock] no quest data for job {Target}");
             lifecycle.Logout();
             return;
         }
         // Run the prerequisite quest chain (if any) first — the unlock quest won't start otherwise.
         var prereq = QuestDefs.Prereqs.TryGetValue(Target, out var pre) ? pre : System.Array.Empty<QuestStep>();
         var all = prereq.Concat(steps).ToList();
-        Console.WriteLine($"[jobunlock] job {Target}: {prereq.Length} prereq + {steps.Length} unlock step(s); char job={p.World.MainJob} lvl={p.World.MainJobLevel}");
+        Log.Info($"[jobunlock] job {Target}: {prereq.Length} prereq + {steps.Length} unlock step(s); char job={p.World.MainJob} lvl={p.World.MainJobLevel}");
 
         await new QuestRunner(p, nav, zoning, quests, trade, combat, gear, events, inv).Run(all, "jobunlock", ct);
 
-        Console.WriteLine($"[jobunlock] done with job {Target} flow — confirm via a JobChange (server gates unlock)");
+        Log.Info($"[jobunlock] done with job {Target} flow — confirm via a JobChange (server gates unlock)");
         lifecycle.Logout();
     }
 }

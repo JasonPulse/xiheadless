@@ -12,11 +12,11 @@ public static class MagicRoutines
         if (magic.Known(spell)) return true;
         ushort slot = inv.SlotOf(scrollId);
         if (slot == 0) return false;
-        Console.WriteLine($"[{tag}] learning {spell} from scroll {scrollId} (slot {slot})");
+        Log.Info($"[{tag}] learning {spell} from scroll {scrollId} (slot {slot})");
         inv.UseItem(0, (byte)slot);
         for (int t = 0; t < 6000 && !magic.Known(spell) && !ct.IsCancellationRequested; t += 250) await Task.Delay(250, ct);
         bool ok = magic.Known(spell);
-        Console.WriteLine(ok ? $"[{tag}] learned {spell}" : $"[{tag}] {spell} not learned yet (retry on next level-up)");
+        Log.Info(ok ? $"[{tag}] learned {spell}" : $"[{tag}] {spell} not learned yet (retry on next level-up)");
         return ok;
     }
 }

@@ -35,7 +35,7 @@ public sealed class Delivery(ISession s) : IDelivery
     {
         if (!Game.ZoneGraph.MogHouseEntry.TryGetValue(s.State.ZoneId, out var rect))
         {
-            Console.WriteLine($"[delivery] no Mog House entrance in the data for zone {s.State.ZoneId}");
+            Log.Info($"[delivery] no Mog House entrance in the data for zone {s.State.ZoneId}");
             return false;
         }
         s.Enqueue(ZoneRequestPacket.Build(rect, s.State.X, s.State.Y, s.State.Z)); // 0x5E maprect -> sets m_moghouseID
@@ -79,10 +79,10 @@ public sealed class Delivery(ISession s) : IDelivery
             await Task.Delay(600, ct);
             s.Enqueue(DeliveryPacket.Build(DeliveryPacket.Confirm, DeliveryPacket.BoxNone, -1, -1, -1));
             await Task.Delay(400, ct);
-            Console.WriteLine($"[delivery] mailed inv slot {invSlot} x{qty} -> '{player}' (outgoing slot {slot})");
+            Log.Info($"[delivery] mailed inv slot {invSlot} x{qty} -> '{player}' (outgoing slot {slot})");
             return true;
         }
-        Console.WriteLine($"[delivery] FAILED to mail inv slot {invSlot} -> '{player}'");
+        Log.Info($"[delivery] FAILED to mail inv slot {invSlot} -> '{player}'");
         return false;
     }
 
@@ -103,10 +103,10 @@ public sealed class Delivery(ISession s) : IDelivery
             await Task.Delay(600, ct);
             s.Enqueue(DeliveryPacket.Build(DeliveryPacket.Confirm, DeliveryPacket.BoxNone, -1, -1, -1));
             await Task.Delay(400, ct);
-            Console.WriteLine($"[delivery] sent {amount} gil -> '{player}' (outgoing slot {slot})");
+            Log.Info($"[delivery] sent {amount} gil -> '{player}' (outgoing slot {slot})");
             return true;
         }
-        Console.WriteLine($"[delivery] FAILED to send {amount} gil -> '{player}' (no free outgoing slot, or name didn't resolve)");
+        Log.Info($"[delivery] FAILED to send {amount} gil -> '{player}' (no free outgoing slot, or name didn't resolve)");
         return false;
     }
 

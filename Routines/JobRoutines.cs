@@ -10,8 +10,8 @@ public static class JobRoutines
         IJobChange jobs, IZoning zoning, byte main, byte sub, string homeCity, CancellationToken ct)
     {
         if (await jobs.ChangeJob(main, sub, ct)) return true;
-        Console.WriteLine($"[job] change failed here (zone {zoning.CurrentZone}) — routing to {homeCity} for the Mog House");
-        if (!await zoning.GoTo(homeCity, ct)) { Console.WriteLine("[job] couldn't reach the home city"); return false; }
+        Log.Info($"[job] change failed here (zone {zoning.CurrentZone}) — routing to {homeCity} for the Mog House");
+        if (!await zoning.GoTo(homeCity, ct)) { Log.Info("[job] couldn't reach the home city"); return false; }
         return await jobs.ChangeJob(main, sub, ct);
     }
 }

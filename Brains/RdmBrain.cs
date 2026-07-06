@@ -70,6 +70,6 @@ public sealed class RdmBrain(
     async Task Equip(CancellationToken ct)
     {
         var (n, total) = await GearRoutines.EquipByLevel(gear, p, Gear, ct);
-        Console.WriteLine($"[rdm] equipped {n}/{total} (lvl {p.World.MainJobLevel}, sword={gear.SkillLevel(SwordSkill)})");
+        Log.Info($"[rdm] equipped {n}/{total} (lvl {p.World.MainJobLevel}, sword={gear.SkillLevel(SwordSkill)})");
     }
 }
