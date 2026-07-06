@@ -36,6 +36,7 @@ public sealed class RoamController(INavigation nav, IPerception p, ICombat comba
     byte _lastLvl;
     float _lastX, _lastZ; int _stalls;              // detect roam steps that produce no displacement (mesh pocket)
     float _netAnchorX, _netAnchorZ; int _netStuckSteps;   // detect OSCILLATION: hops that "move" but make no NET progress
+    int _walledCount;                                     // consecutive "truly walled" detections (disconnected mesh island)
     readonly List<(float x, float z)> _trail = new();      // recent committed hop ORIGINS (known-walkable) — backtrack targets + anti-revisit
     readonly List<(float x, float z)> _preySeen = new();   // where in-band mobs were conned — free roam that LEARNS
     int _boxed;                                            // consecutive fully-blocked steps → backtrack
@@ -237,7 +238,7 @@ public sealed class RoamController(INavigation nav, IPerception p, ICombat comba
         // relocation (MoveTo runs full pathfinding — it routes out of a pocket the radial fan can't). Prefer the
         // trail origin (was walkable, outside the pocket) or the FARTHEST remembered prey, else scan far rings.
         var wp = p.World;
-        if (Geometry.Dist2D(wp.X, wp.Z, _netAnchorX, _netAnchorZ) > 60f) { _netAnchorX = wp.X; _netAnchorZ = wp.Z; _netStuckSteps = 0; }
+        if (Geometry.Dist2D(wp.X, wp.Z, _netAnchorX, _netAnchorZ) > 60f) { _netAnchorX = wp.X; _netAnchorZ = wp.Z; _netStuckSteps = 0; _walledCount = 0; }   // real net progress -> not walled
         else if (++_netStuckSteps >= 12)
         {
             _netStuckSteps = 0;
@@ -255,15 +256,22 @@ public sealed class RoamController(INavigation nav, IPerception p, ICombat comba
                     double a = i * (Math.PI / 12); float tx = wp.X + (float)Math.Cos(a) * r, tz = wp.Z + (float)Math.Sin(a) * r;
                     if (!nav.CanReach(tx, wp.Y, tz)) continue;
                     nav.MoveTo(tx, tz);
-                    if (nav.IsMoving) { _heading = a; _netAnchorX = tx; _netAnchorZ = tz; _trail.Clear(); netEscaped = true; Log($"net-stuck oscillation -> far-ring escape to ({tx:F0},{tz:F0}) at {r:F0}y"); }
+                    if (nav.IsMoving) { _heading = a; _netAnchorX = tx; _netAnchorZ = tz; _trail.Clear(); _walledCount = 0; netEscaped = true; Log($"net-stuck oscillation -> far-ring escape to ({tx:F0},{tz:F0}) at {r:F0}y"); }
                 }
                 if (netEscaped) break;
             }
             if (netEscaped) return;
             // NOTHING reachable within 450y in any direction: this pocket is disconnected from the huntable mesh
-            // (truly walled — e.g. dropped onto an isolated ledge). Roaming can't fix it; falls through to the
-            // normal logic. If this proves to recur, the escalation is a brain-level zone-out (deferred until seen).
-            Log("net-stuck: NO reachable point within 450y — pocket appears walled (falling through; watch for a zone-out need)");
+            // (truly walled — dropped onto an isolated ledge/island via an off-mesh nav slip). No pathfinding can
+            // escape it, so roaming is futile. After SUSTAINED confirmation, self-exit so the babysitter relaunches:
+            // a fresh login re-spawns at the last SAVED position (pre-island, a valid spot), escaping the island.
+            // (A dirty exit is deliberate here — a graceful logout would SAVE the island position and re-trap it.)
+            if (++_walledCount >= 4)
+            {
+                XiHeadless.Log.Always($"[FATAL] roam WALLED at ({wp.X:F0},{wp.Z:F0}) zone {p.World.ZoneId} — no reachable point in 450y after {_walledCount} checks (off-mesh island). Exiting for a fresh relaunch.");
+                Environment.Exit(70);
+            }
+            XiHeadless.Log.Always($"net-stuck: NO reachable point within 450y — pocket appears walled (check {_walledCount}/4 before self-exit)");
         }
 
         // Discover: /check the nearest unknown mobs so the threat map fills in as we travel. Unknown mobs
