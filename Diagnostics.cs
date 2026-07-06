@@ -28,7 +28,7 @@ public static class Diagnostics
         if (args.Length >= 1 && args[0] == "intake")
         {
             // Offline check of the RMT storefront: serve it, GET the page, POST an order, confirm queued.
-            var intake = new XiHeadless.Brains.RmtIntake(8088);
+            var intake = new XiHeadless.Services.RmtIntake(8088);
             intake.Start();
             using var http = new System.Net.Http.HttpClient();
             var page = http.GetStringAsync("http://localhost:8088/").GetAwaiter().GetResult();
@@ -56,6 +56,33 @@ public static class Diagnostics
             return 0;
         }
 
+        if (args.Length >= 2 && args[0] == "nav-probe")
+        {
+            var bb = new DotRecast.Core.RcByteBuffer(File.ReadAllBytes(args[1]));
+            bb.Order(DotRecast.Core.RcByteOrder.LITTLE_ENDIAN);
+            var mesh = new DotRecast.Detour.Io.DtMeshSetReader().Read32Bit(bb, 6);
+            Console.WriteLine($"maxVertsPerPoly={mesh.GetMaxVertsPerPoly()} maxTiles={mesh.GetMaxTiles()}");
+            int realTiles = 0;
+            for (int i = 0; i < mesh.GetMaxTiles(); i++)
+            {
+                var tile = mesh.GetTile(i);
+                if (tile?.data?.header == null) continue;
+                realTiles++;
+                var h = tile.data.header;
+                Console.WriteLine($"tile[{i}] x={h.x} y={h.y} layer={h.layer} polyCount={h.polyCount} vertCount={h.vertCount} detailMeshCount={h.detailMeshCount} detailVertCount={h.detailVertCount} detailTriCount={h.detailTriCount} offMeshConCount={h.offMeshConCount} offMeshBase={h.offMeshBase}");
+                Console.WriteLine($"         bmin=({h.bmin.X:F1},{h.bmin.Y:F1},{h.bmin.Z:F1}) bmax=({h.bmax.X:F1},{h.bmax.Y:F1},{h.bmax.Z:F1}) wHeight={h.walkableHeight} wRadius={h.walkableRadius} wClimb={h.walkableClimb} bvQuant={h.bvQuantFactor}");
+                for (int pi = 0; pi < Math.Min(3, h.polyCount); pi++)
+                {
+                    var p = tile.data.polys[pi];
+                    Console.WriteLine($"         poly[{pi}] vertCount={p.vertCount} verts=[{string.Join(",", p.verts.Take(p.vertCount))}] neis=[{string.Join(",", p.neis.Take(p.vertCount))}] area={p.GetArea()} type={p.GetPolyType()} flags={p.flags}");
+                    var dm = tile.data.detailMeshes[pi];
+                    Console.WriteLine($"                 detail vertBase={dm.vertBase} triBase={dm.triBase} vertCount={dm.vertCount} triCount={dm.triCount}");
+                }
+            }
+            Console.WriteLine($"real tiles: {realTiles}");
+            return 0;
+        }
+
         if (args.Length >= 2 && args[0] == "nav-test")
         {
             var nav = XiHeadless.Navigation.NavMesh.Load(args[1]);
@@ -76,7 +103,7 @@ public static class Diagnostics
             }
             var path = nav.FindPath(p[0], p[1], p[2], p[3], p[4], p[5]);
             Console.WriteLine($"  FFXI path ({p[0]},{p[1]},{p[2]})->({p[3]},{p[4]},{p[5]}): {path.Count} waypoints");
-            foreach (var w in path.Take(8)) Console.WriteLine($"    -> ({w.x:F1}, {w.y:F1}, {w.z:F1})");
+            foreach (var w in path) Console.WriteLine($"    -> ({w.x:F1}, {w.y:F1}, {w.z:F1})");
             return path.Count > 0 ? 0 : 2;
         }
 
@@ -104,11 +131,12 @@ public static class Diagnostics
             z.RequestZoneLine(812267130);
             var p = sent[^1];
             ushort hdr = BinaryPrimitives.ReadUInt16LittleEndian(p);
-            Console.WriteLine($"0x5E: id=0x{hdr & 0x1ff:x3} words={(hdr >> 9) & 0x7f} bytes={p.Length} " +
+            var (id5, words5) = SubPacket.Parse(hdr);
+            Console.WriteLine($"0x5E: id=0x{id5:x3} words={words5} bytes={p.Length} " +
                 $"rect={BinaryPrimitives.ReadUInt32LittleEndian(p.AsSpan(4))} " +
                 $"pos=({BinaryPrimitives.ReadSingleLittleEndian(p.AsSpan(8)):F1},{BinaryPrimitives.ReadSingleLittleEndian(p.AsSpan(12)):F1},{BinaryPrimitives.ReadSingleLittleEndian(p.AsSpan(16)):F1}) " +
                 $"exitBit={p[22]} exitMode={p[23]}");
-            bool ok = (hdr & 0x1ff) == 0x05E && ((hdr >> 9) & 0x7f) == 6 && p.Length == 24
+            bool ok = id5 == 0x05E && words5 == 6 && p.Length == 24
                       && BinaryPrimitives.ReadUInt32LittleEndian(p.AsSpan(4)) == 812267130 && p[22] == 0 && p[23] == 0;
             Console.WriteLine(ok ? "0x5E OK" : "0x5E MALFORMED");
             return ok ? 0 : 2;
@@ -154,8 +182,8 @@ public static class Diagnostics
             var key = new byte[16]; for (int i = 0; i < 16; i++) key[i] = (byte)(i + 1); // any key (round-trip)
             var bf = new FfxiBlowfish(key);
 
-            var pos = new byte[28]; System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(pos, (ushort)(0x015 | (7 << 9)));
-            var ok = new byte[4]; System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(ok, (ushort)(0x00C | (1 << 9)));
+            var pos = new byte[28]; SubPacket.WriteHeader(pos, 0x015);
+            var ok = new byte[4]; SubPacket.WriteHeader(ok, 0x00C);
             var body = new byte[pos.Length + ok.Length]; pos.CopyTo(body, 0); ok.CopyTo(body, pos.Length);
 
             var c = new byte[body.Length * 2 + 32];
@@ -250,7 +278,7 @@ public static class Diagnostics
             while (off + 4 <= dec.Length)
             {
                 ushort hdr = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(dec.AsSpan(off));
-                int id = hdr & 0x1ff, words = (hdr >> 9) & 0x7f;
+                var (id, words) = SubPacket.Parse(hdr);
                 if (words == 0) break; // padding / end
                 Console.WriteLine($"  @{off,4}  id=0x{id:x3}  {words * 4}B");
                 off += words * 4;
@@ -354,6 +382,7 @@ sealed class TestSession(WorldState state, System.Collections.Generic.List<byte[
 {
     public WorldState State => state;
     public void Enqueue(byte[] subPacket) => sent.Add(subPacket);
+    public void EnqueueAtomic(params byte[][] subPackets) { foreach (var sp in subPackets) sent.Add(sp); }
 }
 
 /// No-op navigation for offline zone-request tests (zoning's packet build doesn't move).
@@ -362,6 +391,7 @@ sealed class StubNav : INavigation
     public bool IsMoving => false;
     public void MoveTo(float x, float z) { }
     public void MoveTo(float x, float y, float z) { }
+    public bool CanReach(float x, float y, float z) => true;
     public void Follow(uint entityId) { }
     public void Face(uint entityId) { }
     public void Stop() { }

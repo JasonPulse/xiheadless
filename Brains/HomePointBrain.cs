@@ -5,59 +5,38 @@ namespace XiHeadless.Brains;
 /// Character Cutscene can't run (e.g. a headless char whose notSeen was never set), so death would
 /// otherwise warp to zone-0 limbo. Run once in a starting city; the char must be IN that city. Pure
 /// navigation + a deliberate event (brain activity); the home point set itself is server-side.
-public sealed class HomePointBrain(IPerception p, INavigation nav, IZoning zoning, IEvents events, ILifecycle lifecycle) : IBrain
+public sealed class HomePointBrain(IPerception p, INavigation nav, IZoning zoning, IEvents events, ICombat combat, IInventory inv, IAuctionHouse ah, ILifecycle lifecycle) : IBrain
 {
-    // Starting city zone -> a Home Point crystal (npc id + position + its event csid). We can't receive
-    // the event-start packet (recv gap for 0x32), so we Talk to trigger the crystal event server-side,
-    // then blind-finish it with the crystal's csid: onEventFinish[csid] with option 1 (SET_HOMEPOINT)
-    // calls setHomePoint(). csid is per-crystal (Windurst_Woods/npcs/HomePoint#N.lua).
-    static readonly Dictionary<ushort, (uint npcId, float x, float y, float z, ushort csid)> Crystal = new()
-    {
-        [241] = (17764538u, -92f, -5f, 62f, 8702),   // Windurst Woods, HomePoint#3 (csid 8702)
-    };
+    static readonly HashSet<ushort> Keep = new() { StealthRoutines.SilentOil, StealthRoutines.PrismPowder };
+
+    const ushort TargetZone = 249;  // Mhaura — the home point we want all southern-op bots to use
 
     public async Task RunAsync(CancellationToken ct)
     {
         await Task.Delay(4000, ct);
+        // Force-travel to Mhaura (TargetZone) even if we're standing at another mapped crystal — we want
+        // EVERY southern-op bot homepointed at Mhaura (next to Buburimu + Vera). The Mhaura route crosses
+        // aggressive Buburimu, so: (1) rest to full HP, and (2) stock + maintain Sneak (Silent Oil) + Invis
+        // (Prism Powder) so a low-level char (the lv9 WHM) survives the crossing — "using items to get there".
+        if (zoning.CurrentZone != TargetZone)
+        {
+            if (!combat.Dead && p.World.Hpp < 90) { Console.WriteLine($"[hp] resting to full HP ({p.World.Hpp}%) before crossing to Mhaura"); await combat.Rest(95, 0, null, ct); }
+            if (inv.CountOf(StealthRoutines.SilentOil) < 6 || inv.CountOf(StealthRoutines.PrismPowder) < 6)
+            {
+                if (!Game.Zonelines.HasAuctionHouse(zoning.CurrentZone)) { Console.WriteLine("[hp] -> Windurst Woods for stealth powders"); await zoning.GoTo("Windurst Woods", ct); }
+                await StealthRoutines.EnsureStock(ah, p, inv, 12, Keep, ShopRoutines.NoFree, ct);
+                Console.WriteLine($"[hp] powders: oil={inv.CountOf(StealthRoutines.SilentOil)} prism={inv.CountOf(StealthRoutines.PrismPowder)}");
+            }
+            _ = await StealthRoutines.BeginStealth(inv, p, ct);
+            Console.WriteLine("[hp] crossing to Mhaura under Sneak+Invis to set the home point");
+            await zoning.GoTo("Mhaura", ct);
+        }
+        // Crystal-set MECHANICS (walk to the crystal, clear blocking zone-in events, Examine + blind EVENTEND
+        // option 1 = SET_HOMEPOINT) live in the shared HomePointRoutines.SetHere — a hardened superset of the
+        // old inline flow. This brain only CHOOSES to set at Mhaura and drove the crossing above.
         ushort zone = zoning.CurrentZone;
-        if (!Crystal.TryGetValue(zone, out var pos))
-        {
-            Console.WriteLine($"[hp] no Home Point crystal mapped for zone {zone} — be in a mapped city");
-            lifecycle.Logout();
-            return;
-        }
-
-        // On login at level >= 3, ROV mission 1-01 (event 30035) fires on zone-in and leaves the char
-        // "in event", which BLOCKS the crystal (and everything else). We don't receive the event-start
-        // (recv gap for 0x32), so the auto-completer can't see it — blind-finish 30035 to free the char.
-        // If the new-char CS (367) was queued behind ROV, finishing 30035 starts it; finishing 367 then
-        // calls setHomePoint() directly (bonus path).
-        Console.WriteLine("[hp] clearing blocking ROV cutscene (blind EVENTEND 30035)");
-        await events.Finish(p.World.MyId, 0, 30035, 0, ct);
-        await Task.Delay(2000, ct);
-        await events.Finish(p.World.MyId, 0, 367, 0, ct);   // new-char CS if it was queued behind ROV
-        await Task.Delay(2000, ct);
-
-        Console.WriteLine($"[hp] walking to the Home Point crystal in zone {zone} ({pos.x:F0},{pos.z:F0})");
-        nav.MoveTo(pos.x, pos.y, pos.z);
-        // Walk as close as the navmesh allows (3y target) or until the path is exhausted.
-        for (int t = 0; t < 150000 && p.DistanceTo(pos.x, pos.z) > 3f && nav.IsMoving && !ct.IsCancellationRequested; t += 200) await Task.Delay(200, ct);
-        nav.Stop();
-        Console.WriteLine($"[hp] arrived at ({p.World.X:F0},{p.World.Z:F0}), {p.DistanceTo(pos.x, pos.z):F0}y from crystal");
-
-        // We don't receive the event-start (0x32) packet, so don't wait for it. Talk to trigger the
-        // crystal event server-side, then blind-finish with its csid + option 1 (SET_HOMEPOINT). The
-        // server's onEventFinish[csid] checks csid==currentEvent and choice(option&0xFF)==1 -> setHomePoint.
-        ushort idx = (ushort)(pos.npcId & 0xFFF);
-        for (int attempt = 1; attempt <= 3 && !ct.IsCancellationRequested; attempt++)
-        {
-            Console.WriteLine($"[hp] attempt {attempt}: Talk crystal 0x{pos.npcId:X} idx {idx}, then blind EVENTEND csid {pos.csid} option 1");
-            await events.Examine(pos.npcId, ct);                  // sends Talk (the EventActive wait will time out — expected)
-            await events.Finish(pos.npcId, idx, pos.csid, 1, ct); // EVENTEND: SET_HOMEPOINT
-            await Task.Delay(1500, ct);
-        }
-        Console.WriteLine("[hp] sent Set Home Point — verify with a death -> warp to the city (241), not zone 0");
-
+        if (!await HomePointRoutines.SetHere(p, nav, events, combat, zone, ct))
+            Console.WriteLine($"[hp] home point NOT set for zone {zone} (no crystal mapped, or arrived out of range)");
         await Task.Delay(2500, ct);
         lifecycle.Logout();
     }

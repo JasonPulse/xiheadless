@@ -30,7 +30,10 @@ public static class Zonelines
     /// Resolve a zone name ("Windurst Woods" or "Windurst_Woods", any case) to its id, or null.
     public static ushort? Resolve(string name) => _byName.TryGetValue(name.Trim(), out var id) ? id : null;
     public static string Name(ushort id) => _info.TryGetValue(id, out var i) ? i.name : id.ToString();
-    public static bool HasAuctionHouse(ushort id) => _info.TryGetValue(id, out var i) && (i.misc & MiscAh) != 0;
+    // Towns whose AH works even though zone_settings lacks MISC_AH (the bit gates the client's /ah MENU,
+    // not the packets — Mhaura 0x5428 has no bit yet its AH NPC serves fine; Selbina/Kazham likewise).
+    static readonly HashSet<ushort> AhTowns = new() { 248, 249, 250 };
+    public static bool HasAuctionHouse(ushort id) => AhTowns.Contains(id) || (_info.TryGetValue(id, out var i) && (i.misc & MiscAh) != 0);
     // True if the zone has an Explorer/Nomad Moogle, so job change works without entering a Mog House.
     public static bool HasMogMenu(ushort id) => _info.TryGetValue(id, out var i) && (i.misc & MiscMogMenu) != 0;
 

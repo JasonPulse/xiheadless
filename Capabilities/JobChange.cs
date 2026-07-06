@@ -1,16 +1,4 @@
-using System.Buffers.Binary;
-
 namespace XiHeadless.Capabilities;
-
-/// Change main/support job. Must be done inside the Mog House (or a zone with a Nomad Moogle) — the
-/// brain gets there via IDelivery.EnterMogHouse first. The support-job slot only works once that job
-/// is unlocked (the subjob-unlock quest), and the server rejects locked jobs.
-public interface IJobChange
-{
-    // mainJob/supportJob are JOBTYPE ids (see Job); 0 leaves that slot unchanged. Waits for the server
-    // to apply it (0x1B JOB_INFO). Returns true once WorldState reflects the requested job(s).
-    Task<bool> ChangeJob(byte mainJob, byte supportJob, CancellationToken ct = default);
-}
 
 /// JOBTYPE ids (server enum), so job changes read by name.
 public static class Job
@@ -27,7 +15,7 @@ internal static class JobPacket
     public static byte[] Build(byte mainJob, byte supportJob)
     {
         var p = new byte[8];
-        BinaryPrimitives.WriteUInt16LittleEndian(p, (ushort)(0x100 | (2 << 9)));
+        SubPacket.WriteHeader(p, 0x100);
         p[4] = mainJob;
         p[5] = supportJob;
         return p;
@@ -62,6 +50,18 @@ public sealed class JobChange(ISession s, IDelivery delivery) : IJobChange
         // Always leave the Mog House if we entered it — otherwise we strand the bot inside (zone 0),
         // where it can't route out and every later login starts stuck in the Mog House.
         if (entered) { await delivery.ExitMogHouse(ct); Console.WriteLine("[job] exited Mog House"); }
+        if (!ok)
+        {
+            // The 0x1B JOB_INFO often lands during the exit re-zone, AFTER the window above — a real
+            // success then read as "locked" (THF/WAR applied, logged 'now 6/1', still returned false).
+            for (int t = 0; t < 5000 && !ok; t += 200)
+            {
+                await Task.Delay(200, ct);
+                bool mainOk = mainJob == 0 || s.State.MainJob == mainJob;
+                bool subOk = supportJob == 0 || s.State.SubJob == supportJob;
+                if (mainOk && subOk) { Console.WriteLine($"[job] now {s.State.MainJob}/{s.State.SubJob} (confirmed post-exit)"); ok = true; }
+            }
+        }
         if (!ok) Console.WriteLine($"[job] not confirmed (now {s.State.MainJob}/{s.State.SubJob}) — job locked?");
         return ok;
     }

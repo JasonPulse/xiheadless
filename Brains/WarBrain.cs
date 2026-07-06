@@ -1,213 +1,116 @@
 namespace XiHeadless.Brains;
 
-/// WAR core game loop: buy a low-level gear set from the Auction House, carry it to the hunt zone,
-/// equip what our level allows, then hunt — find a wild mob, con it, engage, build TP, weaponskill,
-/// fight to the death, and on KO homepoint-revive and return. Re-equips periodically so each piece
-/// comes online as we out-level its requirement. Gear guide (network-gnomes WAR guide, lv1-18 bracket):
-/// Great Axe is the weapon (WS auto-picks off Great Axe skill).
-public sealed class WarBrain(IPerception p, INavigation nav, ICombat combat, IZoning zoning, IGear gear, IAuctionHouse ah, IDelivery delivery, IInventory inv) : IBrain
+/// WAR leveling brain. The grind loop lives in the reusable LevelGrind routine; this class only supplies
+/// WAR-specific job logic: the gear set (Great Axe + Leather), the weapon-skill the equipped weapon trains,
+/// the job abilities to pop, and the con band. Gear guide (network-gnomes WAR guide, lv1-18 bracket).
+public sealed class WarBrain(IPerception p, INavigation nav, ICombat combat, IZoning zoning, IGear gear, IAuctionHouse ah, IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs) : IBrain
 {
-    const ushort HuntZone = 116;             // East Sarutabaruta (Windurst starting area, adjacent to Windurst Woods)
+    const Nation HomeNation = Nation.Windurst; // selects the HuntZones leveling path (the bot is a Windurst char)
     const string AhZone = "Windurst Woods";  // where we buy gear (has the AH)
     const byte WepSkill = 6;                  // Great Axe — the WS auto-pick reads this skill
-    const ushort Weapon = 16704;              // Butterfly Axe (Great Axe, lv5)
+    public const ushort Weapon = 16704;              // Butterfly Axe (Great Axe, lv5)
+    public const ushort EarlyWeapon = 16534;         // Onion Sword (lv1) — used until we can wield the axe at lv5
+    public const ushort Weapon20 = 16714;            // Neckchopper (Great Axe, lv20 on this server) — the 21/24-bracket weapon
 
-    const ushort EarlyWeapon = 16534;   // Onion Sword (lv1) — used until we can wield the axe at lv5
-
-    // Non-weapon gear (item id, slot). The main-hand weapon is chosen by level in Equip() so we never
-    // send two main-hand equips in one pass (which left the bot effectively unarmed). EquipSet applies
-    // each piece; the server ignores any above our level, so we re-equip on level-up to bring them on.
-    static readonly (ushort item, byte slot)[] Armor =
+    // Non-weapon gear (item id, slot). The main-hand weapon is chosen by level in Equip() so we never send
+    // two main-hand equips in one pass. EquipSet applies each piece; the server ignores any above our level.
+    public static readonly (ushort item, byte slot)[] Armor =
     {
-        (13014, EquipSlot.Feet),   // Leaping Boots   (lv7) — AH version (Bounding Boots is the rare/ex upgrade)
+        (12440, EquipSlot.Head),   // Leather Bandana (lv7)
+        (12568, EquipSlot.Body),   // Leather Vest    (lv7)
+        (12696, EquipSlot.Hands),  // Leather Gloves  (lv7)
+        (12824, EquipSlot.Legs),   // Leather Trousers(lv7)
+        (13081, EquipSlot.Neck),   // Leather Gorget  (lv7)
+        (13014, EquipSlot.Feet),   // Leaping Boots   (lv7)
         (17280, EquipSlot.Ranged), // Boomerang       (lv14)
-        (13380, EquipSlot.Ear1),   // Hope Earring (lv10) — buyable lv10 ear (Optical 14803 mismarked Rare/Ex; Physical 13398 not listed)
+        (13380, EquipSlot.Ear1),   // Hope Earring    (lv10)
         (13194, EquipSlot.Waist),  // Warrior's Belt  (lv15)
         (13522, EquipSlot.Ring1),  // Courage Ring    (lv14)
     };
 
-    public async Task RunAsync(CancellationToken ct)
+    // The 21-bracket set (levels VERIFIED against this server's item_equipment.sql — Beetle is lv21 here).
+    // Listed after Armor in the equip pass so these replace the lv7 pieces the moment they're wearable.
+    public static readonly (ushort item, byte slot)[] Armor21 =
     {
-        await Task.Delay(3000, ct);
-        // Gil + inventory stream in over the first few seconds after zone-in; wait for gil before the
-        // buy phase or every bid reads 0 ("out of budget") and we buy nothing.
-        for (int i = 0; i < 30 && p.World.Gil == 0 && !ct.IsCancellationRequested; i++) await Task.Delay(500, ct);
-        Console.WriteLine($"[war] char='{p.World.MyName}' job={p.World.MainJob}/{p.World.SubJob} lvl={p.World.MainJobLevel} gil={p.World.Gil} zone={zoning.CurrentZone}");
+        (12455, EquipSlot.Head),   // Beetle Mask     (lv21)
+        (12583, EquipSlot.Body),   // Beetle Harness  (lv21)
+        (12711, EquipSlot.Hands),  // Beetle Mittens  (lv21)
+        (12835, EquipSlot.Legs),   // Beetle Subligar (lv21)
+        (12967, EquipSlot.Feet),   // Beetle Leggings (lv21)
+        (13061, EquipSlot.Neck),   // Spike Necklace  (lv21)
+    };
 
-        // If we logged in INSIDE the Mog House (zone 0), step out to the city first — otherwise we can't
-        // route anywhere (every travel needs a real source zone).
-        if (zoning.CurrentZone == 0)
+    // Full arc via the shared JobLifecycle: WAR is a basic job (no unlock) — level it from 1 with a MNK sub
+    // kept at half via the seesaw (MNK = hand-to-hand, so the sub needs no extra weapon). The level-gated
+    // nursery (West/East Sarutabaruta -> Tahrongi -> nation path) + baby phase + safe recovery come for free.
+    public Task RunAsync(CancellationToken ct) =>
+        new JobLifecycle(p, nav, combat, zoning, gear, ah, delivery, inv, shop, jobs, null, null, null,
+            new JobLifecycle.Config
+            {
+                MainJob = Job.War, SubJob = Job.Mnk, Advanced = false,
+                GrindCfgFor = GrindCfg, Tag = "war",
+            }).RunAsync(ct);
+
+    LevelGrind.Config GrindCfg(byte job)
+    {
+        // WAR phase pops its kit; the MNK sub phase just melees (hand-to-hand, no abilities).
+        Func<uint, int, CancellationToken, Task> abils = job == Job.War ? UseAbilities : (_, _, _) => Task.CompletedTask;
+        return new LevelGrind.Config
         {
-            Console.WriteLine("[war] inside the Mog House (zone 0) — exiting to the city");
-            await delivery.ExitMogHouse(ct);
-            await Task.Delay(2500, ct);
-            Console.WriteLine($"[war] after Mog House exit -> zone {zoning.CurrentZone}");
-        }
-
-        // 1) Gear up from the AH (must be in a MISC_AH zone), then carry it to the hunt zone.
-        if (!Game.Zonelines.HasAuctionHouse(zoning.CurrentZone))
-        {
-            Console.WriteLine($"[war] traveling to {AhZone} for gear");
-            await zoning.GoTo(AhZone, ct);
-        }
-        // Keep set = all our gear (never drop it when freeing inventory space). The coroutine drops junk
-        // mob-drops to make room, since a full inventory makes the AH refuse the purchase (0xE5).
-        var keep = new HashSet<ushort>(new ushort[] { EarlyWeapon, Weapon }.Concat(Armor.Select(g => (ushort)g.item)));
-        foreach (var item in new ushort[] { EarlyWeapon, Weapon }.Concat(Armor.Select(g => g.item)))
-        {
-            if (ct.IsCancellationRequested) return;
-            await ShopRoutines.BuyItem(ah, p, inv, item, keep, ct);
-        }
-
-        // 2) Go to the hunt zone and equip what we can.
-        if (zoning.CurrentZone != HuntZone && zoning.CurrentZone != 0) await zoning.ToZone(HuntZone, ct);
-        await Equip(ct);
-
-        Console.WriteLine($"[war] start skills: GreatAxe={gear.SkillLevel(WepSkill)} H2H={gear.SkillLevel(1)}");
-        Console.WriteLine($"[war] hunting in zone {HuntZone}");
-
-        byte lastLevel = p.World.MainJobLevel;
-        while (!ct.IsCancellationRequested)
-        {
-            // Re-equip the moment we level up, so each piece comes online exactly when we meet its
-            // requirement (e.g. the Butterfly Axe at lv5 -> Great Axe skill + WS start).
-            if (p.World.MainJobLevel > lastLevel)
-            {
-                Console.WriteLine($"[war] LEVEL UP -> {p.World.MainJobLevel}, re-equipping");
-                lastLevel = p.World.MainJobLevel;
-                await Equip(ct);
-            }
-
-            // Dead (KO'd): stop, homepoint to revive (a zone change), then loop back to travel + re-gear.
-            if (combat.Dead)
-            {
-                nav.Stop();
-                Console.WriteLine("[war] KO'd — returning to home point to revive");
-                await combat.Homepoint(ct);
-                await Task.Delay(5000, ct);
-                continue;
-            }
-
-            // Not in the hunt zone (e.g. just revived) — travel back and re-equip on arrival.
-            if (zoning.CurrentZone != HuntZone && zoning.CurrentZone != 0)
-            {
-                Console.WriteLine($"[war] in zone {zoning.CurrentZone}, returning to hunt zone {HuntZone}");
-                await zoning.ToZone(HuntZone, ct);
-                await Equip(ct);
-                continue;
-            }
-
-            var mob = p.Nearest(e => e.IsMob && e.Hpp > 0 && e.Y < 100
-                && !e.Name.Contains("Quadav", StringComparison.OrdinalIgnoreCase)
-                && !_skip.Contains(e.Id)
-                && (p.World.NowMs - e.LastSeenMs) < 20000 && p.DistanceTo(e.X, e.Z) <= 50f);
-            if (mob is null)
-            {
-                _skip.Clear();
-                if (!nav.IsMoving) RoamStep();
-                await Task.Delay(1000, ct);
-                continue;
-            }
-            nav.Stop();
-
-            int con = await combat.Consider(mob.Id, ct);
-            if (con < _conMin || con > _conMax)
-            {
-                Console.WriteLine($"[war] skip 0x{mob.Id:X} '{mob.Name}' con={con} lvl={p.World.ConMobLevel} (want {_conMin}-{_conMax})");
-                _skip.Add(mob.Id);
-                continue;
-            }
-            Console.WriteLine($"[war] target 0x{mob.Id:X} '{mob.Name}' con={con} lvl={p.World.ConMobLevel} hpp={mob.Hpp} dist={p.DistanceTo(mob.X, mob.Z):F0}");
-
-            nav.Follow(mob.Id);
-            for (int i = 0; i < 80 && !ct.IsCancellationRequested; i++)
-            {
-                if (mob.Hpp == 0 || (p.World.NowMs - mob.LastSeenMs) > 20000 || p.DistanceTo(mob.X, mob.Z) <= 2.0f) break;
-                await Task.Delay(250, ct);
-            }
-            nav.Stop();
-            if (mob.Hpp == 0 || (p.World.NowMs - mob.LastSeenMs) > 20000) { Console.WriteLine("[war] target lost during approach"); continue; }
-
-            nav.Face(mob.Id);
-            Console.WriteLine($"[war] engage 0x{mob.Id:X} (idx {mob.Index}) at dist {p.DistanceTo(mob.X, mob.Z):F1}");
-            await combat.Engage(mob.Id, ct);
-
-            byte bestHpp = mob.Hpp;               // lowest mob HP we've driven it to
-            long lastProgressMs = p.World.NowMs;  // last time the mob actually took damage
-            while (!ct.IsCancellationRequested && mob.Hpp > 0 && p.World.Hpp > 0 && (p.World.NowMs - mob.LastSeenMs) < 20000)
-            {
-                float d = p.DistanceTo(mob.X, mob.Z);
-                if (d > 2.5f) nav.Follow(mob.Id);
-                else { nav.Stop(); nav.Face(mob.Id); }
-                // Keep auto-attack alive: if engagement dropped (or the initial Engage never took, which
-                // leaves TP and the mob's HP frozen), re-engage once we're back in melee range.
-                if (!combat.Engaged && d <= 5f) { nav.Face(mob.Id); await combat.Engage(mob.Id, ct); }
-                // WS off the ACTUALLY-equipped weapon's skill: Onion Sword (sword, 3) until lv5, then
-                // Butterfly Axe (Great Axe, 6). So Fast Blade fires on the sword early and Shield Break
-                // once the axe is on — instead of waiting on a skill the equipped weapon doesn't train.
-                byte wep = p.World.MainJobLevel >= 5 ? WepSkill : (byte)3;
-                var ws = CombatRoutines.BestWeaponSkill(wep, gear.SkillLevel(wep));
-                if (ws is not null && combat.Engaged && combat.CanWeaponSkill && mob.Hpp is > 10 and < 100)
-                {
-                    Console.WriteLine($"[war] {ws} (tp={combat.Tp} skill{wep}={gear.SkillLevel(wep)}) on mob hpp={mob.Hpp}");
-                    await combat.WeaponSkill(ws.Value, mob.Id, ct);
-                }
-                await Task.Delay(2000, ct);
-                Console.WriteLine($"[war] fighting myHP%={p.World.Hpp} tp={combat.Tp} lvl={p.World.MainJobLevel} sword={gear.SkillLevel(3)} ga={gear.SkillLevel(6)} | mob hpp={mob.Hpp} dist={p.DistanceTo(mob.X, mob.Z):F0}");
-
-                // Anti-stuck: if the mob hasn't lost HP for 15s we aren't actually damaging it (failed
-                // engage / unreachable / untargetable) — abandon it, skip it, and go find another mob so
-                // the session never dead-locks on one target.
-                if (mob.Hpp < bestHpp) { bestHpp = mob.Hpp; lastProgressMs = p.World.NowMs; }
-                else if (p.World.NowMs - lastProgressMs > 15000)
-                {
-                    Console.WriteLine($"[war] STUCK: no damage to 0x{mob.Id:X} '{mob.Name}' in 15s — abandoning + retargeting");
-                    _skip.Add(mob.Id);
-                    break;
-                }
-            }
-            bool killed = mob.Hpp == 0;
-            Console.WriteLine($"[war] fight ended: mob hpp={mob.Hpp} myHP%={p.World.Hpp} lvl={p.World.MainJobLevel}{(killed ? " (killed)" : "")}");
-            if (combat.Engaged) combat.Disengage();
-            // Range the zone instead of camping: after a few kills, relocate deeper to fresh hunting ground.
-            if (killed && (++_kills % 4) == 0) { Console.WriteLine("[war] relocating deeper into the zone"); RoamStep(); }
-            await Task.Delay(1000, ct);
-        }
+            HomeNation = HomeNation,
+            AhZone = AhZone,
+            BuyItems = new ushort[] { EarlyWeapon, Weapon }.Concat(Armor.Select(g => g.item)).ToArray(),
+            Keep = new HashSet<ushort>(new ushort[] { EarlyWeapon, Weapon }.Concat(Armor.Select(g => (ushort)g.item))),
+            Equip = Equip,
+            // WS off the ACTUALLY-equipped weapon's skill: MNK sub = hand-to-hand (1); WAR = Onion Sword
+            // (sword, 3) until lv5, then Butterfly Axe (Great Axe, 6) once it's on.
+            WepSkillForLevel = lvl => job == Job.Mnk ? (byte)1 : lvl >= 5 ? WepSkill : (byte)3,
+            ConMin = 1, ConMax = 4,   // IncrediblyEasy..EvenMatch
+            UseAbilities = abils,
+            // Skip Mandragoras/Saplins: they Dream Flower / Sleepga-lock a low-DPS melee, which then bleeds out.
+            SkipMobNames = new[] { "Saplin", "Mandragora" },
+            RestHpTrigger = 50, RestHpTarget = 75, RestMpPct = 0,   // no cure on WAR/MNK — HP rest only
+            Tag = "war",
+        };
     }
 
     async Task Equip(CancellationToken ct)
     {
-        // One main-hand weapon, chosen by level: Butterfly Axe at lv5+, else the Onion Sword.
-        ushort weapon = p.World.MainJobLevel >= 5 ? Weapon : EarlyWeapon;
+        // One main-hand weapon, chosen by level: Neckchopper at 20+, Butterfly Axe at 5+, else Onion Sword.
+        ushort weapon = p.World.MainJobLevel >= 20 ? Weapon20 : p.World.MainJobLevel >= 5 ? Weapon : EarlyWeapon;
         var set = new List<(byte slot, uint item)> { (EquipSlot.Main, weapon) };
         set.AddRange(Armor.Select(g => (g.slot, (uint)g.item)));
+        set.AddRange(Armor21.Select(g => (g.slot, (uint)g.item)));   // after Armor: replaces lv7 pieces once wearable
         int n = await gear.EquipSet(set, ct);
         Console.WriteLine($"[war] equipped {n}/{set.Count} (lvl {p.World.MainJobLevel}, wep={weapon} sword={gear.SkillLevel(3)} ga={gear.SkillLevel(6)})");
     }
 
-    // Con gate: EasyPrey only (2). At low level with sparse gear (most WAR armor is lv24+) and no cure/
-    // flee, even DecentChallenge(3) mobs killed us repeatedly (deaths ate the EXP, stalling at lv9).
-    // EasyPrey is slower per kill but near-deathless, so the bot actually climbs. Widen once gear/level
-    // make Decent safe.
-    const int _conMin = 2;
-    const int _conMax = 2;
-    readonly HashSet<uint> _skip = new();
-
-    int _roam;
-    int _kills;
-    void RoamStep()
+    // WAR job abilities — reused by the leveling brain (via cfg.UseAbilities) AND the subjob farm's KillTarget,
+    // so the WAR fights with its KIT instead of pure auto-attack (the "only ever auto-attacks" bug the user saw).
+    // static + ICombat-parameterized so SubjobBrain calls the SAME rotation — no duplicate. combat.UseAbility
+    // gates each on job/level/recast, so calling every tick is safe: off-cooldown ones return instantly (no-op),
+    // a firing one costs its 600ms GCD. Used STRATEGICALLY by con: the long-recast buffs aren't burned on trash.
+    public static async Task UseWarAbilities(ICombat combat, uint mob, int con, int hpp, bool provoke, CancellationToken ct)
     {
-        var w = p.World;
-        for (int i = 0; i < 8; i++)
+        // Provoke (lv5, 30s recast) is HATE management, NOT a damage button — fire it ONLY when asked: at the
+        // START of a fight (grab initial hate) or when a mob has switched to the HEALER (yank it back). The
+        // caller decides; spamming it every recast (the old bug) wasted GCDs and did nothing once we had hate.
+        if (provoke && await combat.UseAbility(Ability.Provoke, mob, ct)) Console.WriteLine("[war] Provoke");  // lv5
+        // Offensive buffs (Berserk +att, Aggressor +acc, Warcry party att): only on a real fight —
+        // DecentChallenge+ (con >= 3). Trivial mobs don't need them and the 5-min recast is better saved.
+        if (con >= 3)
         {
-            double ang = (_roam + i) * Math.PI / 4;
-            // Big steps (100y) so we actually move into fresh parts of the zone rather than circling one
-            // camp; the mob search radius is 50y, so each roam opens a new hunting area.
-            float cx = w.X + (float)Math.Cos(ang) * 100f, cz = w.Z + (float)Math.Sin(ang) * 100f;
-            nav.MoveTo(cx, cz);
-            if (nav.IsMoving) { _roam += i + 1; Console.WriteLine($"[war] roaming -> ({cx:F0},{cz:F0})"); return; }
+            if (await combat.UseAbility(Ability.Berserk, mob, ct)) Console.WriteLine("[war] Berserk");      // lv15
+            if (await combat.UseAbility(Ability.Aggressor, mob, ct)) Console.WriteLine("[war] Aggressor");  // lv45
+            if (await combat.UseAbility(Ability.Warcry, mob, ct)) Console.WriteLine("[war] Warcry");        // lv35 (best in a party)
         }
-        _roam++;
-        Console.WriteLine("[war] roam: no reachable direction from here");
+        // Mighty Strikes (2hr, ~1h recast): TRUE emergency only — low HP AND a genuine threat (con >= 3), so
+        // it's never wasted on trash or thrown away in a hopeless fight against something we shouldn't fight.
+        if (con >= 3 && hpp is > 0 and < 25 && await combat.UseAbility(Ability.MightyStrikes, mob, ct))
+            Console.WriteLine("[war] Mighty Strikes (2hr emergency)");
     }
+
+    // LevelGrind callback — delegates to the shared rotation with our live HP. Solo: no healer to protect, so
+    // no Provoke (auto-attack damage holds hate fine); the offensive buffs + WS are what matter.
+    Task UseAbilities(uint mob, int con, CancellationToken ct) => UseWarAbilities(combat, mob, con, p.World.Hpp, provoke: false, ct);
 }

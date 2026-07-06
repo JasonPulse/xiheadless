@@ -4,7 +4,7 @@ namespace XiHeadless.Brains;
 /// then synthesizes. Recipe is CODE (consts below) — Bronze Sheet = Fire Crystal + 1 Bronze Ingot
 /// (Smithing 4, recipe 10008). Does a small batch then logs out gracefully. Reuses IAuctionHouse +
 /// ICrafting + IPerception (inventory) + ILifecycle.
-public sealed class CraftBrain(IPerception p, IAuctionHouse ah, ICrafting craft, IZoning zoning, ILifecycle lifecycle, IInventory inv) : IBrain
+public sealed class CraftBrain(IPerception p, IAuctionHouse ah, ICrafting craft, IZoning zoning, ILifecycle lifecycle, IInventory inv, IShop shop, INavigation nav) : IBrain
 {
     // Recipe 10008: Crystal 4096 (Fire) + Ingredient 649 (Bronze Ingot) x1 -> Result 660 (Bronze Sheet).
     const ushort Crystal = 4096;
@@ -36,7 +36,7 @@ public sealed class CraftBrain(IPerception p, IAuctionHouse ah, ICrafting craft,
             if (!await EnsureItem(Crystal, ct))    { Console.WriteLine($"[craft] could not buy crystal {Crystal} from AH — stopping"); break; }
             if (!await EnsureItem(Ingredient, ct)) { Console.WriteLine($"[craft] could not buy ingredient {Ingredient} from AH — stopping"); break; }
 
-            byte cSlot = SlotOf(Crystal)!.Value, iSlot = SlotOf(Ingredient)!.Value;
+            byte cSlot = (byte)inv.SlotOf(Crystal), iSlot = (byte)inv.SlotOf(Ingredient);   // EnsureItem guarantees both present
             Console.WriteLine($"[craft] synth #{n + 1}: crystal {Crystal}@{cSlot} + {Ingredient}@{iSlot}");
 
             // Synth waits for the server's 0x06F result (0=Success, 1/2/14=fail/break, 6=skill too low,
@@ -55,17 +55,13 @@ public sealed class CraftBrain(IPerception p, IAuctionHouse ah, ICrafting craft,
         lifecycle.Logout();
     }
 
-    // First inventory (container 0) slot holding itemId, or null if we don't have it.
-    byte? SlotOf(ushort itemId)
-    {
-        foreach (var ((container, slot), id) in p.World.Inventory)
-            if (container == 0 && id == itemId) return slot;
-        return null;
-    }
-
     // Keep the recipe mats when freeing inventory space (never drop what we're about to synth).
     static readonly HashSet<ushort> Keep = new() { Crystal, Ingredient };
 
-    // Ensure itemId is in inventory: buy it from the AH (shared coroutine: escalate bid + clear junk) if missing.
-    Task<bool> EnsureItem(ushort itemId, CancellationToken ct) => ShopRoutines.BuyItem(ah, p, inv, itemId, Keep, ct);
+    // Ensure itemId is in inventory: buy it from the AH (shared coroutine: escalate bid + free space if the
+    // bag is full) if missing. A full bag triggers a sell trip to the nearest vendor (SellNearby), not a
+    // blind in-place sell.
+    Task<bool> EnsureItem(ushort itemId, CancellationToken ct) =>
+        ShopRoutines.BuyItem(ah, p, inv, itemId, Keep,
+            c => ShopRoutines.SellNearby(shop, nav, zoning, inv, p, Keep, c), ct);
 }

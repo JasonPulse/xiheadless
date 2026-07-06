@@ -19,6 +19,7 @@ public sealed class CapabilitySet
     public IBazaar Bazaar { get; }
     public ICrafting Crafting { get; }
     public IShop Shop { get; }
+    public IParty Party { get; }
     public IInventory Inventory { get; }
     public ILifecycle Lifecycle { get; }
     public IAuctionHouse Auction { get; }
@@ -39,13 +40,14 @@ public sealed class CapabilitySet
         Nav = _nav;
         Zoning = new Zoning(s, _nav);
         Events = new Events(s);
-        Gear = new Gear(s);
+        Inventory = new Inventory(s);
+        Gear = new Gear(s, Inventory);   // Gear queries the bag (Has/SlotOf) via the shared Inventory
         Delivery = new Delivery(s);
         GilGrant = new BotApi();   // HTTP client; auth/endpoint from deployment secrets (env)
         Bazaar = new Bazaar(s);
         Crafting = new Crafting(s);
         Shop = new Shop(s);
-        Inventory = new Inventory(s);
+        Party = new Party(s);
         Lifecycle = new Lifecycle(onLogout ?? (() => { }));
         Auction = new AuctionHouse(s);
         Quests = new Quests(Events);
@@ -70,6 +72,7 @@ public sealed class CapabilitySet
         t == typeof(IBazaar)     ? Bazaar :
         t == typeof(ICrafting)   ? Crafting :
         t == typeof(IShop)       ? Shop :
+        t == typeof(IParty)      ? Party :
         t == typeof(IInventory)  ? Inventory :
         t == typeof(ILifecycle)  ? Lifecycle :
         t == typeof(IAuctionHouse) ? Auction :

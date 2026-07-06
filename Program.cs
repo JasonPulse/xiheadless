@@ -20,7 +20,13 @@ if (string.IsNullOrEmpty(account) || string.IsNullOrEmpty(password))
 }
 
 if (args.Length > 0 && args[0] == "cleanup") return await BotHost.Cleanup(account, password);
-if (args.Length > 0 && args[0] == "provision") return await BotHost.Provision(account, password);
+if (args.Length > 0 && args[0] == "provision")
+{
+    // provision [job] [nation] — job: war/mnk/whm/blm/rdm/thf or 1-6 (default war); nation: 0=SanD 1=Bastok 2=Windurst (default random)
+    byte job = args.Length > 1 ? ParseJob(args[1]) : (byte)1;
+    int nation = args.Length > 2 && int.TryParse(args[2], out var nt) ? nt : -1;
+    return await BotHost.Provision(account, password, job, nation);
+}
 
 if (!BrainRegistry.Exists(brain))
 {
@@ -30,3 +36,8 @@ if (!BrainRegistry.Exists(brain))
 
 int? runSeconds = args.Length > 0 && int.TryParse(args[0], out var rs) ? rs : null; // dev: bound the run
 return await BotHost.Run(account, password, brain, runSeconds);
+
+static byte ParseJob(string s) => byte.TryParse(s, out var n) ? n : (byte)(s.ToLowerInvariant() switch
+{
+    "war" => 1, "mnk" => 2, "whm" => 3, "blm" => 4, "rdm" => 5, "thf" => 6, _ => 1,
+});

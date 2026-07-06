@@ -16,13 +16,27 @@ public static class BotHost
     /// 0x26/0x1F negotiation, and the initial char-list fetch. Returns a lobby-ready client.
     static async Task<XiClient> ConnectLobby(string account, string password)
     {
-        var client = new XiClient(Host, ClientVer);
-        await client.LoginAsync(account, password);
-        client.LobbyDataConnect();
-        client.LobbyView_0x26();
-        client.LobbyView_0x1F();
-        client.InitialCharList();
-        return client;
+        // The lobby handshake intermittently drops its socket mid-fetch ("Broken pipe" at Send_0xA1/FetchCharList)
+        // — at this site it fails on nearly every first attempt and aborts the process (exit 134). Retry on a
+        // transient socket/IO error with a fresh client instead of crashing; the next attempt connects cleanly.
+        for (int attempt = 1; ; attempt++)
+        {
+            try
+            {
+                var client = new XiClient(Host, ClientVer);
+                await client.LoginAsync(account, password);
+                client.LobbyDataConnect();
+                client.LobbyView_0x26();
+                client.LobbyView_0x1F();
+                client.InitialCharList();
+                return client;
+            }
+            catch (Exception ex) when (attempt < 6 && (ex is System.Net.Sockets.SocketException || ex is System.IO.IOException || ex.InnerException is System.Net.Sockets.SocketException))
+            {
+                Console.WriteLine($"[lobby] connect attempt {attempt} failed ({ex.GetType().Name}: {ex.Message}) — retrying in 3s");
+                await Task.Delay(3000);
+            }
+        }
     }
 
     public static async Task<int> Run(string account, string password, string brainName, int? runSeconds)
@@ -62,6 +76,20 @@ public static class BotHost
         // system logic, and the bot takes no config beyond account/password/brain.
         using var autoCts = new CancellationTokenSource();
         var autoEvents = AutoCompleteEvents(caps, autoCts.Token);
+        var autoParty = AutoAcceptParty(caps, autoCts.Token);
+        var autoDeath = AutoHandleDeath(caps, autoCts.Token);   // CORE: any death -> Home Point (every brain)
+
+        // New-char home point (CORE setup): a freshly-created char lands in its start city and that zone's
+        // onZoneIn starts an opening cutscene whose finish calls setHomePoint(). We can't SEE that event
+        // (0x32 recv gap), so the auto-completer never finishes it — the char sits frozen "in event" with NO
+        // home point (death -> zone-0 limbo). Blind-finish it by id (per start zone) to set the home point
+        // and unfreeze. Harmless no-op (event-id mismatch) once the char has already seen it.
+        if (Game.NewCharCutscene.EventFor(conn.State.ZoneId) is int csEv and >= 0)
+        {
+            await Task.Delay(2000);
+            Console.WriteLine($"[newchar] blind-finishing start-city cutscene {csEv} in zone {conn.State.ZoneId} -> setHomePoint");
+            await caps.Events.Finish(conn.State.MyId, 0, (ushort)csEv, 0);
+        }
 
         var brain = BrainRegistry.Create(brainName, caps);
         Console.WriteLine($"running brain: {brain.GetType().Name}");
@@ -87,6 +115,23 @@ public static class BotHost
             caps.Combat.Homepoint().GetAwaiter().GetResult();
             Thread.Sleep(8000);   // let the warp/revive land before we log out
         }
+        // RETREAT BEFORE LOGOUT: the ~40s logout hold leaves the char standing defenseless, and several
+        // logout-window deaths came from mobs within aggro range at SIGTERM time (a goblin killed the WHM
+        // standing still, live-observed). Step away from the nearest mob for up to ~12s before starting it.
+        else
+        {
+            var st = caps.Perception.World;
+            var near = caps.Perception.Nearest(e => e.IsMob && e.Hpp > 0 && caps.Perception.DistanceTo(e.X, e.Z) < 30f);
+            if (near is not null)
+            {
+                float dx = st.X - near.X, dz = st.Z - near.Z;
+                float len = MathF.Max(0.5f, MathF.Sqrt(dx * dx + dz * dz));
+                Console.WriteLine($"stopping near '{near.Name}' ({caps.Perception.DistanceTo(near.X, near.Z):F0}y) -> retreating before the logout hold");
+                caps.Nav.MoveTo(st.X + dx / len * 35f, st.Z + dz / len * 35f);
+                for (int t = 0; t < 12000 && caps.Nav.IsMoving; t += 400) Thread.Sleep(400);
+                caps.Nav.Stop();
+            }
+        }
         conn.Stop();   // sends 0x0E7 and holds ~40s for the server to complete the logout
         Console.WriteLine("session ended cleanly.");
         return 0;
@@ -97,8 +142,60 @@ public static class BotHost
     // ROV, a stray NPC menu) leaves the char "in event" and suppresses everything else. We finish any
     // event that has lingered past a grace period since the last time the brain touched an event
     // (Examine/Finish stamp World.LastEventDrivenUtc), so deliberate quest/AH/job-change dialogs — which
-    // respond well within the grace — are never stomped. For chained cutscenes the next event re-arms
-    // EventActive and we finish that too.
+    // respond well within the grace — are never stomped. For chained cutscenes the next event updates
+    // w.EventId (parsed from its 0x32/0x34) and we finish that too — always by the parsed id, never a list.
+    // Auto-accept party invites (private fleet server — only our bots are online, so any invite is a teammate).
+    // Lets a grinding bot (e.g. the WAR tank) join the party a leech bot (WHM) forms, without brain-specific code.
+    static async Task AutoAcceptParty(CapabilitySet caps, CancellationToken ct)
+    {
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                await Task.Delay(1000, ct);
+                if (caps.Party.InvitePending)
+                {
+                    Console.WriteLine($"[auto-party] invite from '{caps.Party.InviterName}' -> accepting");
+                    caps.Party.AcceptInvite();
+                    await Task.Delay(2000, ct);
+                }
+            }
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    // CORE death rule (every brain, no per-brain duplication): a KO'd character does NOTHING until it recovers —
+    // it must never lie dead or try to move/act while dead. Rule: dead -> Home Point, UNLESS a party HEALER that
+    // can cast Raise is alive (then wait for the raise; the healer raises us when combat ends). If the healer is
+    // also dead, everyone Home Points. Our current healer is a lv9 WHM with NO Raise spell, so the raise branch
+    // can't apply yet -> we Home Point immediately (loop until actually revived). [Raise-wait = future once a
+    // healer has Raise: check party members for a living Raise-capable WHM before homepointing.]
+    static async Task AutoHandleDeath(CapabilitySet caps, CancellationToken ct)
+    {
+        // A KO'd character does NOTHING until it recovers. No healer can Raise us (WHM Raise is lv25, ours is lower),
+        // so: dead -> Home Point (revive at the staging town). The party reunites there — the live member follows to
+        // town on our death and we cross back into the farm zone TOGETHER (see PartySupport's dead-tank regroup),
+        // which is how we avoid the one-sided-death desync (WAR re-crossing to the zone-in ~200y from the field WHM).
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                await Task.Delay(2000, ct);
+                if (!caps.Combat.Dead) continue;
+                caps.Nav.Stop();
+                Console.WriteLine("[death] KO'd -> Home Point (core death handler)");
+                while (caps.Combat.Dead && !ct.IsCancellationRequested)
+                {
+                    await caps.Combat.Homepoint(ct);
+                    await Task.Delay(8000, ct);
+                }
+                caps.Perception.World.RevivedMs = caps.Perception.World.NowMs;   // starts the weakness hold (no new pulls)
+                Console.WriteLine("[death] revived at home point");
+            }
+        }
+        catch (OperationCanceledException) { }
+    }
+
     static async Task AutoCompleteEvents(CapabilitySet caps, CancellationToken ct)
     {
         var w = caps.Perception.World;
@@ -109,13 +206,40 @@ public static class BotHost
             while (!ct.IsCancellationRequested)
             {
                 await Task.Delay(500, ct);
-                if (!w.EventActive) { activeSince = DateTime.MaxValue; continue; }
+                // "In an event" is detected from the SERVER STATUS (animation 4 = ANIMATION_EVENT), which the
+                // bot reliably receives (0x037), OR from EventActive (a parsed-but-unfinished 0x32/0x34 menu,
+                // which may not raise status 4). Status 4 is the load-bearing signal — a cutscene the bot never
+                // parsed a start for still shows status 4, so it's still detected and cleared below.
+                bool inEvent = w.EventActive || w.ServerStatus == 4;
+                if (!inEvent) { activeSince = DateTime.MaxValue; continue; }
                 if (activeSince == DateTime.MaxValue) activeSince = DateTime.UtcNow;   // rising edge of an active event
                 var reference = w.LastEventDrivenUtc > activeSince ? w.LastEventDrivenUtc : activeSince;
                 if ((DateTime.UtcNow - reference).TotalMilliseconds < graceMs) continue; // brain may be driving it
-                ushort ev = w.EventId;
-                Console.WriteLine($"[auto-event] event {ev} lingered with no brain action -> auto-finishing");
-                await caps.Events.FinishEvent(0, ct);
+
+                // GENERIC auto-finish (NO hardcoded event-id list — hard user rule): end WHATEVER event the
+                // server last told us about, by its real parsed id (w.EventId), regardless of EventActive.
+                // EventActive is unreliable as the "which id" signal — our own FinishEvent/Examine clear it,
+                // so after one finish attempt it's false while status may still be 4 (chained CS, or a finish
+                // that didn't take). w.EventId, by contrast, persists as the last parsed event id. The server's
+                // EVENTEND handler (0x05b_eventend) ends the event ONLY when the sent id matches
+                // currentEvent->eventId, so the correct parsed id ends it and a stale/wrong id is a harmless
+                // no-op. Every cutscene/menu/level-up/mission/ROV/proximity-gate CS clears through this one path.
+                if (w.EventId != 0)
+                {
+                    Console.WriteLine($"[auto-event] event {w.EventId} lingered (status={w.ServerStatus}) with no brain action -> auto-finishing by parsed id");
+                    await caps.Events.FinishEvent(0, ct);   // FinishEvent(selection) ends st.EventId
+                }
+                else
+                {
+                    // status==4 but we NEVER parsed an event-start id: its 0x32/0x34 was lost in the login/
+                    // zone-in blowfish re-key window (a genuine reception gap, only in that window). We cannot
+                    // generically end an event whose id we never received. The one such event that matters is
+                    // the new-char home-point cutscene, which is blind-finished at startup by its known id
+                    // (Game/NewCharCutscene) so the home point gets set. If this line fires OUTSIDE that
+                    // startup window, the reception gap has widened -> fix 0x32/0x34 RECEPTION (do NOT
+                    // reintroduce a hardcoded end-list; that's the anti-pattern this replaced).
+                    Console.WriteLine($"[auto-event] stuck in-event (status={w.ServerStatus}) but no event id ever parsed (0x32/0x34 lost in login window) -> see NewCharCutscene startup handler; nothing to end generically");
+                }
                 activeSince = DateTime.MaxValue;
             }
         }
@@ -144,11 +268,11 @@ public static class BotHost
 
     /// Fleet provisioning / create-path test: create one character on the account (the same path an
     /// empty-account deploy uses). No zone handoff, so it won't leave a session to clear.
-    public static async Task<int> Provision(string account, string password)
+    public static async Task<int> Provision(string account, string password, byte job = 1, int nation = -1)
     {
         var client = await ConnectLobby(account, password);
-        client.CreateChar();   // generates a name, creates, verifies by re-selecting; throws on failure
-        Console.WriteLine("provision: character created (now appears in the account's char-list).");
+        client.CreateChar(job, nation);   // generates a name, creates, verifies by re-selecting; throws on failure
+        Console.WriteLine($"provision: character created (job={job} nation={nation}; now in the account's char-list).");
         return 0;
     }
 }

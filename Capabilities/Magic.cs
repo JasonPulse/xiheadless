@@ -1,19 +1,16 @@
 namespace XiHeadless.Capabilities;
 
-public interface IMagic
-{
-    void Cast(Spell spell, uint target);            // a specific spell, straight up
-    bool Known(Spell spell);                         // learned (0x0AA bitmap)
-    bool Ready(Spell spell);                          // known + enough MP (recast TODO)
-    Spell? Highest(SpellLine line);                   // highest KNOWN tier
-    Spell? Lowest(SpellLine line);                    // lowest KNOWN tier
-    void CastHighest(SpellLine line, uint target);    // cast highest READY (known + affordable) tier
-    void CastLowest(SpellLine line, uint target);     // cast lowest READY tier
-}
-
 public sealed class Magic(ISession s) : IMagic
 {
-    public void Cast(Spell spell, uint target) { s.State.CurrentTargetId = target; s.Enqueue(ActionPacket.Build(ActionPacket.CastMagic, target, 0, (uint)spell)); }
+    public void Cast(Spell spell, uint target)
+    {
+        // The server resolves a spell's target by ActIndex (targid), NOT char id — passing index 0 makes the cast
+        // a SILENT NO-OP (exactly like combat). This was the bug: every Cure was logged but never actually cast.
+        // WorldState.TargidOf resolves self (MyIndex) / tracked-entity index / &0xFFF fallback in one place.
+        ushort idx = s.State.TargidOf(target);
+        s.State.CurrentTargetId = target;
+        s.Enqueue(ActionPacket.Build(ActionPacket.CastMagic, target, idx, (uint)spell));
+    }
     public bool Known(Spell spell) => s.State.KnowsSpell((ushort)spell);
     public bool Ready(Spell spell) // known + affordable MP (recast timers TODO)
         => Known(spell) && (!Spells.Info.TryGetValue(spell, out var i) || i.Mp <= s.State.Mp);

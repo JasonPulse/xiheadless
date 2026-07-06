@@ -12,7 +12,7 @@ internal static class ActionPacket
     public static byte[] Build(ushort actionId, uint target, ushort actIndex = 0, uint buf0 = 0)
     {
         var p = new byte[28];
-        BinaryPrimitives.WriteUInt16LittleEndian(p, (ushort)(0x01A | (7 << 9)));
+        SubPacket.WriteHeader(p, 0x01A);
         BinaryPrimitives.WriteUInt32LittleEndian(p.AsSpan(4), target);   // UniqueNo
         BinaryPrimitives.WriteUInt16LittleEndian(p.AsSpan(8), actIndex);
         BinaryPrimitives.WriteUInt16LittleEndian(p.AsSpan(10), actionId);
@@ -28,10 +28,23 @@ internal static class CheckPacket
     public static byte[] Build(uint mobId, uint mobIndex)
     {
         var p = new byte[16];
-        BinaryPrimitives.WriteUInt16LittleEndian(p, (ushort)(0x0DD | (4 << 9)));
+        SubPacket.WriteHeader(p, 0x0DD);
         BinaryPrimitives.WriteUInt32LittleEndian(p.AsSpan(4), mobId);
         BinaryPrimitives.WriteUInt32LittleEndian(p.AsSpan(8), mobIndex);
         p[12] = 0x00; // Kind = Check
+        return p;
+    }
+}
+
+/// Builds 0x0E8 GP_CLI_COMMAND_CAMP (/heal). hdr(4) Mode@4(u32): 0=Toggle, 1=On, 2=Off. 8 bytes = 2 words
+/// (PacketSize[0x0E8]=0x04). Starts/stops the resting (HP+MP regen) stance; the server refuses it while engaged.
+internal static class CampPacket
+{
+    public static byte[] Build(uint mode)
+    {
+        var p = new byte[8];
+        SubPacket.WriteHeader(p, 0x0E8);
+        BinaryPrimitives.WriteUInt32LittleEndian(p.AsSpan(4), mode);
         return p;
     }
 }

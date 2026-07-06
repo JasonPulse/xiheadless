@@ -55,9 +55,25 @@ public sealed class Navigator : INavigation
     {
         var st = _s.State;
         if (_mesh is null) { Console.WriteLine($"[nav] no navmesh for zone {st.ZoneId}; cannot path to ({x:F0},{z:F0})"); return; }
+        // FindPath is the single movement authority: it snaps both endpoints onto the navmesh (TallExtents, then
+        // WideExtents for an off-mesh start/goal) and returns ground-Y waypoints, so following them keeps us on
+        // the proper Y. We trust it — no parallel dead-reckoning. Keeping our Y correct (waypoints below set
+        // st.Y = ty each step) is what makes the start snap to the RIGHT vertical layer on steep terrain.
         var path = _mesh.FindPath(st.X, st.Y, st.Z, x, y, z);
         lock (_lock) { _path = path; _wp = 0; _followId = 0; }
+        if (path.Count == 0) Console.WriteLine($"[nav] FindPath found no route from ({st.X:F0},{st.Y:F0},{st.Z:F0}) to ({x:F0},{z:F0})");
         EnsureStarted();
+    }
+
+    // Reachability pre-check: can the navmesh path us to within melee of (x,y,z)? A brain uses this to AVOID
+    // engaging mobs on disconnected mesh islands / off-mesh spots (the WAR would chase forever, finalDist 32-128,
+    // and die). Reachable = a non-empty path whose last waypoint lands within ~8y of the target (melee 5 + slack).
+    public bool CanReach(float x, float y, float z)
+    {
+        var m = _mesh; if (m is null) return false;
+        var st = _s.State;
+        var path = m.FindPath(st.X, st.Y, st.Z, x, y, z);
+        return path.Count > 0 && Geometry.Dist2D(path[^1].x, path[^1].z, x, z) <= 8f;
     }
 
     public void Follow(uint entityId) { lock (_lock) { _followId = entityId; } EnsureStarted(); }
@@ -106,12 +122,17 @@ public sealed class Navigator : INavigation
         var st = _s.State;
         const float dt = StepMs / 1000f;
 
+        // UNIVERSAL: a DEAD character cannot move. Refuse ALL movement while KO'd (MaxHp>0 && Hpp==0), no matter
+        // what any brain commands — this is the core anti-"dead-walking" guard, in the movement layer so no brain
+        // can ever bypass it. Death recovery (Home Point) is handled by BotHost's core death task.
+        if (st.MaxHp > 0 && st.Hpp == 0) { st.Moving = false; return; }
+
         // Following: repath toward the target a few times a second; stop when in melee range.
         lock (_lock)
         {
             if (_followId != 0 && st.Entities.TryGetValue(_followId, out var e))
             {
-                float d = Dist(st.X, st.Z, e.X, e.Z);
+                float d = Geometry.Dist2D(st.X, st.Z, e.X, e.Z);
                 if (d <= 1.5f) { st.Moving = false; return; }  // close to true melee range (dist 3 was too far to engage)
                 if (_mesh is not null && st.NowMs - _lastRepathMs > 500)
                 {
@@ -119,6 +140,7 @@ public sealed class Navigator : INavigation
                     _wp = 0; _lastRepathMs = st.NowMs;
                 }
             }
+
             if (_wp >= _path.Count) { st.Moving = false; return; }
 
             var (tx, ty, tz) = _path[_wp];
@@ -131,12 +153,14 @@ public sealed class Navigator : INavigation
             {
                 st.X += dx / dist * stepDist;
                 st.Z += dz / dist * stepDist;
-                st.Y = ty; // follow waypoint height
+                // Snap Y to the navmesh GROUND at our new (X,Z) — NOT the far waypoint's ty. On a long climbing
+                // segment ty would leave us metres underground between waypoints, and FindPath/CanReach from that
+                // off-mesh position return no route (the bot "can't reach" a mob 9y away and re-paths strand it).
+                // ty is the hint to pick the right vertical layer; falls back to ty if (X,Z) is briefly off-mesh.
+                st.Y = _mesh?.GroundY(st.X, st.Z, ty) ?? ty;
                 st.Rotation = Heading(st.X, st.Z, tx, tz);
             }
             st.Moving = true;
         }
     }
-
-    static float Dist(float ax, float az, float bx, float bz) { float dx = ax - bx, dz = az - bz; return MathF.Sqrt(dx * dx + dz * dz); }
 }

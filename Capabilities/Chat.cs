@@ -2,15 +2,6 @@ using System.Buffers.Binary;
 
 namespace XiHeadless.Capabilities;
 
-public interface IChat
-{
-    void Say(string msg);
-    void Shout(string msg);          // zone-wide
-    void Yell(string msg);           // cross-zone (city-area broadcast)
-    void Party(string msg);
-    void Tell(string to, string msg);
-}
-
 /// Encodes auto-translate phrases written as {Phrase} into the FFXI wire token: 0xFD + LE32(id) + 0xFD
 /// (autotranslate.cpp: "0xFD XX YY ZZ AA 0xFD", the 4 middle bytes = the id little-endian). The full
 /// client table is ~30k entries; this is the curated subset the bots actually use — add as needed.
@@ -61,7 +52,7 @@ public sealed class Chat(ISession s) : IChat
     {
         var text = AutoTranslate.Encode(msg);
         var p = new byte[(6 + text.Length + 1 + 3) & ~3];   // hdr(4)+type@4+pad@5+text+null, word-padded
-        BinaryPrimitives.WriteUInt16LittleEndian(p, (ushort)(0x0B5 | ((p.Length / 4) << 9)));
+        SubPacket.WriteHeader(p, 0x0B5);
         p[4] = mode;
         text.CopyTo(p, 6);
         s.Enqueue(p);
@@ -71,5 +62,17 @@ public sealed class Chat(ISession s) : IChat
     public void Shout(string msg) => Send(1, msg);
     public void Yell(string msg) => Send(26, msg);
     public void Party(string msg) => Send(4, msg);   // was 5 = LINKSHELL (bug); MESSAGE_PARTY is 4
-    public void Tell(string to, string msg) => Send(3, $"{to} {msg}"); // tell target encoding refined later
+    // 0x0B6 GP_CLI_COMMAND_CHAT_NAME (tells): hdr(4) unk@4 unk@5 sName[15]@6 Mes[]@21. Tells are a
+    // DIFFERENT packet from channel chat — sending them as 0x0B5 mode 3 was silently dropped by the
+    // server (the REFORM handshake never arrived and the stale-party deadlock persisted).
+    public void Tell(string to, string msg)
+    {
+        var text = AutoTranslate.Encode(msg);
+        var p = new byte[(21 + text.Length + 1 + 3) & ~3];
+        SubPacket.WriteHeader(p, 0x0B6);
+        System.Text.Encoding.ASCII.GetBytes(to, 0, System.Math.Min(to.Length, 14), p, 6);
+        text.CopyTo(p, 21);
+        s.Enqueue(p);
+        Console.WriteLine($"[chat] tell -> '{to}': {msg}");
+    }
 }

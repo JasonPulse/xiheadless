@@ -2,15 +2,6 @@ using System.Buffers.Binary;
 
 namespace XiHeadless.Capabilities;
 
-/// NPC vendor shop: open a vendor by talking to it (loads its stock into WorldState.Shop), then buy
-/// by shop slot. Crafting mats (crystals, ingredients) are bought here; the economy reuses it too.
-public interface IShop
-{
-    // Talk the vendor to open its shop; resolves to the loaded stock (slot index -> item id, price).
-    Task<IReadOnlyDictionary<byte, (ushort itemId, uint price)>> Open(uint npcId, CancellationToken ct = default);
-    void Buy(byte shopIndex, ushort qty);   // 0x083 — buy `qty` of the shop's slot `shopIndex`
-}
-
 /// Builds 0x083 GP_CLI_COMMAND_SHOP_BUY: hdr(4) ItemNum@4(u32) ShopNo@8(u16) ShopItemIndex@10(u16)
 /// PropertyItemIndex@12(u8) pad[3]. 16 bytes = 4 words. The server ignores ShopNo; it buys the shop
 /// slot at ShopItemIndex (price/item come from the shop container it set up on open).
@@ -19,7 +10,7 @@ internal static class ShopPacket
     public static byte[] Buy(byte shopIndex, ushort qty)
     {
         var p = new byte[16];
-        BinaryPrimitives.WriteUInt16LittleEndian(p, (ushort)(0x083 | (4 << 9)));
+        SubPacket.WriteHeader(p, 0x083);
         BinaryPrimitives.WriteUInt32LittleEndian(p.AsSpan(4), qty);
         BinaryPrimitives.WriteUInt16LittleEndian(p.AsSpan(10), shopIndex);
         return p;
@@ -35,7 +26,7 @@ public sealed class Shop(ISession s) : IShop
         // ~11s), so re-Talk every few seconds and wait generously — the old 4s wait gave up too early
         // (that was the "flaky shop open"). Report the real latency.
         s.State.Shop.Clear();
-        ushort idx = (ushort)(npcId & 0xFFF);
+        ushort idx = s.State.TargidOf(npcId);   // shared resolver (tracked-entity index, else id & 0xFFF)
         long start = s.State.NowMs;
         for (int attempt = 0; attempt < 6 && !ct.IsCancellationRequested; attempt++)
         {

@@ -3,4 +3,7 @@ global using XiHeadless.Net;
 global using XiHeadless.Game;
 global using XiHeadless.Capabilities;
 global using XiHeadless.Brains;
+global using XiHeadless.Interfaces;
+global using XiHeadless.Routines;
+global using XiHeadless.Services;
 global using XiHeadless.Navigation;

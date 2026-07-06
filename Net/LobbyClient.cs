@@ -143,21 +143,22 @@ sealed class XiClient(string host, string clientVer)
         Console.WriteLine($"  0x22 reserve '{name}': result={r[8]}");
     }
 
-    // 0x21 create the reserved char with a randomized appearance (race@48 job@50 nation@54 size@57
-    // face@60). Random race/face + random nation give visual variety and distribute bots across the
-    // three starting cities (ambiance); job = WAR (combat brains assume it; job-change is future).
-    void CreateCharBody()
+    // 0x21 create the reserved char (race@48 job@50 nation@54 size@57 face@60). job + nation are passed in
+    // so provisioning can make a specific class / start city (e.g. a Windurst mage to party with the WAR);
+    // the defaults (job=WAR, nation random) keep the original one-step-deploy behavior. Race/size/face stay
+    // randomized for variety. Job ids: 1=WAR 2=MNK 3=WHM 4=BLM 5=RDM 6=THF. Nation: 0=San d'Oria 1=Bastok 2=Windurst.
+    void CreateCharBody(byte job, int nation)
     {
         var cr = ViewPkt(0x21, 152);
-        cr[48] = (byte)(1 + Rng.Next(8));   // race+gender 1..8
-        cr[50] = 1;                         // job: WAR
-        cr[54] = (byte)Rng.Next(3);         // nation 0..2 (starting city)
-        cr[57] = (byte)Rng.Next(3);         // size 0..2
-        cr[60] = (byte)(1 + Rng.Next(8));   // face 1..8
+        cr[48] = (byte)(1 + Rng.Next(8));                       // race+gender 1..8
+        cr[50] = job;                                           // job
+        cr[54] = (byte)(nation is >= 0 and <= 2 ? nation : Rng.Next(3)); // nation 0..2 (starting city)
+        cr[57] = (byte)Rng.Next(3);                            // size 0..2
+        cr[60] = (byte)(1 + Rng.Next(8));                      // face 1..8
         _viewStream.Write(cr);
         var r = new byte[0x20];
         _viewStream.ReadExactly(r, 0, 0x20);
-        Console.WriteLine($"  0x21 create: result={r[8]}");
+        Console.WriteLine($"  0x21 create: job={job} nation={cr[54]} result={r[8]}");
     }
 
     public void DeleteAllChars()
@@ -264,14 +265,14 @@ sealed class XiClient(string host, string clientVer)
     /// Provision a NEW character: generated fantasy name + randomized appearance, retrying on a name
     /// collision, then select it. Returns true (justCreated). Used by the empty-account deploy path
     /// AND the `provision` tool. Verifies success by re-reading the list and selecting the new char.
-    public bool CreateChar()
+    public bool CreateChar(byte job = 1, int nation = -1)
     {
         for (int t = 1; t <= 5; t++)
         {
             var name = NameGen.Next();
             Console.WriteLine($"  creating char '{name}' (try {t}/5)");
             ReserveName(name);
-            CreateCharBody();
+            CreateCharBody(job, nation);
             if (TrySelectBest(FetchCharList())) { Console.WriteLine($"  created + selected char id={_charId} '{_charName}'"); return true; }
         }
         throw new Exception($"failed to create a character on account {_accountId} after 5 tries");
@@ -299,21 +300,20 @@ sealed class XiClient(string host, string clientVer)
     }
 }
 
-/// Generates a character name for fleet auto-provisioning: a fleet-tag prefix + pronounceable
-/// fantasy syllables, first letter capitalized, letters only, <= 15 chars. Edit Prefix to taste
-/// (it makes the bots' chars easy to spot/manage on the server).
+/// Generates a SHORT, pronounceable fantasy character name for fleet auto-provisioning: 2 syllables,
+/// no prefix, first letter capitalized, letters only. The old "Zz" fleet-tag prefix was dropped — it
+/// looked good in theory but the long Zz-names were just hard to read/manage. (Existing chars keep their
+/// names; this only affects newly-created ones.)
 static class NameGen
 {
-    const string Prefix = "Zz";
     static readonly Random Rng = new();
     static readonly string[] Onset = { "b", "d", "f", "g", "k", "l", "m", "n", "r", "s", "t", "v", "z", "th", "sh", "br", "dr", "gr" };
     static readonly string[] Nucleus = { "a", "e", "i", "o", "u", "ae", "ia", "ou", "ar", "en" };
 
     public static string Next()
     {
-        var sb = new StringBuilder(Prefix.ToLowerInvariant());
-        int syllables = 2 + Rng.Next(2);   // 2-3 syllables
-        for (int i = 0; i < syllables; i++)
+        var sb = new StringBuilder();
+        for (int i = 0; i < 2; i++)   // 2 syllables -> short names (~4-6 chars), no fleet prefix
         {
             sb.Append(Onset[Rng.Next(Onset.Length)]);
             sb.Append(Nucleus[Rng.Next(Nucleus.Length)]);

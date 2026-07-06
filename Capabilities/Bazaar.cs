@@ -2,17 +2,6 @@ using System.Buffers.Binary;
 
 namespace XiHeadless.Capabilities;
 
-/// Personal bazaar: price inventory items for sale, then open the bazaar so other players can buy
-/// from the bot where it stands. (Buyer-side packets 0x104/0x105/0x106 are a separate concern.)
-public interface IBazaar
-{
-    // Setup order is BeginEdit -> SetPrice(s) -> Open. (Server semantics, 0x10b/0x109: "close"
-    // = enter the Set-Prices menu / hide the bazaar to edit; "open" = exit the menu / show it.)
-    void BeginEdit();                          // 0x10B — enter price-editing mode (isSettingBazaarPrices=true)
-    void SetPrice(byte invSlot, uint price);   // 0x10A — price an inventory item for sale
-    void Open();                               // 0x109 — finish editing and open the bazaar to buyers
-}
-
 /// Builds the bazaar c2s packets.
 internal static class BazaarPacket
 {
@@ -20,7 +9,7 @@ internal static class BazaarPacket
     public static byte[] ItemSet(byte invSlot, uint price)
     {
         var p = new byte[12];
-        BinaryPrimitives.WriteUInt16LittleEndian(p, (ushort)(0x10A | (3 << 9)));
+        SubPacket.WriteHeader(p, 0x10A);
         p[4] = invSlot;
         BinaryPrimitives.WriteUInt32LittleEndian(p.AsSpan(8), price);
         return p;
@@ -30,7 +19,7 @@ internal static class BazaarPacket
     public static byte[] Bare(ushort id)
     {
         var p = new byte[4];
-        BinaryPrimitives.WriteUInt16LittleEndian(p, (ushort)(id | (1 << 9)));
+        SubPacket.WriteHeader(p, id);
         return p;
     }
 }
@@ -40,4 +29,26 @@ public sealed class Bazaar(ISession s) : IBazaar
     public void BeginEdit() => s.Enqueue(BazaarPacket.Bare(0x10B));
     public void SetPrice(byte invSlot, uint price) => s.Enqueue(BazaarPacket.ItemSet(invSlot, price));
     public void Open() => s.Enqueue(BazaarPacket.Bare(0x109));
+
+    // c2s 0x105 BAZAAR_LIST: hdr(4) UniqueNo@4(u32) ActIndex@8(u16) pad@10(u16). 12 bytes = 3 words.
+    public void Browse(uint sellerId, ushort targid)
+    {
+        var p = new byte[12];
+        SubPacket.WriteHeader(p, 0x105);
+        BinaryPrimitives.WriteUInt32LittleEndian(p.AsSpan(4), sellerId);
+        BinaryPrimitives.WriteUInt16LittleEndian(p.AsSpan(8), targid);
+        s.Enqueue(p);
+    }
+
+    // c2s 0x106 BAZAAR_BUY: hdr(4) BazaarItemIndex@4(u8) pad[3] BuyNum@8(u32). 12 bytes = 3 words.
+    public void Buy(byte bazaarSlot, uint count)
+    {
+        var p = new byte[12];
+        SubPacket.WriteHeader(p, 0x106);
+        p[4] = bazaarSlot;
+        BinaryPrimitives.WriteUInt32LittleEndian(p.AsSpan(8), count);
+        s.Enqueue(p);
+    }
+
+    public void StopBrowsing() => s.Enqueue(BazaarPacket.Bare(0x104));   // c2s 0x104 BAZAAR_EXIT
 }

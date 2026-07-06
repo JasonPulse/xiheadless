@@ -2,16 +2,6 @@ using System.Buffers.Binary;
 
 namespace XiHeadless.Capabilities;
 
-/// Delivery box (Mog House mail). Mail gil/items to another character by name — async, the recipient
-/// can be offline. The bot must be in a delivery-capable zone (a city with AH/mog-menu, or a
-/// residential area); cities qualify, so an RMT bot can deliver from where it spams.
-public interface IDelivery
-{
-    Task<bool> EnterMogHouse(CancellationToken ct = default);   // 0x5E to the current city's MH entrance
-    Task ExitMogHouse(CancellationToken ct = default);          // 0x5E mogHouseZoneLine -> back to the city
-    Task<bool> SendGil(string player, int amount, CancellationToken ct = default);
-}
-
 /// Builds 0x4D GP_CLI_COMMAND_PBX (delivery box). Layout: hdr(4) Command@4 BoxNo@5 PostWorkNo@6
 /// ItemWorkNo@7 ItemStacks@8(i32) Result@12 ResParam1@13 ResParam2@14 ResParam3@15 TargetName[16]@16.
 /// 32 bytes (PacketSize[0x4D]=0 => any size). Result/ResParam must be 0 (left zero). Unused int8
@@ -24,7 +14,7 @@ internal static class DeliveryPacket
     public static byte[] Build(byte command, sbyte boxNo, sbyte postWorkNo, sbyte itemWorkNo, int itemStacks, string target = "")
     {
         var p = new byte[32];
-        BinaryPrimitives.WriteUInt16LittleEndian(p, (ushort)(0x04D | (8 << 9)));
+        SubPacket.WriteHeader(p, 0x04D);
         p[4] = command;
         p[5] = (byte)boxNo;
         p[6] = (byte)postWorkNo;
@@ -71,6 +61,31 @@ public sealed class Delivery(ISession s) : IDelivery
     /// fails and the server stays silent). We therefore try slots 0..7 and proceed only when the Set
     /// is ACKed (0x04B) — the server acks a Set only when it truly staged (free slot + receiver
     /// resolved). No ack on any slot => box full or the name didn't resolve. Async; recipient offline ok.
+    /// Mail ONE inventory slot's item to another character — same Set/Send/Confirm dance as SendGil, with
+    /// ItemWorkNo = the INVENTORY slot instead of 0 (gil). Exists to offload non-stacking keepers: Beastmen's
+    /// Seals filled 17/30 bag slots and treasure-pool drops (Rare/EX included) silently bounced off the full bag.
+    public async Task<bool> SendItem(string player, byte invSlot, int qty, CancellationToken ct = default)
+    {
+        s.Enqueue(DeliveryPacket.Build(DeliveryPacket.DeliOpen, DeliveryPacket.BoxNone, -1, -1, -1));
+        await Task.Delay(800, ct);
+
+        for (sbyte slot = 0; slot < 8 && !ct.IsCancellationRequested; slot++)
+        {
+            s.State.DboxAck = -1;
+            s.Enqueue(DeliveryPacket.Build(DeliveryPacket.Set, DeliveryPacket.BoxOutgoing, slot, (sbyte)invSlot, qty, player));
+            if (!await WaitAck(DeliveryPacket.Set, slot, 2500, ct)) continue;   // not staged here -> next slot
+
+            s.Enqueue(DeliveryPacket.Build(DeliveryPacket.Send, DeliveryPacket.BoxOutgoing, slot, -1, -1));
+            await Task.Delay(600, ct);
+            s.Enqueue(DeliveryPacket.Build(DeliveryPacket.Confirm, DeliveryPacket.BoxNone, -1, -1, -1));
+            await Task.Delay(400, ct);
+            Console.WriteLine($"[delivery] mailed inv slot {invSlot} x{qty} -> '{player}' (outgoing slot {slot})");
+            return true;
+        }
+        Console.WriteLine($"[delivery] FAILED to mail inv slot {invSlot} -> '{player}'");
+        return false;
+    }
+
     public async Task<bool> SendGil(string player, int amount, CancellationToken ct = default)
     {
         // Open the outgoing send box (server must be in SEND_DELIVERYBOX state before Set/Send work).

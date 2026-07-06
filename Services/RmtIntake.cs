@@ -3,7 +3,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 
-namespace XiHeadless.Brains;
+namespace XiHeadless.Services;
 
 /// The RMT storefront the spam URL points at, served in-process by the bot. GET / returns an order
 /// page (character name + gil amount); submitting it queues a request the RmtBrain fulfills (mails

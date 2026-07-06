@@ -23,7 +23,11 @@ public sealed class FfxiDecompress
     }
 
     /// Decompress `bits` bits from `comp` (which begins with the 0x01 header byte).
-    public byte[] Decompress(ReadOnlySpan<byte> comp, uint bits, int maxOut = 8192)
+    /// maxOut was 8192 = the recv buffer size; decompression EXPANDS, so a well-packed zone-in frame
+    /// could exceed it and get silently truncated — the de-frame loop then hit its overrun/words==0
+    /// break at the cut and dropped every sub-packet in the tail (a later 0x032 event, while an earlier
+    /// 0x037 status parsed fine). Ceiling raised well above any real datagram; truncation now warns.
+    public byte[] Decompress(ReadOnlySpan<byte> comp, uint bits, int maxOut = 1 << 16)
     {
         // comp[0] must be 1; bitstream starts at comp[1]
         var src = comp[1..];
@@ -38,6 +42,7 @@ public sealed class FfxiDecompress
             outBuf[w++] = (byte)_jump[pos + 3];                   // leaf data
             pos = _jump[0];
         }
+        if (w == maxOut) Console.WriteLine($"[decompress-truncated] hit {maxOut}B ceiling ({bits} bits) — tail sub-packets (possibly an event) may be lost");
         return outBuf[..w];
     }
 }
