@@ -9,16 +9,17 @@ using System.Text.Json;
 namespace XiHeadless;
 
 /// Runtime-controllable logging facility for the fleet. The fleet runs QUIET by default in production
-/// (XIBOT_LOG=0) to cut log volume, but verbose per-tick/per-action spam can be turned back on either at
-/// launch (XIBOT_LOG env) or LIVE via an in-game /tell to a specific bot (BotHost's tell-toggle) so an
-/// operator can troubleshoot one bot without restarting it.
+/// (XIBOT_VERBOSE=0) to cut log volume, but verbose per-tick/per-action spam can be turned back on either at
+/// launch (XIBOT_VERBOSE env) or LIVE via an in-game /tell "log on" to a specific bot (BotHost's tell-toggle)
+/// so an operator can troubleshoot one bot without restarting it.
+/// (NOTE: XIBOT_LOG is the log FILE PATH in runbot.sh — a separate concern — so verbosity uses its own var.)
 ///  - Log.Info   = the GATED channel: high-volume hunting/nav/con/event spam. Silent unless Verbose.
 ///  - Log.Always = the UNGATED channel: operational milestones + errors the babysitter/monitors grep for.
 public static class Log
 {
-    // Runtime gate. Initialized from XIBOT_LOG: "1"/"on"/"true" => true, "0"/"off"/"false" => false.
-    // DEFAULT when unset = true (preserve today's behavior; the fleet opts INTO quiet via XIBOT_LOG=0).
-    public static volatile bool Verbose = ParseEnv(Environment.GetEnvironmentVariable("XIBOT_LOG"));
+    // Runtime gate. Initialized from XIBOT_VERBOSE: "1"/"on"/"true" => true, "0"/"off"/"false" => false.
+    // DEFAULT when unset = true (preserve today's behavior; the fleet opts INTO quiet via XIBOT_VERBOSE=0).
+    public static volatile bool Verbose = ParseEnv(Environment.GetEnvironmentVariable("XIBOT_VERBOSE"));
 
     static bool ParseEnv(string? v) => v?.Trim().ToLowerInvariant() switch
     {
