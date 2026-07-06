@@ -41,9 +41,23 @@ public static class BotHost
 
     public static async Task<int> Run(string account, string password, string brainName, int? runSeconds)
     {
-        var client = await ConnectLobby(account, password);
-        bool justCreated = client.SelectOrCreate();   // select the account's char, or create one if empty
-        client.RequestZoneServer();
+        XiClient client;
+        bool justCreated;
+        try
+        {
+            client = await ConnectLobby(account, password);
+            justCreated = client.SelectOrCreate();     // select the account's char, or create one if empty
+            client.RequestZoneServer();                // 0xA2 zone handoff — throws on a stale/duplicate session
+        }
+        catch (Exception ex) when (ex.Message.Contains("0xA2") || ex.Message.Contains("stale/duplicate"))
+        {
+            // CRITICAL PATH, now HANDLED (was an unhandled crash, exit 134): a stale/duplicate session means the
+            // server still holds this char online. Exit CLEANLY with a distinct code + one clear line so the
+            // operator/babysitter paces the dirty cooldown (>=5 min) — a rapid relaunch just re-hits the held
+            // session and 0xA2s again. (The babysitter's pgrep guard prevents the duplicate login up front.)
+            Log.Always($"[fatal] session declined (0xA2 stale/duplicate) — server still holds this char; needs a cooldown before relaunch, NOT a rapid retry. [{ex.Message.Split('\n')[0]}]");
+            return 75;
+        }
 
         var resDir = Path.Combine(AppContext.BaseDirectory, "res");
         var sessionKey = new byte[20]; if (justCreated) sessionKey[16] = 6; // +6 byte16 for a fresh char

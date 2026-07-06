@@ -133,12 +133,19 @@ public sealed class MapConnection : ISession
         State.Entities.Clear();
         _gameOkCycles = 0;                 // re-arm gameok resends for the new zone
         _statusRequested = false;          // re-request skills/status after the new zone-in
-        IncrementBlowfish();
-        bool ok = Handshake0x0A(12000);
+        IncrementBlowfish();   // ONCE — matches the server's single key-increment on the zone change (do NOT re-increment per retry)
+        // CRITICAL PATH, now with RETRY: a single missed 0x00A used to leave the bot silently broken (thinks it
+        // zoned but didn't). Retry the handshake on the same key before giving up.
+        bool ok = false;
+        for (int attempt = 1; attempt <= 3 && !ok; attempt++)
+        {
+            ok = Handshake0x0A(12000);
+            if (!ok) Log.Always($"[zone] re-zone attempt {attempt}/3 — no 0x00A reply, retrying");
+        }
         _udp.ReceiveTimeout = 1000;
         _zoning = false;
         if (ok) { Log.Always($"[zone] {prevZone} -> {State.ZoneId}"); ZoneChanged?.Invoke(State.ZoneId); }
-        else Log.Always("[zone] re-zone FAILED (no 0x00A reply)");
+        else Log.Always("[zone] re-zone FAILED after 3 attempts — connection likely dead; log will go stale for the babysitter to relaunch");
     }
 
     // 0x00C gameok: 12 bytes = hdr(4) + ClientState@4(u32,=0) + DebugClientFlg@8(u32,=0).
