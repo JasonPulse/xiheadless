@@ -246,6 +246,7 @@ public static class BotHost
         var w = caps.Perception.World;
         const int graceMs = 7000;
         DateTime activeSince = DateTime.MaxValue;
+        bool csAnnounced = false;   // announced the start-city blind-finish for THIS status-4 episode (dedupe spam)
         try
         {
             while (!ct.IsCancellationRequested)
@@ -256,7 +257,7 @@ public static class BotHost
                 // which may not raise status 4). Status 4 is the load-bearing signal — a cutscene the bot never
                 // parsed a start for still shows status 4, so it's still detected and cleared below.
                 bool inEvent = w.EventActive || w.ServerStatus == 4;
-                if (!inEvent) { activeSince = DateTime.MaxValue; continue; }
+                if (!inEvent) { activeSince = DateTime.MaxValue; csAnnounced = false; continue; }   // episode ended -> re-arm the announce
                 if (activeSince == DateTime.MaxValue) activeSince = DateTime.UtcNow;   // rising edge of an active event
                 var reference = w.LastEventDrivenUtc > activeSince ? w.LastEventDrivenUtc : activeSince;
                 if ((DateTime.UtcNow - reference).TotalMilliseconds < graceMs) continue; // brain may be driving it
@@ -287,7 +288,10 @@ public static class BotHost
                     int csEv = Game.NewCharCutscene.EventFor(w.ZoneId);
                     if (csEv >= 0)
                     {
-                        Log.Always($"[auto-event] stuck status=4 in start-city zone {w.ZoneId}, no parsed id -> blind-finishing its known onZoneIn cutscene {csEv} (clears the travel block)");
+                        // Announce ONCE per episode (Always); keep retrying the EVENTEND quietly (Info) until
+                        // status=4 clears — it can take a few tries, but re-logging every 7s floods the fleet.
+                        if (!csAnnounced) { Log.Always($"[auto-event] stuck status=4 in start-city zone {w.ZoneId}, no parsed id -> blind-finishing its known onZoneIn cutscene {csEv} to clear the travel block"); csAnnounced = true; }
+                        else Log.Info($"[auto-event] re-attempting cutscene {csEv} clear (still status=4) in zone {w.ZoneId}");
                         await caps.Events.Finish(w.MyId, 0, (ushort)csEv, 0, ct);
                     }
                     else

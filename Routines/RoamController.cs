@@ -242,19 +242,28 @@ public sealed class RoamController(INavigation nav, IPerception p, ICombat comba
         {
             _netStuckSteps = 0;
             _preySeen.RemoveAll(m => !nav.CanReach(m.x, wp.Y, m.z));   // drop unreachable prey that keeps pulling us back
-            (float x, float z)? far = _trail.Count > 0 ? _trail[0]
-                : _preySeen.Count > 0 ? _preySeen.OrderByDescending(m => Geometry.Dist2D(m.x, m.z, wp.X, wp.Z)).First()
-                : null;
-            if (far is { } f) { nav.MoveTo(f.x, f.z); if (nav.IsMoving) { _trail.Clear(); _netAnchorX = wp.X; _netAnchorZ = wp.Z; Log($"net-stuck (oscillating, no net progress in 12 hops) -> full-path relocating to ({f.x:F0},{f.z:F0})"); return; } }
-            foreach (float r in new[] { 150f, 250f, 100f })
-                for (int i = 0; i < 16; i++)
+            // FAR-RING FIRST: after oscillating, the trail/prey anchors are all INSIDE this pocket (contaminated),
+            // so relocating to them just stays stuck (observed: BLM relocated to (-93,-248) next to its oscillation
+            // and kept bouncing). A genuinely-DISTANT reachable point is the real escape — CanReach runs full
+            // pathfinding, so a point reachable via a winding corridor passes even where the radial fan's short
+            // hops can't. Sample many bearings, farthest-first, and commit to the first that yields real movement.
+            bool netEscaped = false;
+            foreach (float r in new[] { 250f, 350f, 180f, 450f, 120f })
+            {
+                for (int i = 0; i < 24 && !netEscaped; i++)
                 {
-                    double a = i * (Math.PI / 8); float tx = wp.X + (float)Math.Cos(a) * r, tz = wp.Z + (float)Math.Sin(a) * r;
+                    double a = i * (Math.PI / 12); float tx = wp.X + (float)Math.Cos(a) * r, tz = wp.Z + (float)Math.Sin(a) * r;
                     if (!nav.CanReach(tx, wp.Y, tz)) continue;
                     nav.MoveTo(tx, tz);
-                    if (nav.IsMoving) { _heading = a; _netAnchorX = wp.X; _netAnchorZ = wp.Z; Log($"net-stuck -> far-ring escape to ({tx:F0},{tz:F0}) at {r:F0}y"); return; }
+                    if (nav.IsMoving) { _heading = a; _netAnchorX = tx; _netAnchorZ = tz; _trail.Clear(); netEscaped = true; Log($"net-stuck oscillation -> far-ring escape to ({tx:F0},{tz:F0}) at {r:F0}y"); }
                 }
-            Log("net-stuck oscillation but no far reachable point/path in 250y — truly walled (will retry)");
+                if (netEscaped) break;
+            }
+            if (netEscaped) return;
+            // NOTHING reachable within 450y in any direction: this pocket is disconnected from the huntable mesh
+            // (truly walled — e.g. dropped onto an isolated ledge). Roaming can't fix it; falls through to the
+            // normal logic. If this proves to recur, the escalation is a brain-level zone-out (deferred until seen).
+            Log("net-stuck: NO reachable point within 450y — pocket appears walled (falling through; watch for a zone-out need)");
         }
 
         // Discover: /check the nearest unknown mobs so the threat map fills in as we travel. Unknown mobs
