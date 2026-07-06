@@ -277,13 +277,21 @@ public static class BotHost
                 else
                 {
                     // status==4 but we NEVER parsed an event-start id: its 0x32/0x34 was lost in the login/
-                    // zone-in blowfish re-key window (a genuine reception gap, only in that window). We cannot
-                    // generically end an event whose id we never received. The one such event that matters is
-                    // the new-char home-point cutscene, which is blind-finished at startup by its known id
-                    // (Game/NewCharCutscene) so the home point gets set. If this line fires OUTSIDE that
-                    // startup window, the reception gap has widened -> fix 0x32/0x34 RECEPTION (do NOT
-                    // reintroduce a hardcoded end-list; that's the anti-pattern this replaced).
-                    Log.Info($"[auto-event] stuck in-event (status={w.ServerStatus}) but no event id ever parsed (0x32/0x34 lost in login window) -> see NewCharCutscene startup handler; nothing to end generically");
+                    // zone-in recv gap. We can't generically end an event whose id we never received — EXCEPT
+                    // a START CITY's onZoneIn home-point cutscene, whose id is deterministic per zone. It fires
+                    // on EVERY entry (initial login AND recovery/seesaw RE-ENTRY), and if left unfinished the
+                    // status=4 blocks the next zone-line crossing -> the bot freezes mid-travel (the fleet
+                    // stopper). BotHost blind-finishes it once at login; do the SAME here for re-entries, by the
+                    // zone's known id from the existing NewCharCutscene table (NOT a new hardcoded end-list —
+                    // it's the same documented recv-gap band-aid, just applied on re-entry too).
+                    int csEv = Game.NewCharCutscene.EventFor(w.ZoneId);
+                    if (csEv >= 0)
+                    {
+                        Log.Always($"[auto-event] stuck status=4 in start-city zone {w.ZoneId}, no parsed id -> blind-finishing its known onZoneIn cutscene {csEv} (clears the travel block)");
+                        await caps.Events.Finish(w.MyId, 0, (ushort)csEv, 0, ct);
+                    }
+                    else
+                        Log.Info($"[auto-event] stuck in-event (status={w.ServerStatus}) zone {w.ZoneId}: no parsed id and no known cutscene for this zone -> can't end generically (0x32/0x34 recv gap)");
                 }
                 activeSince = DateTime.MaxValue;
             }
