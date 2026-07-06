@@ -121,7 +121,7 @@ public static class PacketParsers
             default:
                 // DIAGNOSTIC: a received opcode with no handler — surfaced ONCE per id so we can see what the
                 // server sends that we ignore (protocol-gap discovery). Deduped -> negligible noise.
-                if (_unhandledSeen.Add(id)) Log.Always($"[parse] UNHANDLED opcode 0x{id:X3} (len {sub.Length}B) — received, no handler (first sighting)");
+                if (_unhandledSeen.Add(id)) Log.Info($"[parse] unhandled opcode 0x{id:X3} (len {sub.Length}B) — received, no handler (first sighting)");
                 break;
         }
     }
