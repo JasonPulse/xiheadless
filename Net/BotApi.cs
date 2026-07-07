@@ -31,7 +31,11 @@ public sealed class BotApi : IGilGrant
         }
         try
         {
-            using var req = new HttpRequestMessage(HttpMethod.Post, $"{_baseUrl}/api/bot/grant_gil")
+            // Tolerate XIBOT_API_URL being set to EITHER the base (http://host:port) or the full endpoint
+            // (…/api/bot/grant_gil). Appending blindly to a full-path URL doubled it and 404'd every grant.
+            const string path = "/api/bot/grant_gil";
+            var url = _baseUrl!.EndsWith(path) ? _baseUrl : _baseUrl + path;
+            using var req = new HttpRequestMessage(HttpMethod.Post, url)
             {
                 Content = JsonContent.Create(new { player, amount, reason })
             };
