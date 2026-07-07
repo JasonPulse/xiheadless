@@ -70,6 +70,10 @@ public sealed class Chat(ISession s) : IChat
         var text = AutoTranslate.Encode(msg);
         var p = new byte[(21 + text.Length + 1 + 3) & ~3];
         SubPacket.WriteHeader(p, 0x0B6);
+        // The server's 0x0B6 validate() REQUIRES byte4(unknown00)==3 (TELL type) and byte5(unknown01)==0;
+        // leaving byte4=0 made the server reject EVERY bot tell at validation (real clients send 3). This is
+        // why bot tells never arrived (grant requests + the Reunion REFORM handshake silently dropped).
+        p[4] = 3;   // unknown00 = MESSAGE_TELL; p[5] stays 0
         System.Text.Encoding.ASCII.GetBytes(to, 0, System.Math.Min(to.Length, 14), p, 6);
         text.CopyTo(p, 21);
         s.Enqueue(p);
