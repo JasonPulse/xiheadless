@@ -24,9 +24,11 @@ public static class NewCharCutscene
     /// The opening-cutscene event id for a start-city zone, or -1 if the zone isn't a start city.
     public static int EventFor(ushort zone) => ByZone.TryGetValue(zone, out var ev) ? ev : -1;
 
-    /// Every KNOWN zone-in/blocking cutscene id a char can carry with no parsed 0x32 (the recv gap): the ROV
-    /// intro (30035), moghouse (368), and the start-city intros. The server's EVENTEND handler ends an event
-    /// ONLY when the sent id matches its currentEvent, so sweeping these is harmless for whichever don't match.
-    /// ONE shared list — HomePointRoutines (crystal-set pre-clear) and the auto-completer both sweep it.
-    public static readonly ushort[] KnownBlockers = { 30035, 368, 367, 305, 531, 0, 1, 535, 503, 500 };
+    /// Every KNOWN zone-in/blocking cutscene id a char can carry with no parsed 0x32 (the recv gap): 30000
+    /// (OBSERVED LIVE on Zzshekashi — the map server's 0x05B validator names the current event when rejecting
+    /// a mismatched EVENTEND: "Event ID mismatch 30000 != 368"), the ROV intro (30035), moghouse (368), and
+    /// the start-city intros. A mismatched EVENTEND is REJECTED at packet validation (it never reaches the
+    /// zone script), so sweeping is safe; only the matching id ends the event. ONE shared list —
+    /// HomePointRoutines (crystal-set pre-clear) and the auto-completer both sweep it.
+    public static readonly ushort[] KnownBlockers = { 30000, 30035, 368, 367, 305, 531, 0, 1, 535, 503, 500 };
 }

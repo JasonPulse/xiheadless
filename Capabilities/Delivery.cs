@@ -8,7 +8,7 @@ namespace XiHeadless.Capabilities;
 /// fields are -1 per the server validator; ints are passed explicitly per command.
 internal static class DeliveryPacket
 {
-    public const byte DeliOpen = 0x0D, Set = 0x02, Send = 0x03, Confirm = 0x07;
+    public const byte Work = 0x01, Set = 0x02, Send = 0x03, Confirm = 0x07, DeliOpen = 0x0D;
     public const sbyte BoxNone = -1, BoxOutgoing = 2;
 
     public static byte[] Build(byte command, sbyte boxNo, sbyte postWorkNo, sbyte itemWorkNo, int itemStacks, string target = "")
@@ -61,52 +61,43 @@ public sealed class Delivery(ISession s) : IDelivery
     /// fails and the server stays silent). We therefore try slots 0..7 and proceed only when the Set
     /// is ACKed (0x04B) — the server acks a Set only when it truly staged (free slot + receiver
     /// resolved). No ack on any slot => box full or the name didn't resolve. Async; recipient offline ok.
-    /// Mail ONE inventory slot's item to another character — same Set/Send/Confirm dance as SendGil, with
-    /// ItemWorkNo = the INVENTORY slot instead of 0 (gil). Exists to offload non-stacking keepers: Beastmen's
-    /// Seals filled 17/30 bag slots and treasure-pool drops (Rare/EX included) silently bounced off the full bag.
-    public async Task<bool> SendItem(string player, byte invSlot, int qty, CancellationToken ct = default)
-    {
-        s.Enqueue(DeliveryPacket.Build(DeliveryPacket.DeliOpen, DeliveryPacket.BoxNone, -1, -1, -1));
-        await Task.Delay(800, ct);
+    /// Mail ONE inventory slot's item to another character (ItemWorkNo = the INVENTORY slot; 0 = gil).
+    /// Exists to offload non-stacking keepers: Beastmen's Seals filled 17/30 bag slots and treasure-pool
+    /// drops (Rare/EX included) silently bounced off the full bag.
+    public Task<bool> SendItem(string player, byte invSlot, int qty, CancellationToken ct = default) =>
+        SendViaDbox(player, (sbyte)invSlot, qty, $"inv slot {invSlot} x{qty}", ct);
 
-        for (sbyte slot = 0; slot < 8 && !ct.IsCancellationRequested; slot++)
-        {
-            s.State.DboxAck = -1;
-            s.Enqueue(DeliveryPacket.Build(DeliveryPacket.Set, DeliveryPacket.BoxOutgoing, slot, (sbyte)invSlot, qty, player));
-            if (!await WaitAck(DeliveryPacket.Set, slot, 2500, ct)) continue;   // not staged here -> next slot
+    public Task<bool> SendGil(string player, int amount, CancellationToken ct = default) =>
+        SendViaDbox(player, 0, amount, $"{amount} gil", ct);   // gil = inventory slot 0 (item 65535)
 
-            s.Enqueue(DeliveryPacket.Build(DeliveryPacket.Send, DeliveryPacket.BoxOutgoing, slot, -1, -1));
-            await Task.Delay(600, ct);
-            s.Enqueue(DeliveryPacket.Build(DeliveryPacket.Confirm, DeliveryPacket.BoxNone, -1, -1, -1));
-            await Task.Delay(400, ct);
-            Log.Info($"[delivery] mailed inv slot {invSlot} x{qty} -> '{player}' (outgoing slot {slot})");
-            return true;
-        }
-        Log.Info($"[delivery] FAILED to mail inv slot {invSlot} -> '{player}'");
-        return false;
-    }
-
-    public async Task<bool> SendGil(string player, int amount, CancellationToken ct = default)
+    // THE one send-box dance (SendGil/SendItem share it): open -> Work -> stage into a free slot -> commit.
+    async Task<bool> SendViaDbox(string player, sbyte itemWorkNo, int qty, string what, CancellationToken ct)
     {
         // Open the outgoing send box (server must be in SEND_DELIVERYBOX state before Set/Send work).
         s.Enqueue(DeliveryPacket.Build(DeliveryPacket.DeliOpen, DeliveryPacket.BoxNone, -1, -1, -1));
         await Task.Delay(800, ct);
+        // Work (SendOldItems) — what a real client sends on box-open. The server loads any EXISTING
+        // delivery_box rows (PK charid,box,slot) into the in-memory slots; without it a stale row from a
+        // dead send is INVISIBLE in memory, the Set targets that "empty" slot, and the INSERT dies on
+        // "Duplicate entry '32-2-0' for key 'PRIMARY'" with no reply (live map-server log, Zzshekashi).
+        // After Work the occupied slot simply doesn't ack and the loop stages into a genuinely free one.
+        s.Enqueue(DeliveryPacket.Build(DeliveryPacket.Work, DeliveryPacket.BoxOutgoing, -1, -1, -1));
+        await Task.Delay(800, ct);
 
         for (sbyte slot = 0; slot < 8 && !ct.IsCancellationRequested; slot++)
         {
             s.State.DboxAck = -1;
-            // Set: gil = inventory slot 0 (item 65535), ItemStacks = amount, into outgoing slot `slot`.
-            s.Enqueue(DeliveryPacket.Build(DeliveryPacket.Set, DeliveryPacket.BoxOutgoing, slot, 0, amount, player));
+            s.Enqueue(DeliveryPacket.Build(DeliveryPacket.Set, DeliveryPacket.BoxOutgoing, slot, itemWorkNo, qty, player));
             if (!await WaitAck(DeliveryPacket.Set, slot, 2500, ct)) continue;   // not staged here -> next slot
 
             s.Enqueue(DeliveryPacket.Build(DeliveryPacket.Send, DeliveryPacket.BoxOutgoing, slot, -1, -1));
             await Task.Delay(600, ct);
             s.Enqueue(DeliveryPacket.Build(DeliveryPacket.Confirm, DeliveryPacket.BoxNone, -1, -1, -1));
             await Task.Delay(400, ct);
-            Log.Info($"[delivery] sent {amount} gil -> '{player}' (outgoing slot {slot})");
+            Log.Info($"[delivery] sent {what} -> '{player}' (outgoing slot {slot})");
             return true;
         }
-        Log.Info($"[delivery] FAILED to send {amount} gil -> '{player}' (no free outgoing slot, or name didn't resolve)");
+        Log.Info($"[delivery] FAILED to send {what} -> '{player}' (no free outgoing slot, insufficient quantity, or name didn't resolve)");
         return false;
     }
 
