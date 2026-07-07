@@ -16,6 +16,7 @@ public sealed class CapabilitySet
     public IGear Gear { get; }
     public IDelivery Delivery { get; }
     public IGilGrant GilGrant { get; }
+    public WorldApi World { get; }
     public IBazaar Bazaar { get; }
     public ICrafting Crafting { get; }
     public IShop Shop { get; }
@@ -44,6 +45,7 @@ public sealed class CapabilitySet
         Gear = new Gear(s, Inventory);   // Gear queries the bag (Has/SlotOf) via the shared Inventory
         Delivery = new Delivery(s);
         GilGrant = new BotApi();   // HTTP client; auth/endpoint from deployment secrets (env)
+        World = new WorldApi();     // read-only world session-count API (XIBOT_WORLD_URL); for GM/RMT self-stop
         Bazaar = new Bazaar(s);
         Crafting = new Crafting(s);
         Shop = new Shop(s);
@@ -69,6 +71,7 @@ public sealed class CapabilitySet
         t == typeof(IGear)       ? Gear :
         t == typeof(IDelivery)   ? Delivery :
         t == typeof(IGilGrant)   ? GilGrant :
+        t == typeof(WorldApi)    ? World :
         t == typeof(IBazaar)     ? Bazaar :
         t == typeof(ICrafting)   ? Crafting :
         t == typeof(IShop)       ? Shop :

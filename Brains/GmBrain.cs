@@ -13,7 +13,7 @@ namespace XiHeadless.Brains;
 /// spaced out (the server processes ~one command per tick), and tells the requester back with the result.
 ///
 /// Behavior is CODE (consts below). Reuses IChat + WorldState.Tells (already parsed) — no new chat/movement.
-public sealed class GmBrain(IPerception p, IChat chat, ILifecycle lifecycle) : IBrain
+public sealed class GmBrain(IPerception p, IChat chat, ILifecycle lifecycle, WorldApi world) : IBrain
 {
     const int CommandSpacingMs = 1500; // gap between GM commands (server processes ~one per tick)
     const int MaxGrants = 0;           // end check: log out after this many grants (0 = run until stopped)
@@ -29,6 +29,9 @@ public sealed class GmBrain(IPerception p, IChat chat, ILifecycle lifecycle) : I
     public async Task RunAsync(CancellationToken ct)
     {
         Log.Always($"[gm] grant bot up (char='{p.World.MyName}') — listening for /tell requests: 'grantjob <JOB>' or 'setcap <1-99>'");
+        // Self-stop: log out once only the service accounts (GM + RMT) remain online. Runs alongside; when it
+        // fires, lifecycle.Logout() cancels ct and the loop below exits.
+        _ = ServiceBotGate.WatchThenLogout(world, lifecycle, "gm", ct);
         int grants = 0;
 
         try

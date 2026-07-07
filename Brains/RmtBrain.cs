@@ -4,7 +4,7 @@ namespace XiHeadless.Brains;
 /// intake) AND fulfills gil requests that arrive there. On a request it acquires gil from the server
 /// grant endpoint (credit the bot), ducks into its Mog House to mail the gil to the buyer, then comes
 /// back out to resume spamming. Behavior is CODE (consts below). Reuses IChat / IDelivery / IGilGrant.
-public sealed class RmtBrain(IPerception p, IChat chat, IDelivery delivery, IGilGrant gil, IZoning zoning, ILifecycle lifecycle) : IBrain
+public sealed class RmtBrain(IPerception p, IChat chat, IDelivery delivery, IGilGrant gil, IZoning zoning, ILifecycle lifecycle, WorldApi world) : IBrain
 {
     static readonly bool UseYell = true;   // /yell (city-area); false = /shout (current zone)
     const int SpamIntervalSec = 1800;      // 30 minutes between spam broadcasts
@@ -26,6 +26,9 @@ public sealed class RmtBrain(IPerception p, IChat chat, IDelivery delivery, IGil
         var intake = new RmtIntake(Port);
         intake.Start();
         Log.Info($"[rmt] loop: spam /{(UseYell ? "yell" : "shout")} every {SpamIntervalSec}s + delivery intake on :{Port} (char='{p.World.MyName}')");
+        // Self-stop: log out once only the service accounts (GM + RMT) remain online. Runs alongside; when it
+        // fires, lifecycle.Logout() cancels ct and the loop below exits.
+        _ = ServiceBotGate.WatchThenLogout(world, lifecycle, "rmt", ct);
 
         var clock = System.Diagnostics.Stopwatch.StartNew();
         long lastSpamMs = -SpamIntervalSec * 1000L;   // spam immediately on start
