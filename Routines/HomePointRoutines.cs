@@ -30,7 +30,7 @@ public static class HomePointRoutines
         // Talk can't become current, so the EVENTEND routes to the ZONE's onEventFinish (which ignores the
         // crystal csid) and setHomePoint() never runs. Sweep the known blockers (ROV 30035, new-char CS,
         // moghouse) so the crystal event is the one that's active when we EVENTEND it.
-        foreach (var blocker in new ushort[] { 30035, 368, 367, 305, 531, 0, 1, 535, 503, 500 })
+        foreach (var blocker in Game.NewCharCutscene.KnownBlockers)
         {
             await events.Finish(p.World.MyId, 0, blocker, 0, ct);
             await Task.Delay(300, ct);

@@ -247,6 +247,9 @@ public static class BotHost
         const int graceMs = 7000;
         DateTime activeSince = DateTime.MaxValue;
         bool csAnnounced = false;   // announced the start-city blind-finish for THIS status-4 episode (dedupe spam)
+        int csAttempts = 0;         // sends of the zone's KNOWN cutscene id this episode (escalate to sweep after a few)
+        int sweepIdx = -1;          // rotating index into NewCharCutscene.KnownBlockers (-1 = not sweeping)
+        ushort lastTried = 0;       // last id sent, to IDENTIFY the real event on the falling edge
         try
         {
             while (!ct.IsCancellationRequested)
@@ -257,7 +260,14 @@ public static class BotHost
                 // which may not raise status 4). Status 4 is the load-bearing signal — a cutscene the bot never
                 // parsed a start for still shows status 4, so it's still detected and cleared below.
                 bool inEvent = w.EventActive || w.ServerStatus == 4;
-                if (!inEvent) { activeSince = DateTime.MaxValue; csAnnounced = false; continue; }   // episode ended -> re-arm the announce
+                if (!inEvent)
+                {
+                    // Falling edge while sweeping: the server ends an event ONLY on a matching id, so the LAST
+                    // id sent is the real stuck event we could never parse — log it as discovered knowledge.
+                    if (sweepIdx >= 0) Log.Always($"[auto-event] status cleared after EVENTEND {lastTried} in zone {w.ZoneId} — that was the real stuck event id (unparsed 0x32)");
+                    activeSince = DateTime.MaxValue; csAnnounced = false; csAttempts = 0; sweepIdx = -1; lastTried = 0;
+                    continue;   // episode ended -> re-arm the announce
+                }
                 if (activeSince == DateTime.MaxValue) activeSince = DateTime.UtcNow;   // rising edge of an active event
                 var reference = w.LastEventDrivenUtc > activeSince ? w.LastEventDrivenUtc : activeSince;
                 if ((DateTime.UtcNow - reference).TotalMilliseconds < graceMs) continue; // brain may be driving it
@@ -286,16 +296,29 @@ public static class BotHost
                     // zone's known id from the existing NewCharCutscene table (NOT a new hardcoded end-list —
                     // it's the same documented recv-gap band-aid, just applied on re-entry too).
                     int csEv = Game.NewCharCutscene.EventFor(w.ZoneId);
-                    if (csEv >= 0)
+                    if (csEv >= 0 && csAttempts < 3)
                     {
-                        // Announce ONCE per episode (Always); keep retrying the EVENTEND quietly (Info) until
-                        // status=4 clears — it can take a few tries, but re-logging every 7s floods the fleet.
+                        // Announce ONCE per episode (Always); retry the zone's own cutscene a few times quietly.
                         if (!csAnnounced) { Log.Always($"[auto-event] stuck status=4 in start-city zone {w.ZoneId}, no parsed id -> blind-finishing its known onZoneIn cutscene {csEv} to clear the travel block"); csAnnounced = true; }
                         else Log.Info($"[auto-event] re-attempting cutscene {csEv} clear (still status=4) in zone {w.ZoneId}");
+                        csAttempts++;
+                        lastTried = (ushort)csEv;
                         await caps.Events.Finish(w.MyId, 0, (ushort)csEv, 0, ct);
                     }
                     else
-                        Log.Info($"[auto-event] stuck in-event (status={w.ServerStatus}) zone {w.ZoneId}: no parsed id and no known cutscene for this zone -> can't end generically (0x32/0x34 recv gap)");
+                    {
+                        // The zone's own cutscene didn't clear it (or the zone has none): the char carries a
+                        // DIFFERENT unparsed event (an existing char's zone-in fires no intro CS — e.g. the ROV
+                        // intro 30035, moghouse 368; the RMT bot burned 634 futile EVENTEND-367s on exactly
+                        // this). SWEEP the shared known-blocker ids ONE per cycle — mismatches are server-side
+                        // no-ops, and the falling-edge log above identifies whichever one actually clears it.
+                        var blockers = Game.NewCharCutscene.KnownBlockers;
+                        if (sweepIdx < 0) Log.Always($"[auto-event] zone {w.ZoneId}'s known cutscene didn't clear status=4 (or none known) -> sweeping {blockers.Length} known blocker ids, one per cycle");
+                        sweepIdx = (sweepIdx + 1) % blockers.Length;
+                        lastTried = blockers[sweepIdx];
+                        Log.Info($"[auto-event] sweep {sweepIdx + 1}/{blockers.Length}: EVENTEND {lastTried} (still status=4, zone {w.ZoneId})");
+                        await caps.Events.Finish(w.MyId, 0, lastTried, 0, ct);
+                    }
                 }
                 activeSince = DateTime.MaxValue;
             }

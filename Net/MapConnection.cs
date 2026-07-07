@@ -96,7 +96,10 @@ public sealed class MapConnection : ISession
             try
             {
                 int n = _udp.Receive(buf);                               // inline receive between sends
-                if (n > PH + 16) { try { HandleInbound(buf[..n]); } catch (Exception ex) { if (Dbg) Log.Info($"    [recv-err] {ex.Message}"); } }
+                // NEVER swallow a handshake-window dispatch failure (was Dbg-gated): this window is the zone-in
+                // burst — exactly where event starts (0x032) ride — and a silent drop reads as "the server never
+                // sent it" (the recv-gap ghost that strands chars in status=4 with no parsed id).
+                if (n > PH + 16) { try { HandleInbound(buf[..n]); } catch (Exception ex) { Log.Always($"[zonein-dispatch-err] {n}B datagram DROPPED mid-dispatch: {ex.Message} (possible lost event burst)"); } }
             }
             catch (SocketException sx) { if (sx.SocketErrorCode != SocketError.TimedOut) Log.Always($"[zonein-sockerr] {sx.SocketErrorCode} — handshake datagram DROPPED (a lost event burst reads as a reception gap)"); }
         }
