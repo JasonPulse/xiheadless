@@ -104,9 +104,11 @@ public sealed class MapConnection : ISession
             catch (SocketException sx) { if (sx.SocketErrorCode != SocketError.TimedOut) Log.Always($"[zonein-sockerr] {sx.SocketErrorCode} — handshake datagram DROPPED (a lost event burst reads as a reception gap)"); }
         }
         _clientId = (ushort)(seq + 1);
-        if (State.InZone) Enqueue(BuildGameOk());
+        if (State.InZone) { _everZoned = true; Enqueue(BuildGameOk()); }
         return State.InZone;
     }
+
+    bool _everZoned;   // a session existed server-side at some point -> Stop() must run the full logout
 
     volatile bool _pendingZoneChange;   // set when a 0x0B ZONECHANGE is seen in the recv loop
     volatile bool _zoning;              // true while re-handshaking (pauses the send loop)
@@ -198,12 +200,20 @@ public sealed class MapConnection : ISession
         // 0x015 keepalive flowing, so we're not flagged link-dead) for the full logout. It's ~30s of
         // in-game logout time which works out to ~40s real before the session is safely cleared
         // (user-confirmed from watching it in-game), so hold 40s.
+        // InZone can be MOMENTARILY false mid-rezone (mog house 241->241, zone line) while the session is
+        // very much alive server-side — skipping the logout then exits in milliseconds and ORPHANS the row
+        // (the exact "instant stop, no 30s logout + 10s db clear" failure). If we were EVER zoned, the
+        // session exists: wait briefly for the re-zone handshake to restore InZone, then do the full logout.
+        if (!State.InZone && _everZoned)
+            for (int t = 0; t < 15000 && !State.InZone; t += 500) Thread.Sleep(500);
         if (State.InZone)
         {
             Enqueue(BuildReqLogout());
-            if (Dbg) Log.Info("    [logout] sent 0x0E7, holding session 40s for the full logout to complete");
+            Log.Always("[logout] sent 0x0E7 — holding session 40s for the server's logout timer + db clear");
             Thread.Sleep(40000);
         }
+        else if (_everZoned)
+            Log.Always("[logout] WARNING: session was live but InZone never returned (dead re-zone?) — exiting without 0x0E7; the server row will orphan to the d/c timeout");
         _running = false;
     }
 
