@@ -85,6 +85,13 @@ target snaps back to the bot's own feet and "succeeds" with a zero-length path =
 
 ## Current work
 
+**SIGNET — all leveling bots should get it (TODO, user 2026-07-07).** Signet is cast by a nation's **gate
+guards** (San d'Oria/Bastok/Windurst) and gives **regen + refresh while resting** (big leveling speedup —
+faster HP/MP recovery between fights), conquest points, and killing-blow crystals. Every grinding bot should
+acquire it and **re-acquire when it expires** (Signet is time-limited). CAVEAT: on this server it may be gated
+behind the nation's **first mission / an intro cutscene** — check the leveling guide and verify the gate-guard
+Signet menu is reachable before wiring it (may need a mission/CS step first). Not built yet; no code exists.
+
 Party subjob farm: WAR (Subjob) + WHM (PartyLeech) must each get 3 Buburimu items (tail-542 Mighty_Rarab,
 cup-541 Bull_Dhalmel @10%, robe-540 Bogy) + WHM to lv18, then confirm the quest engine (trade Vera Mhaura →
 OtherAreas bit). Buburimu(118): grind NORTH out of Mhaura (Bull_Dhalmel/Zu/Sylvestre, few goblins); NW = goblin
