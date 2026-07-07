@@ -10,7 +10,7 @@ namespace XiHeadless.Net;
 /// Returns -1 on any failure so callers HOLD (never act on a bad read).
 public sealed class WorldApi
 {
-    const string BaseUrl = "http://ffxi-world-service";   // in-cluster world service (local dev: edit here)
+    const string BaseUrl = "http://ffxi-world:8088";   // in-cluster world service (svc 'ffxi-world', port 8088)
     static readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(8) };
 
     async Task<int> GetCount(string path, CancellationToken ct)
