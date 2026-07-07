@@ -34,7 +34,8 @@ namespace XiHeadless.Routines;
 public sealed class JobLifecycle(
     IPerception p, INavigation nav, ICombat combat, IZoning zoning, IGear gear,
     IAuctionHouse ah, IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs,
-    IQuests? quests, ITradeNpc? trade, IEvents? events, JobLifecycle.Config cfg, ILifecycle? lifecycle = null)
+    IQuests? quests, ITradeNpc? trade, IEvents? events, JobLifecycle.Config cfg, ILifecycle? lifecycle = null,
+    IChat? chat = null)
 {
     public sealed class Config
     {
@@ -49,6 +50,12 @@ public sealed class JobLifecycle(
         // death mid-chain RESUMES instead of replaying from step 0 (QuestRunner has no quest-state awareness).
         // Empty = run UnlockSteps whole. Generic: any nation's chain supplies its (questId, donePort) groups.
         public IReadOnlyList<UnlockQuest> UnlockChain = System.Array.Empty<UnlockQuest>();
+
+        // Opt-in: before the unlock quest, ASK the central GM bot to grant the job (a /tell to the GM char).
+        // If it lands, the normal Mog House change applies it and we skip the whole quest trek; if not, we
+        // fall through to the quest. Requires a chat capability passed to JobLifecycle. Sanctioned only for
+        // job unlocks (the GM bot grants nothing else). Off by default — a brain opts in.
+        public bool UseGmGrant;
 
         // Per-job base grind config (gear/skills/abilities/con/rest/funding). Called with the job being
         // leveled so a brain can flip the weapon-skill/gear between its main and its sub. JobLifecycle only
@@ -218,7 +225,16 @@ public sealed class JobLifecycle(
         // cross-continent to Windurst (and die on the way). Route Mog House ops to the quest nation when set;
         // same-nation unlocks (UnlockTrekZone null) fall back to HomeCity unchanged.
         string unlockCity = cfg.UnlockTrekZone ?? cfg.HomeCity;
-        if (await JobRoutines.ChangeJobViaMogHouse(jobs, zoning, cfg.MainJob, cfg.SubJob, unlockCity, ct)) return true;
+
+        // GM-grant FAST PATH (opt-in): ask the central GM bot to unlock the job, then let the normal Mog House
+        // change apply it — skips the whole cross-continent quest trek when it lands; falls through if it doesn't.
+        if (cfg.UseGmGrant && chat is not null) await GmGrant.Request(chat, JN(cfg.MainJob), cfg.Tag, ct);
+
+        if (await JobRoutines.ChangeJobViaMogHouse(jobs, zoning, cfg.MainJob, cfg.SubJob, unlockCity, ct))
+        {
+            if (cfg.UseGmGrant) Log($"{JN(cfg.MainJob)} UNLOCKED (GM grant or already had it) — skipping the quest");
+            return true;
+        }
         Log($"{JN(cfg.MainJob)} locked — attempting the unlock quest");
 
         // Stock quest items + stealth at the home AH before the trek (fragile 30-40 zones one-shot a death

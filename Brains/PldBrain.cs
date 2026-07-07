@@ -9,7 +9,7 @@ namespace XiHeadless.Brains;
 public sealed class PldBrain(
     IPerception p, INavigation nav, ICombat combat, IZoning zoning, IGear gear, IAuctionHouse ah,
     IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs, IQuests quests, ITradeNpc trade, IEvents events,
-    ILifecycle lifecycle) : IBrain
+    ILifecycle lifecycle, IChat chat) : IBrain
 {
     const byte SwordSkill = 3;
     const string AhZone = "Windurst Woods";   // home-nation AH (char is Windurst)
@@ -67,6 +67,7 @@ public sealed class PldBrain(
             new JobLifecycle.Config
             {
                 MainJob = Job.Pld, SubJob = Job.War, Advanced = true,
+                UseGmGrant = true,   // ask the central GM bot to unlock PLD (fast path); quest is the fallback
                 // The unlock is a 3-quest San d'Oria chain (done-bitmap port 0x90). Grouping the steps by
                 // quest + done-bit lets JobLifecycle skip whichever quests are already complete, so a death
                 // mid-chain RESUMES instead of re-walking Squire I/II from scratch. Prereqs[Pld] = A Squire's
@@ -80,7 +81,7 @@ public sealed class PldBrain(
                 StealthUnlock = true,                       // the overland trek to San d'Oria crosses lv30-40 aggro
                 UnlockTrekZone = "Southern_San_dOria", UnlockTrekZoneId = 230,
                 GrindCfgFor = GrindCfg, Tag = "pld",
-            }).RunAsync(ct);
+            }, chat: chat).RunAsync(ct);
 
     LevelGrind.Config GrindCfg(byte job) => new()
     {
