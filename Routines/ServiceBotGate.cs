@@ -15,42 +15,40 @@ namespace XiHeadless.Routines;
 ///       up and the baseline is genuinely both of them (not us + a real user); and
 ///   (b) DEBOUNCE — sessions<=baseline must hold continuously before we log out (rides over a user zoning for
 ///       a moment / an accounts_sessions row lagging).
-/// An unreadable API HOLDS (never logs out on a failed read). Tunables via env (all optional).
+/// An unreadable API HOLDS (never logs out on a failed read). Behavior is CODE (consts below), no env.
 public static class ServiceBotGate
 {
-    static int Env(string k, int dflt) => int.TryParse(Environment.GetEnvironmentVariable(k), out var v) && v > 0 ? v : dflt;
+    const int Baseline = 2;      // the standing service accounts that are last to leave: GM + RMT
+    const int GraceSec = 120;    // wait after our own login before evaluating (let the peer service bot come up)
+    const int PollSec  = 30;     // how often to re-check the world session count
+    const int DebounceSec = 60;  // sessions<=Baseline must hold this long before we log out
 
     public static async Task WatchThenLogout(WorldApi world, ILifecycle lifecycle, string tag, CancellationToken ct)
     {
-        int baseline = Env("XIBOT_IDLE_BASELINE", 2);       // the standing service accounts: GM + RMT
-        int graceSec = Env("XIBOT_IDLE_GRACE_SEC", 120);    // let the peer service bot finish logging in first
-        int pollSec  = Env("XIBOT_IDLE_POLL_SEC", 30);
-        int debSec   = Env("XIBOT_IDLE_DEBOUNCE_SEC", 60);  // sessions<=baseline must hold this long
-
         try
         {
-            await Task.Delay(graceSec * 1000, ct);
-            Log.Info($"[{tag}] idle-gate armed: log out when sessions <= {baseline} held {debSec}s (poll {pollSec}s, grace {graceSec}s done)");
+            await Task.Delay(GraceSec * 1000, ct);
+            Log.Info($"[{tag}] idle-gate armed: log out when sessions <= {Baseline} held {DebounceSec}s (poll {PollSec}s, grace {GraceSec}s done)");
             long idleSinceMs = -1;
             while (!ct.IsCancellationRequested)
             {
                 int sessions = await world.Sessions(ct);
                 long now = Environment.TickCount64;
-                if (sessions < 0 || sessions > baseline)
+                if (sessions < 0 || sessions > Baseline)
                 {
                     idleSinceMs = -1;   // API unreadable, OR someone else is online -> reset, stay logged in
                 }
-                else                    // only the service accounts remain (sessions <= baseline)
+                else                    // only the service accounts remain (sessions <= Baseline)
                 {
                     if (idleSinceMs < 0) idleSinceMs = now;
-                    else if (now - idleSinceMs >= debSec * 1000L)
+                    else if (now - idleSinceMs >= DebounceSec * 1000L)
                     {
-                        Log.Always($"[{tag}] only service accounts remain (sessions={sessions} <= {baseline}) for {debSec}s -> logging out");
+                        Log.Always($"[{tag}] only service accounts remain (sessions={sessions} <= {Baseline}) for {DebounceSec}s -> logging out");
                         lifecycle.Logout();
                         return;
                     }
                 }
-                await Task.Delay(pollSec * 1000, ct);
+                await Task.Delay(PollSec * 1000, ct);
             }
         }
         catch (OperationCanceledException) { /* brain cancelled elsewhere — nothing to do */ }
