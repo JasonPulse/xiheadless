@@ -119,9 +119,11 @@ public static class PacketParsers
             case 0x105: BazaarItem(sub, w); break;        // GP_SERV_COMMAND_BAZAAR_LIST (one item of a browsed player bazaar)
             case 0x056: QuestMissionLog(sub, w); break;   // GP_SERV_COMMAND_MISSION::OTHER (per-area quest accept/complete bitmaps)
             default:
-                // DIAGNOSTIC: a received opcode with no handler — surfaced ONCE per id so we can see what the
-                // server sends that we ignore (protocol-gap discovery). Deduped -> negligible noise.
-                if (_unhandledSeen.Add(id)) Log.Info($"[parse] unhandled opcode 0x{id:X3} (len {sub.Length}B) — received, no handler (first sighting)");
+                // EVERY opcode the server can send is KNOWN (ServerOpcodes, generated from the server's own
+                // enum) — nothing arrives as a mystery hex id. An opcode landing here has no field-parser yet:
+                // logged ONCE per id BY NAME (user rule: have them all; decide what to parse deliberately,
+                // never by guesswork). UNKNOWN_0xXXX = not even in the server enum -> a real protocol surprise.
+                if (_unhandledSeen.Add(id)) Log.Info($"[parse] {ServerOpcodes.NameOf(id)} (0x{id:X3}, {sub.Length}B) received — known opcode, no field-parser yet (first sighting)");
                 break;
         }
     }

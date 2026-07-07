@@ -29,6 +29,8 @@ public sealed class GmBrain(IPerception p, IChat chat, ILifecycle lifecycle, Wor
     public async Task RunAsync(CancellationToken ct)
     {
         Log.Always($"[gm] grant bot up (char='{p.World.MyName}') — listening for /tell requests: 'grantjob <JOB>' or 'setcap <1-99>'");
+        chat.Say("!togglegm");   // enable GM mode on login (user rule) — required for the ! commands to apply
+        await Task.Delay(1500, ct);
         // Self-stop: log out once only the service accounts (GM + RMT) remain online. Runs alongside; when it
         // fires, lifecycle.Logout() cancels ct and the loop below exits.
         _ = ServiceBotGate.WatchThenLogout(world, lifecycle, "gm", ct);
