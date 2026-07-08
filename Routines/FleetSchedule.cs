@@ -81,7 +81,7 @@ public static class FleetSchedule
                     bool waitedOut = (DateTime.UtcNow - doneAt).TotalMinutes >= GroupWaitCapMin;
                     if (!allDone && !waitedOut) continue;   // keep playing our role while the group finishes
 
-                    chat.Party(waitedOut && !allDone ? "gotta go — thanks for the party!" : "good session — thanks all!");
+                    chat.Party(waitedOut && !allDone ? "gotta go - thanks for the party!" : "good session - thanks all!");   // ASCII only: non-ASCII mangles to '?' in-game
                     await Task.Delay(1500, ct);
                     party.Leave();
                     await Task.Delay(1500, ct);
