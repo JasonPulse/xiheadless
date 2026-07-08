@@ -49,8 +49,18 @@ public sealed class RmtBrain(IPerception p, IChat chat, IDelivery delivery, IGil
                     {
                         foreach (var (player, amount) in batch)
                         {
-                            await gil.Grant(p.World.MyName, amount, "rmt_purchase",
-                                ct); // credit the bot (stub until endpoint live)
+                            await gil.Grant(p.World.MyName, amount, "rmt_purchase", ct); // credit the bot
+                            // VERIFY the funds CLIENT-SIDE before sending: a real credit pushes an item
+                            // update (0x01E) and our parsed gil rises. A 202 alone proved nothing — grants
+                            // have applied in-memory yet never persisted, and the bot then ran doomed
+                            // 8-slot sends the server rightly refused as insufficient. No funds, no send.
+                            for (int t = 0; t < 10000 && p.World.Gil < (uint)amount && !ct.IsCancellationRequested; t += 500)
+                                await Task.Delay(500, ct);
+                            if (p.World.Gil < (uint)amount)
+                            {
+                                Log.Always($"[rmt] funds NOT available (gil={p.World.Gil}, need {amount}) — grant didn't land; dropping the order for '{player}'");
+                                continue;
+                            }
                             bool sent = await delivery.SendGil(player, amount, ct);
                             if (sent) orders++;
                             Log.Info($"[rmt] deliver {amount} gil -> '{player}': {sent} ({orders} fulfilled)");
