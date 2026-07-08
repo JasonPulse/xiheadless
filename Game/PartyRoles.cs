@@ -45,6 +45,10 @@ public static class PartyRoles
     public static Role PrimaryOf(byte job) => job < ByJob.Length ? ByJob[job].primary : Role.None;
     public static Role CanFillOf(byte job) => job < ByJob.Length ? ByJob[job].canFill : Role.None;
 
+    /// The wiki's HEAVY physical DDs (heavy armor, two-handers, survivable): WAR MNK DRK SAM DRG. Used for
+    /// the SATA sub-tank pick — the puller who briefly holds the mob's face must survive it (user rule).
+    public static bool IsHeavyDd(byte job) => job is 1 or 2 or 8 or 12 or 14;
+
     /// Parse a role word or job token from recruitment chatter ("LFP WHM 18", "tank lfg", "blm dd").
     /// Lenient by design — OPEN parties mean real players answer in freeform text.
     public static Role ParseRoleWord(string word) => word.ToUpperInvariant() switch

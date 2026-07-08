@@ -67,11 +67,12 @@ public static class PartyCombat
         // 1. BRD always pulls.
         if (First(j => j == Job.Brd) is { } bard) return new(bard, PullStyle.BardSleep, tank, null);
 
-        // 2. THF + a SECOND tank-capable = SATA formation: the sub-tank pulls, hate lands on the main tank.
+        // 2. THF + a HEAVY physical DD (WAR/MNK/DRK/SAM/DRG — the sub-tank must survive holding the mob's
+        //    face during the pull) = SATA formation: the sub-tank pulls, SA+TA plants the hate on the tank.
         var thief = First(j => j == Job.Thf);
         if (thief is not null && tank is not null)
         {
-            var subTank = roster.Where(kv => PartyRoles.CanFillOf(kv.Value).HasFlag(PartyRoles.Role.Tank)
+            var subTank = roster.Where(kv => PartyRoles.IsHeavyDd(kv.Value)
                                              && !kv.Key.Equals(tank, StringComparison.OrdinalIgnoreCase))
                                 .OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase)
                                 .Select(kv => kv.Key).FirstOrDefault();
@@ -94,14 +95,26 @@ public static class PartyCombat
         nav.MoveTo(camp.x, camp.z);                     // drag it home; the party engages at camp
     }
 
-    /// The BARD pull: sing Foe Lullaby AT the next mob (aggro + it sleeps on arrival) and walk home. The
-    /// party wakes it on THEIR schedule — pull-and-sleep chaining, zero camp downtime.
-    public static async Task BardPull(IMagic magic, INavigation nav, uint mobId,
+    /// The BARD pull (user spec): pull with ELEGY (slow — hate + a debuff that matters all fight), walk home,
+    /// and once the mob has chased back TO CAMP, cast Foe Lullaby — it sleeps AT the camp until the party
+    /// engages on their schedule. Pull-and-sleep chaining, zero camp downtime.
+    public static async Task BardPull(IMagic magic, IPerception p, INavigation nav, uint mobId,
                                       (float x, float z) camp, CancellationToken ct)
     {
-        magic.Cast(Spell.FoeLullaby, mobId);
+        magic.Cast(Spell.BattlefieldElegy, mobId);
         await Task.Delay(3500, ct);              // song cast time — let it land before walking
         nav.MoveTo(camp.x, camp.z);
+        // Wait for the mob to arrive near camp (it chases us), then sleep it there.
+        for (int t = 0; t < 30_000 && !ct.IsCancellationRequested; t += 500)
+        {
+            var mob = p.World.Entities.GetValueOrDefault(mobId);
+            if (mob is null) return;                                   // lost/killed en route
+            float dx = mob.X - camp.x, dz = mob.Z - camp.z;
+            if (dx * dx + dz * dz < 12f * 12f) break;                   // mob is at camp
+            await Task.Delay(500, ct);
+        }
+        magic.Cast(Spell.FoeLullaby, mobId);
+        await Task.Delay(2500, ct);
     }
 
     // ---- SATA choreography --------------------------------------------------------------------------------
