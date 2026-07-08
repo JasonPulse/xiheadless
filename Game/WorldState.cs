@@ -50,6 +50,10 @@ public sealed class WorldState
     // handshake) even when neither can see the other's entity. Includes our own echoed lines — filter by name.
     public readonly Dictionary<string, (string msg, long ms)> PartyChat = new(StringComparer.OrdinalIgnoreCase);
 
+    // Shouts (Kind 1) — the ZONE-WIDE channel: party recruitment (PartyFinder LFM/LFP) rides shouts, like
+    // real players. Last shout per sender; includes our own echo — filter by name.
+    public readonly Dictionary<string, (string msg, long ms)> Shouts = new(StringComparer.OrdinalIgnoreCase);
+
     // Tells (Kind 3) — the PARTYLESS coordination channel: a relogged tank with no party can't party-chat,
     // so the REFORM handshake (stale-roster recovery) rides tells. Keyed by sender, latest message wins.
     public readonly Dictionary<string, (string msg, long ms)> Tells = new(StringComparer.OrdinalIgnoreCase);

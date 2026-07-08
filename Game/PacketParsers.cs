@@ -187,13 +187,15 @@ public static class PacketParsers
         // Party (4/15) = fleet coordination bus. Tell (3) = the PARTYLESS channel: a relogged tank that
         // finds itself without a party can't party-chat the healer, whose roster went stale (phantom
         // party=1 idled both bots ~15 min, three times) — the REFORM handshake rides tells instead.
-        if (kind != 4 && kind != 15 && kind != 3) return;
+        // Shout (1) = the zone-wide party-recruitment channel (PartyFinder LFM/LFP).
+        if (kind != 4 && kind != 15 && kind != 3 && kind != 1) return;
         string name = Str(b, 8, 15);
         string msg = Str(b, 23, System.Math.Min(150, b.Length - 23));
         if (name.Length == 0 || msg.Length == 0) return;
         if (kind == 3) w.Tells[name] = (msg, w.NowMs);
+        else if (kind == 1) w.Shouts[name] = (msg, w.NowMs);
         else w.PartyChat[name] = (msg, w.NowMs);
-        Log.Info($"[chat] {(kind == 3 ? "(tell) " : "")}<{name}> {msg}");
+        Log.Info($"[chat] {(kind == 3 ? "(tell) " : kind == 1 ? "(shout) " : "")}<{name}> {msg}");
     }
 
     // Null-terminated ASCII string at [off, off+max).
