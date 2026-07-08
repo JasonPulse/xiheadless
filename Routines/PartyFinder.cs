@@ -26,7 +26,7 @@ public sealed class PartyFinder(IPerception p, IParty party, IChat chat, INaviga
     readonly long _startMs = Environment.TickCount64;
     readonly int _jitterMs = (int)(p.World.MyId * 7919 % 120_000);   // per-char stagger: not everyone shouts at once
     readonly Dictionary<string, long> _answered = new(StringComparer.OrdinalIgnoreCase);   // shouters we already told
-    readonly Dictionary<string, (PartyRoles.Role role, int level, long lastTryMs)> _accepted = new(StringComparer.OrdinalIgnoreCase);
+    readonly Dictionary<string, (PartyRoles.Role role, int level, long firstMs, long lastTryMs)> _accepted = new(StringComparer.OrdinalIgnoreCase);
     long _lastShoutMs, _seenTellMs, _seenMeetMs;
     bool _recruiting, _yielded;
 
@@ -124,7 +124,7 @@ public sealed class PartyFinder(IPerception p, IParty party, IChat chat, INaviga
             if (_accepted.ContainsKey(sender)) continue;
             if ((PartyRoles.Role.None != (role & need)) || (job != 0 && (PartyRoles.CanFillOf(job) & need) != 0))
             {
-                _accepted[sender] = (role, level, 0);
+                _accepted[sender] = (role, level, w.NowMs, 0);
                 // Carry the rendezvous: invites need the recruit's ENTITY visible (~50y), and shout only
                 // reaches 180y — the recruit walks to us. Humans read "meet at (X Z)" just fine.
                 chat.Tell(sender, $"sweet - sending an invite! meet at ({w.X:F0} {w.Z:F0})");
@@ -135,10 +135,13 @@ public sealed class PartyFinder(IPerception p, IParty party, IChat chat, INaviga
         _seenTellMs = w.NowMs;
 
         // Invite accepted responders whose entity is visible (same zone — they drift to camp like we do).
-        foreach (var (name, (role, level, lastTry)) in _accepted.ToArray())
+        // Retries EXPIRE after a few minutes: by then the recruit either joined (0x0DD roster has no names,
+        // so we can't tell directly) or isn't coming — endless re-invites spammed existing members (trio #4).
+        foreach (var (name, (role, level, firstMs, lastTry)) in _accepted.ToArray())
         {
+            if (w.NowMs - firstMs > 180_000) { _accepted.Remove(name); continue; }
             if (w.NowMs - lastTry < InviteRetryMs) continue;
-            _accepted[name] = (role, level, w.NowMs);
+            _accepted[name] = (role, level, firstMs, w.NowMs);
             if (PartyRoutines.InviteIfPresent(party, p, name)) Log.Info($"[{tag}] invited {name} ({role})");
             else
             {

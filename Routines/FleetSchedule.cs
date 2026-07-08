@@ -70,12 +70,15 @@ public static class FleetSchedule
                 if (party.MemberCount > 0)
                 {
                     if (w.NowMs - lastDoneMs > DoneEveryMs) { lastDoneMs = w.NowMs; chat.Party("DONE"); }
-                    // STICKY votes: PartyChat keeps only each sender's LATEST line, and a leaver's goodbye
-                    // ("thanks all!") OVERWRITES its DONE — the live trio then waited out the human-cap
-                    // instead of leaving on allDone. Remember everyone who EVER said DONE this episode.
+    // STICKY votes: PartyChat keeps only each sender's LATEST line, and a leaver's goodbye
+                    // OVERWRITES its DONE — worse, DONE->goodbye can be ~1.5s apart, inside our 5s poll (live
+                    // trio #4: the tank's DONE was never observed). So the GOODBYE ITSELF is also a vote — it
+                    // only ever follows being done, and it persists as the sender's last line.
                     foreach (var kv in w.PartyChat.ToArray())
                         if (!kv.Key.Equals(w.MyName, StringComparison.OrdinalIgnoreCase)
-                            && kv.Value.msg.Equals("DONE", StringComparison.OrdinalIgnoreCase))
+                            && (kv.Value.msg.Equals("DONE", StringComparison.OrdinalIgnoreCase)
+                                || kv.Value.msg.StartsWith("good session", StringComparison.OrdinalIgnoreCase)
+                                || kv.Value.msg.StartsWith("gotta go", StringComparison.OrdinalIgnoreCase)))
                             doneSeen.Add(kv.Key);
                     bool allDone = doneSeen.Count >= party.MemberCount;
                     bool waitedOut = (DateTime.UtcNow - doneAt).TotalMinutes >= GroupWaitCapMin;
