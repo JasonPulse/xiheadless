@@ -30,6 +30,7 @@ public static class FleetSchedule
         var end = plan.EndUtc;
         long lastAnnounceMs = 0, lastDoneMs = 0;
         DateTime doneAt = DateTime.MaxValue;
+        var doneSeen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);   // STICKY DONE votes (see below)
         Log.Info($"[{tag}] day plan: {plan.Mode}, done at {end:HH:mm}Z (~{(end - DateTime.UtcNow).TotalHours:F1}h)");
 
         try
@@ -56,7 +57,7 @@ public static class FleetSchedule
                     chat.Party($"ENDAT {(long)(end - DateTime.UnixEpoch).TotalMinutes}");
                 }
 
-                if (DateTime.UtcNow < end) { doneAt = DateTime.MaxValue; continue; }   // still playing
+                if (DateTime.UtcNow < end) { doneAt = DateTime.MaxValue; doneSeen.Clear(); continue; }   // still playing
 
                 // ---- done for the day ----
                 if (doneAt == DateTime.MaxValue) { doneAt = DateTime.UtcNow; Log.Always($"[{tag}] done for the day ({plan.Mode}) — coordinating a safe logout"); }
@@ -69,10 +70,14 @@ public static class FleetSchedule
                 if (party.MemberCount > 0)
                 {
                     if (w.NowMs - lastDoneMs > DoneEveryMs) { lastDoneMs = w.NowMs; chat.Party("DONE"); }
-                    int doneVotes = w.PartyChat.ToArray().Count(kv =>
-                        !kv.Key.Equals(w.MyName, StringComparison.OrdinalIgnoreCase)
-                        && kv.Value.msg.Equals("DONE", StringComparison.OrdinalIgnoreCase));
-                    bool allDone = doneVotes >= party.MemberCount;
+                    // STICKY votes: PartyChat keeps only each sender's LATEST line, and a leaver's goodbye
+                    // ("thanks all!") OVERWRITES its DONE — the live trio then waited out the human-cap
+                    // instead of leaving on allDone. Remember everyone who EVER said DONE this episode.
+                    foreach (var kv in w.PartyChat.ToArray())
+                        if (!kv.Key.Equals(w.MyName, StringComparison.OrdinalIgnoreCase)
+                            && kv.Value.msg.Equals("DONE", StringComparison.OrdinalIgnoreCase))
+                            doneSeen.Add(kv.Key);
+                    bool allDone = doneSeen.Count >= party.MemberCount;
                     bool waitedOut = (DateTime.UtcNow - doneAt).TotalMinutes >= GroupWaitCapMin;
                     if (!allDone && !waitedOut) continue;   // keep playing our role while the group finishes
 

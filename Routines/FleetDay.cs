@@ -64,20 +64,29 @@ public static class FleetDay
                     finder.TopUp();
                     await Task.Delay(3000, ct);
                 }
-                PartyCombat.AnnounceJob(chat, p, ref jobAnnounceMs);
-                await Task.Delay(4000, ct);   // let JOB announcements land before the puller vote
-                var plan2 = PartyCombat.DecidePuller(PartyCombat.Roster(p));
-                Log.Always($"[{hooks.Tag}] party up ({party.MemberCount + 1} incl. me) — puller={plan2.Puller} style={plan2.Style} tank={plan2.Tank ?? "?"}");
+                Log.Always($"[{hooks.Tag}] party up ({party.MemberCount + 1} incl. me) — waiting for the JOB roster before the puller vote");
+                var plan2 = await VoteWhenRosterComplete(p, party, chat, hooks.Tag, ct);
+                Log.Always($"[{hooks.Tag}] puller vote: puller={plan2.Puller} style={plan2.Style} tank={plan2.Tank ?? "?"}");
+                int lastSize = party.MemberCount;
                 while (!ct.IsCancellationRequested)
                 {
                     PartyCombat.AnnounceJob(chat, p, ref jobAnnounceMs);
                     finder.TopUp();                                    // keep filling toward the full 6
-                    plan2 = PartyCombat.DecidePuller(PartyCombat.Roster(p));   // re-vote as members come/go
+                    if (party.MemberCount != lastSize && party.MemberCount > 0)
+                    {
+                        // Membership changed -> the whole party re-announces + RE-VOTES on a complete roster
+                        // (user rule: no puller decision until every member's job is known).
+                        lastSize = party.MemberCount;
+                        plan2 = await VoteWhenRosterComplete(p, party, chat, hooks.Tag, ct);
+                        Log.Always($"[{hooks.Tag}] re-vote ({lastSize + 1} incl. me): puller={plan2.Puller} style={plan2.Style} tank={plan2.Tank ?? "?"}");
+                    }
                     await hooks.PartyGrind(plan2, ct);                 // one grind beat in role
                     if (party.MemberCount == 0)                        // disbanded on us -> back to seeking
                     {
                         Log.Info($"[{hooks.Tag}] party dissolved — seeking again");
                         while (!ct.IsCancellationRequested && !finder.Step()) await Task.Delay(3000, ct);
+                        lastSize = party.MemberCount;
+                        plan2 = await VoteWhenRosterComplete(p, party, chat, hooks.Tag, ct);
                     }
                 }
                 return;
@@ -88,5 +97,25 @@ public static class FleetDay
     {
         try { while (!ct.IsCancellationRequested) await Task.Delay(5000, ct); }
         catch (OperationCanceledException) { }
+    }
+
+    // The puller vote runs ONLY on a COMPLETE roster (user rule): announce our JOB immediately, then wait
+    // until every party member's job is known (roster == size). Humans never announce, so a 2-min cap breaks
+    // the wait and we vote with what we have (humans are never assigned duty anyway — right for OPEN parties).
+    const int RosterWaitCapMs = 120_000;
+    static async Task<PartyCombat.PullPlan> VoteWhenRosterComplete(IPerception p, IParty party, IChat chat, string tag, CancellationToken ct)
+    {
+        long force = 0;   // 0 => AnnounceJob's cadence gate passes immediately
+        PartyCombat.AnnounceJob(chat, p, ref force);
+        long startMs = Environment.TickCount64;
+        while (!ct.IsCancellationRequested)
+        {
+            int size = party.MemberCount + 1, known = PartyCombat.Roster(p).Count;
+            if (known >= size) { Log.Info($"[{tag}] roster complete ({known}/{size} jobs known)"); break; }
+            if (Environment.TickCount64 - startMs > RosterWaitCapMs)
+            { Log.Info($"[{tag}] roster incomplete after cap ({known}/{size} — human members?) — voting with what we know"); break; }
+            await Task.Delay(3000, ct);
+        }
+        return PartyCombat.DecidePuller(PartyCombat.Roster(p));
     }
 }
