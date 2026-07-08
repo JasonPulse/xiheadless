@@ -98,6 +98,22 @@ OtherAreas bit). Buburimu(118): grind NORTH out of Mhaura (Bull_Dhalmel/Zu/Sylve
 death-zone, never go there. Pending fix: SubjobBrain must reuse `CombatRoutines`/`LevelGrind` (weapon skills +
 abilities + clean engagement) instead of its broken inline `KillTarget`. Full plan: `SUBROUTINE_REFACTOR.md`.
 
+**FLEET party doctrine (user spec 2026-07-08 — don't re-litigate; engine: SessionPlan/PartyFinder/
+PartyCombat/FleetSchedule):**
+- Travel to the level-appropriate hunt zone FIRST (HuntZonePlan = the leveling guide), THEN party there.
+- Day plan seeded (charid+UTC date): Party/Solo/Upkeep days; session 3-8h; recruitment via zone /shout
+  (NEVER /yell — region-wide), lenient LFP parsing (parties are OPEN — real players may join).
+- Composition: full = Tank/Healer/Support/3DD; minimum start = Tank/Healer/DD (roles per bg-wiki
+  Jobs_&_party_roles via Game/PartyRoles).
+- Camp vs roam: party >3 ANCHORS at camp, only the puller leaves; exactly 3 roams.
+- Puller: BRD ALWAYS pulls if present (pull-and-sleep the next mob — Foe Lullaby — for chain efficiency).
+  Else THF(Trick Attack)+second tank-capable: SUB-TANK pulls, SATA line subtank-mob-TANK-thief (tank at the
+  mob's back, thief behind the tank, SA+TA+WS plants hate on the tank). Else the MAIN TANK pulls AT RANGE
+  (Provoke, else non-expendable boomerang Shoot) — the mob must never beat on the puller on the way home.
+- Done-for-the-day: parties converge on the LATEST member end time (ENDAT on party chat); at done, announce
+  DONE, KEEP PLAYING YOUR ROLE until all fellow members are DONE (10-min cap for humans), never log out
+  engaged/attacked, goodbye -> Leave -> clean 40s logout. Nobody leaves mid-combat or strands the group.
+
 **Party-cohesion mechanics (hard-won — don't re-litigate):**
 - **NO Raise** — WHM Raise is a lv25 spell; our WHM is lower, so an in-place rez is IMPOSSIBLE. Do NOT add a
   "wait for the healer to Raise" death path (tried; the WHM can't cast it, so the WAR just lies dead ~2min then
