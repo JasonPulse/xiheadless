@@ -93,8 +93,8 @@ public static class PacketParsers
         switch (id)
         {
             case 0x00A: ZoneIn(sub, w); break;     // GP_SERV_COMMAND_LOGIN (zone-in)
-            case 0x00D: EntityUpdate(sub, w); break; // CCharUpdatePacket (PC)
-            case 0x00E: EntityUpdate(sub, w); break; // CEntityUpdatePacket (NPC/mob)
+            case 0x00D: EntityUpdate(sub, w, isPc: true); break;  // GP_SERV_CHAR_PC (name @0x5A, after GrapIDTbl)
+            case 0x00E: EntityUpdate(sub, w, isPc: false); break; // CEntityUpdatePacket (NPC/mob; name @0x34)
             case 0x01B: JobInfo(sub, w); break;    // GP_SERV_COMMAND_JOB_INFO (job/level/maxHP/MP/stats)
             case 0x037: CharStatus(sub, w); break; // CCharStatusPacket (HP%, status, effect icons)
             case 0x0AA: MagicData(sub, w); break;  // GP_SERV_COMMAND_MAGIC_DATA (known-spell bitmap)
@@ -232,7 +232,7 @@ public static class PacketParsers
     // HP block: HPP@0x1E, mobHpFlag@0x25, namePrefix@0x27, allegiance@0x29. NAME: ascii@0x34.
     // Fields are only present when their mask bit is set, so gate each block on the mask and let
     // type/allegiance persist across pos-only updates.
-    static void EntityUpdate(ReadOnlySpan<byte> b, WorldState w)
+    static void EntityUpdate(ReadOnlySpan<byte> b, WorldState w, bool isPc)
     {
         if (b.Length < 0x0B) return;
         uint id = U32(b, 4);
@@ -245,18 +245,25 @@ public static class PacketParsers
             e.Rotation = b[0x0B];
             e.X = F32(b, 0x0C); e.Y = F32(b, 0x10); e.Z = F32(b, 0x14);
         }
-        if ((mask & 0x04) != 0 && b.Length > 0x29)         // UPDATE_HP -> hp% + type/allegiance
+        if ((mask & 0x04) != 0 && b.Length > 0x29)         // UPDATE_HP -> hp% (+ NPC type/allegiance)
         {
             e.Hpp = b[0x1E];
-            e.NamePrefix = b[0x27];
-            e.Allegiance = b[0x29];
-            e.TypeKnown = true;
+            if (!isPc)                                     // 0x27/0x29 are NPC-layout fields; for a PC those
+            {                                              // bytes are Flags1/2 bits — garbage as type data
+                e.NamePrefix = b[0x27];
+                e.Allegiance = b[0x29];
+                e.TypeKnown = true;
+            }
         }
-        if ((mask & 0x08) != 0 && b.Length >= 0x35)        // UPDATE_NAME -> ascii name at 0x34
+        // UPDATE_NAME: the ascii name offset DIFFERS by packet. NPC (0x00E): @0x34. PC (GP_SERV_CHAR_PC
+        // 0x00D): @0x5A — after CostumeId/Flags4-6/GrapIDTbl[9] (server char_update.cpp struct). Reading PCs
+        // at 0x34 yielded garbage -> PC names NEVER populated -> InviteIfPresent found nobody (live trio bug).
+        int nameOff = isPc ? 0x5A : 0x34;
+        if ((mask & 0x08) != 0 && b.Length > nameOff)
         {
-            int end = 0x34;
-            while (end < b.Length && end < 0x34 + 16 && b[end] != 0) end++;
-            if (end > 0x34) e.Name = System.Text.Encoding.ASCII.GetString(b[0x34..end]);
+            int end = nameOff;
+            while (end < b.Length && end < nameOff + 16 && b[end] != 0) end++;
+            if (end > nameOff) e.Name = System.Text.Encoding.ASCII.GetString(b[nameOff..end]);
         }
         e.LastSeenMs = w.NowMs;
     }

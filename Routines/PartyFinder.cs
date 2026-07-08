@@ -28,7 +28,7 @@ public sealed class PartyFinder(IPerception p, IParty party, IChat chat, INaviga
     readonly Dictionary<string, long> _answered = new(StringComparer.OrdinalIgnoreCase);   // shouters we already told
     readonly Dictionary<string, (PartyRoles.Role role, int level, long lastTryMs)> _accepted = new(StringComparer.OrdinalIgnoreCase);
     long _lastShoutMs, _seenTellMs, _seenMeetMs;
-    bool _recruiting;
+    bool _recruiting, _yielded;
 
     public bool Recruiting => _recruiting;
 
@@ -48,12 +48,16 @@ public sealed class PartyFinder(IPerception p, IParty party, IChat chat, INaviga
         {
             if (shouter.Equals(w.MyName, StringComparison.OrdinalIgnoreCase)) continue;
             if (!msg.Contains("LFM", StringComparison.OrdinalIgnoreCase)) continue;
-            if (_recruiting)
+            if (_recruiting || _yielded)
             {
-                if (string.Compare(shouter, w.MyName, StringComparison.OrdinalIgnoreCase) >= 0) continue;   // they yield to us
-                Log.Info($"[{tag}] yielding my LFM to {shouter} (tie-break) — answering theirs");
-                _recruiting = false;
-                _accepted.Clear();
+                if (_recruiting && string.Compare(shouter, w.MyName, StringComparison.OrdinalIgnoreCase) >= 0) continue;   // they yield to us
+                if (_recruiting)
+                {
+                    Log.Info($"[{tag}] yielding my LFM to {shouter} (tie-break) — answering theirs");
+                    _recruiting = false;
+                    _yielded = true;      // LATCH: don't re-arm recruiting next beat (live flip-flop bug)
+                    _accepted.Clear();
+                }
             }
             if (_answered.TryGetValue(shouter, out var last) && w.NowMs - last < AnswerCooldownMs) continue;
             _answered[shouter] = w.NowMs;
@@ -78,8 +82,9 @@ public sealed class PartyFinder(IPerception p, IParty party, IChat chat, INaviga
         }
         _seenMeetMs = w.NowMs;
 
-        // 2) RECRUITER: nothing to join after the stagger window -> run our own LFM.
-        if (!_recruiting && Environment.TickCount64 - _startMs > ListenBeforeRecruitMs + _jitterMs)
+        // 2) RECRUITER: nothing to join after the stagger window -> run our own LFM. (_yielded latches us
+        // out of recruiting after a tie-break — we're committed to the winner's party.)
+        if (!_recruiting && !_yielded && Environment.TickCount64 - _startMs > ListenBeforeRecruitMs + _jitterMs)
         {
             _recruiting = true;
             Log.Info($"[{tag}] no LFM heard — recruiting my own party");
@@ -135,6 +140,14 @@ public sealed class PartyFinder(IPerception p, IParty party, IChat chat, INaviga
             if (w.NowMs - lastTry < InviteRetryMs) continue;
             _accepted[name] = (role, level, w.NowMs);
             if (PartyRoutines.InviteIfPresent(party, p, name)) Log.Info($"[{tag}] invited {name} ({role})");
+            else
+            {
+                // DIAGNOSTIC (live trio: zero invites despite everyone at the meet spot): show what PC
+                // entities we actually see, so "name not visible" vs "entity table empty" is decidable.
+                var pcs = string.Join(",", w.Entities.Values.Where(e => e.Id != w.MyId && e.Name.Length > 0)
+                                                            .Select(e => $"{e.Name}@{p.DistanceTo(e.X, e.Z):F0}y").Take(8));
+                Log.Info($"[{tag}] can't invite {name} yet — not in view (named entities: {(pcs.Length > 0 ? pcs : "NONE")})");
+            }
         }
     }
 
