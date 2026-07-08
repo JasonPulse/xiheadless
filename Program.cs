@@ -2,8 +2,8 @@
 //   XIBOT_ACCOUNT  — FFXI account name
 //   XIBOT_PASSWORD — account password (secret)
 //   XIBOT_BRAIN    — which brain to run (e.g. War, Rmt); see BrainRegistry (defaults to War)
-// The character is auto-selected from the account (fleet = one char per account); the server host
-// is fixed in BotHost. Dev only: a numeric first arg bounds the run in seconds (for testing),
+// The account self-registers on first login (auth 0x20) and the character is auto-selected from
+// the account (fleet = one char per account); the server host is fixed in BotHost. Dev only: a numeric first arg bounds the run in seconds (for testing),
 // "cleanup" deletes the account's chars, and diagnostic subcommands short-circuit in Diagnostics.
 
 if (Diagnostics.Run(args) is int devCode) return devCode;

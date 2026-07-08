@@ -42,9 +42,10 @@ sealed class XiClient(string host, string clientVer)
         try { return s.Read(buf, 0, buf.Length); } catch (IOException) { return 0; }
     }
 
-    public async Task LoginAsync(string user, string pass)
+    // One auth exchange on 54231 (TLS): send the JSON command, return the parsed reply.
+    // Commands (server: xiserver src/login/auth_session.h): 16=login, 32=create account.
+    async Task<JsonDocument> AuthCommandAsync(string user, string pass, int command)
     {
-        Log.Info($"login -> {host} ({_serverIp}):54231 (TLS)");
         var tcp = new TcpClient();
         await tcp.ConnectAsync(_serverIp, 54231);
         var ssl = new SslStream(tcp.GetStream(), false, (_, _, _, _) => true);
@@ -55,7 +56,7 @@ sealed class XiClient(string host, string clientVer)
             EnabledSslProtocols = System.Security.Authentication.SslProtocols.None,
         });
 
-        string json = $"{{\"username\":\"{user}\",\"password\":\"{pass}\",\"otp\":0,\"new_password\":\"\",\"version\":[2,0,0],\"command\":16}}";
+        string json = $"{{\"username\":\"{user}\",\"password\":\"{pass}\",\"otp\":0,\"new_password\":\"\",\"version\":[2,0,0],\"command\":{command}}}";
         var jb = Encoding.UTF8.GetBytes(json);
         ssl.Write(jb);
 
@@ -63,13 +64,68 @@ sealed class XiClient(string host, string clientVer)
         int n = ssl.Read(buf, 0, buf.Length);
         ssl.Close();
         var reply = Encoding.UTF8.GetString(buf, 0, n).Replace("'", "\"");
-        using var doc = JsonDocument.Parse(reply);
-        var root = doc.RootElement;
-        if (!root.TryGetProperty("result", out var r) || r.GetInt32() != 1)
-            throw new Exception($"login failed: {reply}");
-        _accountId = root.GetProperty("account_id").GetUInt32();
-        _sessionHash = root.GetProperty("session_hash").EnumerateArray().Select(e => (byte)e.GetInt32()).ToArray();
-        Log.Info($"  ok: account_id={_accountId}, sessionHash={_sessionHash.Length}B");
+        return JsonDocument.Parse(reply);
+    }
+
+    static int AuthResult(JsonDocument doc) =>
+        doc.RootElement.TryGetProperty("result", out var r) ? r.GetInt32() : -1;
+
+    public async Task LoginAsync(string user, string pass)
+    {
+        Log.Info($"login -> {host} ({_serverIp}):54231 (TLS)");
+        for (int attempt = 0; ; attempt++)
+        {
+            using var doc = await AuthCommandAsync(user, pass, 16);
+            int result = AuthResult(doc);
+            if (result == 1)
+            {
+                var root = doc.RootElement;
+                _accountId = root.GetProperty("account_id").GetUInt32();
+                _sessionHash = root.GetProperty("session_hash").EnumerateArray().Select(e => (byte)e.GetInt32()).ToArray();
+                Log.Info($"  ok: account_id={_accountId}, sessionHash={_sessionHash.Length}B");
+                return;
+            }
+            // result 2 = the server's shared "no such account OR wrong password" code. Fleet accounts
+            // self-register: treat a first-attempt 2 as a missing account, create it, and log in again.
+            // CreateAccountAsync disambiguates — if the name is taken, the password was wrong.
+            if (result == 2 && attempt == 0)
+            {
+                await CreateAccountAsync(user, pass);
+                continue;
+            }
+            throw new Exception($"login failed: {doc.RootElement.GetRawText()}");
+        }
+    }
+
+    // Self-register on the server (the account row is bcrypt-hashed + inserted server-side).
+    public async Task CreateAccountAsync(string user, string pass)
+    {
+        Log.Info($"account '{user}' unknown -> self-registering (first login)");
+        for (int attempt = 1; ; attempt++)
+        {
+            using var doc = await AuthCommandAsync(user, pass, 32);
+            int result = AuthResult(doc);
+            if (result == 3) // LOGIN_SUCCESS_CREATE
+            {
+                Log.Info($"  account '{user}' created");
+                return;
+            }
+            // 9 = insert failed; the server allocates ids with MAX(id)+1, so a wave of simultaneous
+            // first logins can collide. Back off with jitter and retry.
+            if (result == 9 && attempt < 4)
+            {
+                int ms = Random.Shared.Next(1000, 4000);
+                Log.Info($"  create collided (result 9), attempt {attempt} — retrying in {ms}ms");
+                await Task.Delay(ms);
+                continue;
+            }
+            throw new Exception(result switch
+            {
+                4 => $"account '{user}' already exists — its password doesn't match XIBOT_PASSWORD",
+                8 => "account creation is disabled on the server (login.ACCOUNT_CREATION)",
+                _ => $"account creation failed: {doc.RootElement.GetRawText()}",
+            });
+        }
     }
 
     public void LobbyDataConnect()
