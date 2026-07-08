@@ -13,18 +13,21 @@ namespace XiHeadless.Routines;
 ///     via HuntZonePlan, so they meet). Level sync collapses level spread (leader syncs to lowest).
 /// One instance per brain; the brain calls Step() from its idle/roam beat while it wants a party,
 /// and TopUp() occasionally once partied (leader keeps filling seats — "attempt to get more").
-public sealed class PartyFinder(IPerception p, IParty party, IChat chat, string tag)
+public sealed class PartyFinder(IPerception p, IParty party, IChat chat, INavigation nav, string tag)
 {
     const int ListenBeforeRecruitMs = 180_000;  // solo-listen this long before shouting our own LFM (+ seeded jitter)
     const int ShoutEveryMs = 90_000;            // recruiter re-shout cadence while seats are open
     const int AnswerCooldownMs = 300_000;       // don't re-answer the same shouter within this window
     const int InviteRetryMs = 15_000;           // retry invites for accepted responders until their entity is visible
+    // SHOUT IS NOT ZONE-WIDE: the server delivers it within 180y (zone_entities CHAR_INSHOUT < 180.0f).
+    // Formation therefore happens around a shared MEET SPOT (FleetDay walks there first), and the accept
+    // tell carries a rendezvous coordinate the recruit walks to ("meet at (X Z)" — humans read that fine).
 
     readonly long _startMs = Environment.TickCount64;
     readonly int _jitterMs = (int)(p.World.MyId * 7919 % 120_000);   // per-char stagger: not everyone shouts at once
     readonly Dictionary<string, long> _answered = new(StringComparer.OrdinalIgnoreCase);   // shouters we already told
     readonly Dictionary<string, (PartyRoles.Role role, int level, long lastTryMs)> _accepted = new(StringComparer.OrdinalIgnoreCase);
-    long _lastShoutMs, _seenTellMs;
+    long _lastShoutMs, _seenTellMs, _seenMeetMs;
     bool _recruiting;
 
     public bool Recruiting => _recruiting;
@@ -38,17 +41,42 @@ public sealed class PartyFinder(IPerception p, IParty party, IChat chat, string 
         // 0) OPEN parties: accept any pending invite (a recruiter — bot or human — wants us).
         if (party.InvitePending) { Log.Info($"[{tag}] accepting party invite from '{party.InviterName}'"); party.AcceptInvite(); return false; }
 
-        // 1) SEEKER: answer a fresh LFM shout with our role/level.
+        // 1) SEEKER: answer a fresh LFM shout with our role/level. YIELD rule: if we were recruiting and an
+        // LFM arrives from an alphabetically-SMALLER name, we stop recruiting and answer them — deterministic
+        // tie-break, so two simultaneous recruiters merge instead of dueling forever (live trio bug).
         foreach (var (shouter, (msg, ms)) in w.Shouts.ToArray())
         {
             if (shouter.Equals(w.MyName, StringComparison.OrdinalIgnoreCase)) continue;
             if (!msg.Contains("LFM", StringComparison.OrdinalIgnoreCase)) continue;
+            if (_recruiting)
+            {
+                if (string.Compare(shouter, w.MyName, StringComparison.OrdinalIgnoreCase) >= 0) continue;   // they yield to us
+                Log.Info($"[{tag}] yielding my LFM to {shouter} (tie-break) — answering theirs");
+                _recruiting = false;
+                _accepted.Clear();
+            }
             if (_answered.TryGetValue(shouter, out var last) && w.NowMs - last < AnswerCooldownMs) continue;
             _answered[shouter] = w.NowMs;
             string job = JobName(w.MainJob);
-            chat.Tell(shouter, $"LFP {job} {w.MainJobLevel} — invite me!");
+            chat.Tell(shouter, $"LFP {job} {w.MainJobLevel} - invite me!");
             Log.Info($"[{tag}] answered {shouter}'s LFM as {job} {w.MainJobLevel}");
         }
+
+        // 1b) RENDEZVOUS: a recruiter we answered told us where to meet ("meet at (X Z)") — walk there so
+        // our entity becomes visible for the invite (invites need the entity in view).
+        foreach (var (sender, (msg, ms)) in w.Tells.ToArray())
+        {
+            if (ms <= _seenMeetMs || !_answered.ContainsKey(sender)) continue;
+            int at = msg.IndexOf("meet at (", StringComparison.OrdinalIgnoreCase);
+            if (at < 0) continue;
+            var nums = msg[(at + 9)..].TrimEnd('!', '.', ')').Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (nums.Length >= 2 && float.TryParse(nums[0], out var mx) && float.TryParse(nums[1], out var mz))
+            {
+                Log.Info($"[{tag}] walking to {sender}'s rendezvous ({mx:F0},{mz:F0})");
+                nav.MoveTo(mx, mz);
+            }
+        }
+        _seenMeetMs = w.NowMs;
 
         // 2) RECRUITER: nothing to join after the stagger window -> run our own LFM.
         if (!_recruiting && Environment.TickCount64 - _startMs > ListenBeforeRecruitMs + _jitterMs)
@@ -71,7 +99,7 @@ public sealed class PartyFinder(IPerception p, IParty party, IChat chat, string 
         if (w.NowMs - _lastShoutMs > ShoutEveryMs)
         {
             _lastShoutMs = w.NowMs;
-            chat.Shout($"LFM exp party — need {Describe(need)}! /tell me to join");
+            chat.Shout($"LFM exp party - need {Describe(need)}! /tell me to join");
         }
 
         // Parse incoming tells for an LFP answer: any job token (WHM/PLD/...) or role word + optional level.
@@ -92,10 +120,12 @@ public sealed class PartyFinder(IPerception p, IParty party, IChat chat, string 
             if ((PartyRoles.Role.None != (role & need)) || (job != 0 && (PartyRoles.CanFillOf(job) & need) != 0))
             {
                 _accepted[sender] = (role, level, 0);
-                chat.Tell(sender, "sweet — sending an invite!");
+                // Carry the rendezvous: invites need the recruit's ENTITY visible (~50y), and shout only
+                // reaches 180y — the recruit walks to us. Humans read "meet at (X Z)" just fine.
+                chat.Tell(sender, $"sweet - sending an invite! meet at ({w.X:F0} {w.Z:F0})");
                 Log.Info($"[{tag}] recruit accepted: {sender} ({role}{(level > 0 ? $" lv{level}" : "")})");
             }
-            else chat.Tell(sender, "thanks — that seat's filled, maybe next time!");
+            else chat.Tell(sender, "thanks - that seat's filled, maybe next time!");
         }
         _seenTellMs = w.NowMs;
 

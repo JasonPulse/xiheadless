@@ -16,6 +16,7 @@ public static class FleetDay
     public sealed class Hooks
     {
         public Func<CancellationToken, Task> GoToHuntZone = _ => Task.CompletedTask;   // travel per the leveling guide
+        public (float x, float z)? MeetSpot;   // formation anchor: SHOUT ONLY REACHES 180y (server), so everyone converges here first
         public Func<CancellationToken, Task> SoloGrind = _ => Task.CompletedTask;      // the brain's normal loop
         public Func<PartyCombat.PullPlan, CancellationToken, Task> PartyGrind = (_, _) => Task.CompletedTask;
         public Func<CancellationToken, Task>? Upkeep;                                   // null = idle the short day
@@ -45,7 +46,12 @@ public static class FleetDay
             case SessionPlan.DayMode.Party:
                 Log.Always($"[{hooks.Tag}] today is a PARTY day — heading to the hunt zone to group up");
                 await hooks.GoToHuntZone(ct);
-                var finder = new PartyFinder(p, party, chat, hooks.Tag);
+                if (hooks.MeetSpot is { } meet)   // converge into shout range (180y) before recruiting
+                {
+                    nav.MoveTo(meet.x, meet.z);
+                    for (int t = 0; t < 120_000 && nav.IsMoving && !ct.IsCancellationRequested; t += 500) await Task.Delay(500, ct);
+                }
+                var finder = new PartyFinder(p, party, chat, nav, hooks.Tag);
                 long jobAnnounceMs = 0;
                 // FORM: listen/answer/recruit until a party exists. While seeking, hold near the zone-in/camp
                 // (the brain's solo loop would wander us away from responders).

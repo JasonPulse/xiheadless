@@ -42,6 +42,7 @@ public sealed class FleetTestBrain(
         {
             Tag = "fleettest",
             GoToHuntZone = _ => Task.CompletedTask,   // we're already at the meet zone
+            MeetSpot = (-92f, 62f),                    // the Windurst Woods HP crystal plaza — inside 180y shout range for all
             PartyGrind = async (pull, c) =>
             {
                 // No combat in this test — just hold formation and let the roster/puller machinery run.
