@@ -22,6 +22,15 @@ public sealed class Party(ISession s) : IParty
     public void Invite(uint charId, ushort targid = 0) => s.Enqueue(GroupInvitePacket.Build(charId, targid));
     public void AcceptInvite() { s.Enqueue(GroupAnswerPacket.Build(1)); s.State.PartyInvitePending = false; }
     public void SetLevelSync(string targetName) => s.Enqueue(GroupChange2Packet.Build(targetName, 6)); // ChangeKind 6 = SetLevelSync
+
+    // 0x06F GP_CLI_COMMAND_GROUP_LEAVE: hdr(4) Kind@4 (0 = party). 8 bytes = 2 words.
+    public void Leave()
+    {
+        var p = new byte[8];
+        SubPacket.WriteHeader(p, 0x06F);
+        s.Enqueue(p);
+        s.State.PartyMembers.Clear();   // the roster is latched (see MemberCount) — clear it on a deliberate leave
+    }
 }
 
 /// 0x077 GP_CLI_COMMAND_GROUP_CHANGE2: hdr(4) sName[16]@4 (member name, ASCII, null-padded) Kind@20(u8; 0=Party)

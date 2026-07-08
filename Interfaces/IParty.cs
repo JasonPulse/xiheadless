@@ -15,4 +15,5 @@ public interface IParty
     // (EFFECT_LEVEL_SYNC). Lets a high char tank low mobs in a SAFE zone so a low member gets FULL (un-gapped)
     // exp. Pass the lowest member's name to sync everyone to them.
     void SetLevelSync(string targetName);
+    void Leave();                                    // 0x06F GROUP_LEAVE (Kind 0 = party) — leave the current party
 }
