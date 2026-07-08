@@ -29,8 +29,14 @@ public sealed class GmBrain(IPerception p, IChat chat, ILifecycle lifecycle, Wor
     public async Task RunAsync(CancellationToken ct)
     {
         Log.Always($"[gm] grant bot up (char='{p.World.MyName}') — listening for /tell requests: 'grantjob <JOB>' or 'setcap <1-99>'");
-        chat.Say("!togglegm");   // enable GM mode on login (user rule) — required for the ! commands to apply
-        await Task.Delay(1500, ct);
+        // Enable the GM icon on login (user rule) — VERIFIED via our own 0x037 (flags0 GmLevel bits), because
+        // !togglegm is a TOGGLE: blind re-sends could flip it back off. Send only while the flag still reads 0.
+        for (int t = 0; t < 5 && p.World.VisibleGmLevel == 0 && !ct.IsCancellationRequested; t++)
+        {
+            chat.Say("!togglegm");
+            await Task.Delay(4000, ct);   // let the command apply + the next 0x037 arrive
+        }
+        Log.Always($"[gm] visible GM level = {p.World.VisibleGmLevel} {(p.World.VisibleGmLevel > 0 ? "(icon on)" : "(FAILED to enable — !togglegm not applying)")}");
         // Self-stop: log out once only the service accounts (GM + RMT) remain online. Runs alongside; when it
         // fires, lifecycle.Logout() cancels ct and the loop below exits.
         _ = ServiceBotGate.WatchThenLogout(world, lifecycle, "gm", ct);

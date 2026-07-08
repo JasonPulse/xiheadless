@@ -283,6 +283,7 @@ public static class PacketParsers
         if (who != w.MyId) return;            // only track our own char for now
         uint flags0 = U32(b, 40);
         w.Hpp = (byte)((flags0 >> 16) & 0xFF);
+        w.VisibleGmLevel = (byte)((flags0 >> 29) & 0x7);   // flags0_t.GmLevel:3 (top bits) — !togglegm visibility
         w.ServerStatus = b[48];
         b.Slice(4, 32).CopyTo(w.StatusIcons);
     }

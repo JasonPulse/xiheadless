@@ -30,5 +30,7 @@ public static class NewCharCutscene
     /// the start-city intros. A mismatched EVENTEND is REJECTED at packet validation (it never reaches the
     /// zone script), so sweeping is safe; only the matching id ends the event. ONE shared list —
     /// HomePointRoutines (crystal-set pre-clear) and the auto-completer both sweep it.
-    public static readonly ushort[] KnownBlockers = { 30000, 30035, 368, 367, 305, 531, 0, 1, 535, 503, 500 };
+    /// 839 also observed live (Zzshekashi, after a mog-house EXIT transition — the current event flipped
+    /// 30000 -> 839 mid-sweep, proving the id MOVES with zone transitions; hence the sweep must BURST).
+    public static readonly ushort[] KnownBlockers = { 30000, 839, 30035, 368, 367, 305, 531, 0, 1, 535, 503, 500 };
 }

@@ -26,6 +26,7 @@ public sealed class WorldState
     public readonly ushort[] Stats = new ushort[7]; // STR,DEX,VIT,AGI,INT,MND,CHR (base)
     public byte Hpp, Mpp;       // HP%/MP% (0x037 / 0x0DF)
     public byte ServerStatus;   // animation/status (idle, engaged, dead, ...) from 0x037
+    public byte VisibleGmLevel; // flags0 bits 29-31 of 0x037 — nonzero once !togglegm applied (GM icon shown)
     public byte[] StatusIcons = new byte[32]; // active status-effect icon ids from 0x037
     public byte[] KnownSpellBits = System.Array.Empty<byte>(); // 0x0AA bitmap; bit N = spell N known
     public uint CurrentTargetId; // last target we engaged/acted on (for disengage etc.)

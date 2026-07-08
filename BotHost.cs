@@ -308,16 +308,22 @@ public static class BotHost
                     else
                     {
                         // The zone's own cutscene didn't clear it (or the zone has none): the char carries a
-                        // DIFFERENT unparsed event (an existing char's zone-in fires no intro CS — e.g. the ROV
-                        // intro 30035, moghouse 368; the RMT bot burned 634 futile EVENTEND-367s on exactly
-                        // this). SWEEP the shared known-blocker ids ONE per cycle — mismatches are server-side
-                        // no-ops, and the falling-edge log above identifies whichever one actually clears it.
+                        // DIFFERENT unparsed event. BURST every known blocker id back-to-back — the current
+                        // event id MOVES with zone transitions (map log: 30000 -> 839 mid-sweep on Zzshekashi),
+                        // so a one-id-per-cycle rotation chases a moving target and never lands. A mismatched
+                        // EVENTEND is rejected at packet validation (harmless), and the map server logs the
+                        // REAL current id in each rejection ("Event ID mismatch <current> != <sent>").
                         var blockers = Game.NewCharCutscene.KnownBlockers;
-                        if (sweepIdx < 0) Log.Always($"[auto-event] zone {w.ZoneId}'s known cutscene didn't clear status=4 (or none known) -> sweeping {blockers.Length} known blocker ids, one per cycle");
-                        sweepIdx = (sweepIdx + 1) % blockers.Length;
-                        lastTried = blockers[sweepIdx];
-                        Log.Info($"[auto-event] sweep {sweepIdx + 1}/{blockers.Length}: EVENTEND {lastTried} (still status=4, zone {w.ZoneId})");
-                        await caps.Events.Finish(w.MyId, 0, lastTried, 0, ct);
+                        if (sweepIdx < 0) Log.Always($"[auto-event] zone {w.ZoneId}'s known cutscene didn't clear status=4 (or none known) -> bursting all {blockers.Length} known blocker ids");
+                        sweepIdx++;
+                        foreach (var id in blockers)
+                        {
+                            if (w.ServerStatus != 4 && !w.EventActive) break;   // cleared mid-burst — stop
+                            lastTried = id;
+                            await caps.Events.Finish(w.MyId, 0, id, 0, ct);
+                            await Task.Delay(300, ct);
+                        }
+                        Log.Info($"[auto-event] blocker burst #{sweepIdx} done (status={w.ServerStatus}, zone {w.ZoneId})");
                     }
                 }
                 activeSince = DateTime.MaxValue;
