@@ -15,6 +15,7 @@ public interface ICombat
     // Fire a job ability IF the bot's job+level grants it and it's off cooldown — self-buffs auto-target
     // the bot, others target `enemyTarget`. Returns whether it actually fired (and only then delays).
     Task<bool> UseAbility(Ability ability, uint enemyTarget, CancellationToken ct = default);
+    void RangedAttack(uint target);                  // 0x01A Shoot — needs a ranged/throwing item equipped (puller: non-expendable boomerang)
     Task Homepoint(CancellationToken ct = default);  // accept "return to home point" -> revive at HP
     // Sit and /heal to regen HP (and MP — mages rest for MP) until both thresholds are met or it times out,
     // then stand. Disengages first and won't sit while still being attacked (the server refuses healing in

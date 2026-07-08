@@ -45,6 +45,10 @@ public sealed class Combat(ISession s) : ICombat
     { s.Enqueue(ActionPacket.Build(ActionPacket.Weaponskill, target, s.State.TargidOf(target), (uint)ws)); await Task.Delay(1000, ct); }
     public async Task Ability(Ability ability, uint target, CancellationToken ct = default)
     { s.Enqueue(ActionPacket.Build(ActionPacket.JobAbility, target, s.State.TargidOf(target), (uint)ability)); s.State.AbilityUsedMs[ability] = s.State.NowMs; await Task.Delay(500, ct); }
+    // Ranged pull (0x01A Shoot): needs a ranged/throwing item equipped — the puller carries a NON-EXPENDABLE
+    // returning item (boomerang) so pulls never consume ammo and the mob chases to camp instead of beating
+    // on a melee-range puller.
+    public void RangedAttack(uint target) => s.Enqueue(ActionPacket.Build(ActionPacket.Shoot, target, s.State.TargidOf(target)));
 
     // Ready = the bot's main/sub job grants this ability at its level AND it's off recast. Recast is tracked
     // client-side from AbilityInfo.Recast (seconds); the server enforces the real timer regardless.

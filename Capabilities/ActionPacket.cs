@@ -7,7 +7,7 @@ namespace XiHeadless.Capabilities;
 /// 28 bytes = 7 words (PacketSize[0x01A]=0x0E).
 internal static class ActionPacket
 {
-    public const ushort Talk = 0x00, CastMagic = 0x03, Attack = 0x02, AttackOff = 0x04, Weaponskill = 0x07, JobAbility = 0x09, HomepointMenu = 0x0B;
+    public const ushort Talk = 0x00, CastMagic = 0x03, Attack = 0x02, AttackOff = 0x04, Weaponskill = 0x07, JobAbility = 0x09, HomepointMenu = 0x0B, Shoot = 0x10;
 
     public static byte[] Build(ushort actionId, uint target, ushort actIndex = 0, uint buf0 = 0)
     {
