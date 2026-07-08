@@ -21,6 +21,9 @@ public sealed class GmBrain(IPerception p, IChat chat, ILifecycle lifecycle, Wor
     // request-keyword -> command. First token of the tell (lowercased) selects the grant kind.
     static readonly string[] JobWords = { "grantjob", "job", "unlock" };
     static readonly string[] CapWords = { "setcap", "cap", "limit", "limitbreak" };
+    // BLU learns spells by BEING HIT by mob abilities — impractical for bots, so the GM grants them via the
+    // STOCK !addspell (permission=1, handles blue magic). The requester then SETS them itself (IMagic.SetBlueSpell).
+    static readonly string[] SpellWords = { "addspell", "spell", "learnspell" };
 
     // Last tell timestamp (WorldState.NowMs) we've already acted on, per sender — so a NEW tell is processed
     // but the same one isn't re-issued every poll (WorldState.Tells keeps only the latest per sender).
@@ -56,11 +59,18 @@ public sealed class GmBrain(IPerception p, IChat chat, ILifecycle lifecycle, Wor
                         continue; // not a grant request (some other tell) — ignore silently
 
                     // The SENDER is the grant target — a bot can only request for itself.
-                    string cmd = kind == "job" ? $"!grantjob {sender} {value}" : $"!setcap {sender} {value}";
+                    // NOTE argument orders differ: !grantjob/<setcap> take <player> <value>; the stock
+                    // !addspell takes <spellID/Name> <player>.
+                    string cmd = kind switch
+                    {
+                        "job" => $"!grantjob {sender} {value}",
+                        "spell" => $"!addspell {value} {sender}",
+                        _ => $"!setcap {sender} {value}",
+                    };
                     chat.Say(cmd);
                     grants++;
                     Log.Always($"[gm] {sender} requested '{msg}' -> issued: {cmd} ({grants} issued)");
-                    chat.Tell(sender, kind == "job" ? $"granted job {value}" : $"set cap {value}");
+                    chat.Tell(sender, kind switch { "job" => $"granted job {value}", "spell" => $"added spell {value}", _ => $"set cap {value}" });
 
                     await Task.Delay(CommandSpacingMs, ct); // let the server process one command per tick
 
@@ -92,6 +102,7 @@ public sealed class GmBrain(IPerception p, IChat chat, ILifecycle lifecycle, Wor
         value = parts[1];
         if (System.Array.IndexOf(JobWords, verb) >= 0) { kind = "job"; return true; }
         if (System.Array.IndexOf(CapWords, verb) >= 0) { kind = "cap"; return true; }
+        if (System.Array.IndexOf(SpellWords, verb) >= 0) { kind = "spell"; return true; }
         return false;
     }
 }
