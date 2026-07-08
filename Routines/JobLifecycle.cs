@@ -227,8 +227,10 @@ public sealed class JobLifecycle(
         string unlockCity = cfg.UnlockTrekZone ?? cfg.HomeCity;
 
         // GM-grant FAST PATH (opt-in): ask the central GM bot to unlock the job, then let the normal Mog House
-        // change apply it — skips the whole cross-continent quest trek when it lands; falls through if it doesn't.
-        if (cfg.UseGmGrant && chat is not null) await GmGrant.Request(chat, JN(cfg.MainJob), cfg.Tag, ct);
+        // change apply it — skips the whole cross-continent quest trek when it lands; falls through if it
+        // doesn't. RequestJob RETRIES until the GM's reply acks it (the GM bot can log in minutes after us).
+        if (cfg.UseGmGrant && chat is not null && !await GmGrant.RequestJob(p, chat, JN(cfg.MainJob), cfg.Tag, ct))
+            Log($"GM grant unacked — {JN(cfg.MainJob)} unlock falls back to the quest");
 
         if (await JobRoutines.ChangeJobViaMogHouse(jobs, zoning, cfg.MainJob, cfg.SubJob, unlockCity, ct))
         {
