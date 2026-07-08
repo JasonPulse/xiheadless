@@ -4,7 +4,7 @@ namespace XiHeadless.Brains;
 /// intake) AND fulfills gil requests that arrive there. On a request it acquires gil from the server
 /// grant endpoint (credit the bot), ducks into its Mog House to mail the gil to the buyer, then comes
 /// back out to resume spamming. Behavior is CODE (consts below). Reuses IChat / IDelivery / IGilGrant.
-public sealed class RmtBrain(IPerception p, IChat chat, IDelivery delivery, IGilGrant gil, IZoning zoning, ILifecycle lifecycle, WorldApi world) : IBrain
+public sealed class RmtBrain(IPerception p, IChat chat, IDelivery delivery, IGilGrant gil, IZoning zoning, ILifecycle lifecycle, WorldApi world, IJobChange jobs) : IBrain
 {
     static readonly bool UseYell = true;   // /yell (city-area); false = /shout (current zone)
     const int SpamIntervalSec = 1800;      // 30 minutes between spam broadcasts
@@ -26,6 +26,16 @@ public sealed class RmtBrain(IPerception p, IChat chat, IDelivery delivery, IGil
         var intake = new RmtIntake(Port);
         intake.Start();
         Log.Info($"[rmt] loop: spam /{(UseYell ? "yell" : "shout")} every {SpamIntervalSec}s + delivery intake on :{Port} (char='{p.World.MyName}')");
+
+        // Ensure WHM/BLM (user, 2026-07-08): another brain tested on this account left the char WAR/MNK.
+        // Reuses the shared Mog House job-change routine — the RMT char idles in a Mog House city, so the
+        // in-place change works; a failure is non-fatal (the storefront still runs, just on the wrong job).
+        if (p.World.MainJob != Job.Whm || p.World.SubJob != Job.Blm)
+        {
+            Log.Info($"[rmt] job is {p.World.MainJob}/{p.World.SubJob} — changing to WHM/BLM");
+            if (!await JobRoutines.ChangeJobViaMogHouse(jobs, zoning, Job.Whm, Job.Blm, "Windurst_Woods", ct))
+                Log.Always("[rmt] WHM/BLM job change FAILED — continuing on the current job");
+        }
         // Self-stop: log out once only the service accounts (GM + RMT) remain online. Runs alongside; when it
         // fires, lifecycle.Logout() cancels ct and the loop below exits.
         _ = ServiceBotGate.WatchThenLogout(world, lifecycle, "rmt", ct);
