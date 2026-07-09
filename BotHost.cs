@@ -58,6 +58,14 @@ public static class BotHost
             Log.Always($"[fatal] session declined (0xA2 stale/duplicate) — server still holds this char; needs a cooldown before relaunch, NOT a rapid retry. [{ex.Message.Split('\n')[0]}]");
             return 75;
         }
+        catch (Exception ex)
+        {
+            // ANY other lobby-phase failure (TLS reset, lobby refusing mid-handshake, char-list read error —
+            // a live fleet pod died on Send_0xA1/FetchCharList with an unhandled stack trace -> pod Error).
+            // The lobby phase is always retryable-next-window: one clear line, clean exit, same pacing code.
+            Log.Always($"[fatal] lobby login failed ({ex.GetType().Name}: {ex.Message.Split('\n')[0]}) — retry next window");
+            return 75;
+        }
 
         var resDir = Path.Combine(AppContext.BaseDirectory, "res");
         var sessionKey = new byte[20]; if (justCreated) sessionKey[16] = 6; // +6 byte16 for a fresh char
