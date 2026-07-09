@@ -77,6 +77,9 @@ target snaps back to the bot's own feet and "succeeds" with a zero-length path =
 - **Party: the WAR never pulls/advances until ALL members are "good"** (in range + HP/MP topped + not resting), and
   never stands still while being hit. Stick together.
 - Run: `bash runbot.sh <Brain> [seconds] [KEY=VAL...]`; env `XIBOT_ACCOUNT/PASSWORD/LOG`. Brains auto-register by reflection.
+- **ACCOUNTS: every account/password lives in `ACCOUNTS.md`** (user rule). Logins AUTO-CREATE missing
+  accounts, so a typo = a junk account — check the list first. `rmtbot` + `fleetbot*` are DEPLOYED (never
+  use locally); local test trio = headlesstesting (tank) / bot1 (dps) / testheal (healer).
 - Don't `cd` into or modify the LSB server repo at `/Users/jasonclift/Code/Lua/Personal/xiserver` — it's READ-ONLY
   reference (read `sql/mob_spawn_points.sql`, `mob_groups.sql`, `mob_droplist.sql` to pick camps/verify drops; the
   spawn-coord frame matches the bot's reported pos).
