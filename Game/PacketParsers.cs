@@ -536,5 +536,9 @@ public static class PacketParsers
             w.ExpNext = U16(b, 18);
             Log.Always($"[exp] lvl {w.MainJobLevel}: {w.ExpNow}/{w.ExpNext}");
         }
+        // nation@80 (0=SanD 1=Bastok 2=Windurst) + BindZoneNo@74 (home-point zone) — offsets summed from the
+        // server GP_SERV_COMMAND_CLISTATUS struct, anchored on our proven hpmax@4..exp@16/18 fields. Nation
+        // drives the ENGINE's nursery/home-city selection (fleet chars are born in RANDOM nations).
+        if (b.Length > 80) { w.BindZone = U16(b, 74); w.NationId = b[80]; }
     }
 }

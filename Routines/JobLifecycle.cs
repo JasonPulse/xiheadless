@@ -88,6 +88,20 @@ public sealed class JobLifecycle(
 
         public string Tag = "job";
 
+        // Per-nation NURSERY plans (a char is born in a RANDOM nation — fleet provisioning — and the engine
+        // detects it at runtime from 0x061 and swaps these in; see ApplyDetectedNation). A Bastok-born baby
+        // given the Windurst plan death-marched across Pashhow at lvl 1 (live pre-flight, Griasha).
+        public static (string zone, ushort id)? DefaultSandoriaPlan(int lvl) =>
+            lvl < 12 ? ("West_Ronfaure", (ushort)100)
+          : lvl < 19 ? ("La_Theine_Plateau", (ushort)102)
+          : lvl < 25 ? ("Valkurm_Dunes", (ushort)103)
+          : null;
+        public static (string zone, ushort id)? DefaultBastokPlan(int lvl) =>
+            lvl < 12 ? ("South_Gustaberg", (ushort)107)
+          : lvl < 19 ? ("Konschtat_Highlands", (ushort)108)
+          : lvl < 25 ? ("Pashhow_Marshlands", (ushort)109)
+          : null;
+
         // Windurst nursery progression: ~1-11 West Sarutabaruta (baby + main), ~12-14 East Sarutabaruta,
         // ~15-17 Tahrongi Canyon, 18+ nation path (HuntZones routes Tahrongi/Buburimu, with ForceAdvance).
         public static (string zone, ushort id)? DefaultWindurstPlan(int lvl) =>
@@ -113,6 +127,7 @@ public sealed class JobLifecycle(
     public async Task RunAsync(CancellationToken ct)
     {
         await Task.Delay(4000, ct);
+        await ApplyDetectedNation(ct);
         var seesaw = new JobLeveling(p, jobs, zoning);
         Log($"lifecycle start: {(cfg.Advanced ? "ADVANCED" : "basic")} main={JN(cfg.MainJob)} sub={JN(cfg.SubJob)} " +
             $"(now {JN(p.World.MainJob)} {p.World.MainJobLevel} / levels {JN(cfg.MainJob)}={LevelOf(cfg.MainJob)} {JN(cfg.SubJob)}={LevelOf(cfg.SubJob)})");
@@ -175,6 +190,30 @@ public sealed class JobLifecycle(
         }
     }
 
+    // Fleet chars are born in a RANDOM nation, but every brain's config defaults to Windurst. Detect the REAL
+    // nation from 0x061 (parsed shortly after zone-in) and swap the nation-dependent engine config: nursery
+    // plan, home city (Mog House/recovery), safe-gate (Windurst-only), and the HuntZones path. Only swaps
+    // when the brain left the DEFAULT Windurst plan in place — a brain that overrides HuntZonePlan is
+    // presumed deliberate. (Live pre-flight: Bastok-born Griasha death-marched toward West Saruta at lvl 1.)
+    async Task ApplyDetectedNation(CancellationToken ct)
+    {
+        for (int t = 0; t < 20000 && p.World.NationId == 255 && !ct.IsCancellationRequested; t += 500)
+            await Task.Delay(500, ct);   // 0x061 arrives a few send-cycles after zone-in
+        if (p.World.NationId is not (0 or 1) || cfg.HuntZonePlan != (Func<int, (string, ushort)?>)Config.DefaultWindurstPlan)
+            return;   // Windurst (2) or unknown -> defaults stand; custom plan -> brain's choice stands
+
+        var nation = (Nation)p.World.NationId;
+        if (nation == Nation.SanDoria)
+        { cfg.HomeCity = "Southern_San_dOria"; cfg.HomeCityId = 230; cfg.HuntZonePlan = Config.DefaultSandoriaPlan; }
+        else
+        { cfg.HomeCity = "Bastok_Mines"; cfg.HomeCityId = 234; cfg.HuntZonePlan = Config.DefaultBastokPlan; }
+        cfg.SafeGateZoneId = 0; cfg.SafeGateVia = 0;   // the safe-gate rule is Windurst-specific (east goblin belt)
+        _detectedNation = nation;                      // RunGrindStint also overlays the per-job GrindCfg
+        Log($"nation detected: {nation} — nursery/home-city swapped from the Windurst defaults (home={cfg.HomeCity})");
+    }
+
+    Nation? _detectedNation;   // non-null when ApplyDetectedNation swapped away from the Windurst defaults
+
     // One grind stint for `job` (which must already be MAIN — the caller ensures it). While HuntZonePlan
     // returns a gated zone we fix to it (+ baby con band below BabyUntil) and own the post-death return; when
     // it returns null we fall through to the brain's nation-path config. Loops internally across the band
@@ -192,6 +231,11 @@ public sealed class JobLifecycle(
         {
             var plan = cfg.HuntZonePlan(p.World.MainJobLevel);
             var g = cfg.GrindCfgFor(job);
+            if (_detectedNation is { } dn)   // char born in a non-Windurst nation: overlay the brain's Windurst grind defaults
+            {
+                g.HomeNation = dn;
+                g.AhZone = cfg.HomeCity;     // both swapped home cities have the AH (misc 0x200 verified)
+            }
             if (plan is (string zone, ushort id))
             {
                 g.FixedZone = zone; g.FixedZoneId = id;

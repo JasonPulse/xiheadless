@@ -23,6 +23,8 @@ public sealed class WorldState
     // needs leveling (a sub must sit at ceil(main/2), and subs never earn exp directly).
     public readonly Dictionary<byte, int> JobLevels = new();
     public ushort ExpNow, ExpNext;   // exp into current level / exp needed to ding (from 0x061 CLISTATUS)
+    public byte NationId = 255;      // 0=San d'Oria 1=Bastok 2=Windurst (0x061 @80; 255 = not yet received)
+    public ushort BindZone;          // home-point zone (0x061 BindZoneNo @74)
     public readonly ushort[] Stats = new ushort[7]; // STR,DEX,VIT,AGI,INT,MND,CHR (base)
     public byte Hpp, Mpp;       // HP%/MP% (0x037 / 0x0DF)
     public byte ServerStatus;   // animation/status (idle, engaged, dead, ...) from 0x037
