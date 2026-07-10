@@ -11,6 +11,15 @@
     <None Include="res/**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <!-- CONTAINER MEMORY (fleet OOM, 2026-07-09): cap the GC heap well under the pod's cgroup limit so the GC
+       collects instead of the kernel OOM-killing (working set measured ~230Mi; under 384Mi the default 75%
+       budget let allocation spikes overshoot). runtimeconfig values are DECIMAL - the DOTNET_GC* env route
+       parses HEX ("55" = 0x55 = 85%!), which silently made the first fix WORSE. Baked here = image/env-proof. -->
+  <ItemGroup>
+    <RuntimeHostConfigurationOption Include="System.GC.HeapHardLimitPercent" Value="55" />
+    <RuntimeHostConfigurationOption Include="System.GC.ConserveMemory" Value="5" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="DotRecast.Detour" Version="2026.1.3" />
   </ItemGroup>

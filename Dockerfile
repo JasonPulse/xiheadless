@@ -13,12 +13,7 @@ RUN dotnet publish XiHeadless.csproj -c Release -a $TARGETARCH -o /app
 FROM mcr.microsoft.com/dotnet/runtime:9.0
 WORKDIR /app
 COPY --from=build /app ./
-# CONTAINER MEMORY (fleet OOM incident, 2026-07-09): the bot's real working set is ~230Mi (measured: full
-# login->travel->AH->combat flow peaked 232Mi under a 768Mi limit), but under a 384Mi cgroup the default GC
-# (heap budget = 75% of the limit) lets allocation spikes overshoot the remaining headroom before collecting
-# -> the KERNEL kills the cgroup (13/13 played wave pods OOMKilled in <60s, both archs; not a leak).
-# Cap the managed heap well under the cgroup so the GC collects instead of the kernel killing:
-ENV DOTNET_GCHeapHardLimitPercent=55 \
-    DOTNET_GCConserveMemory=5
+# CONTAINER MEMORY: the GC caps live in XiHeadless.csproj as RuntimeHostConfigurationOptions (decimal),
+# NOT here as DOTNET_GC* env — those parse as HEX ("55" = 85%!), a trap that made the first fix worse.
 EXPOSE 8088
 ENTRYPOINT ["dotnet", "XiHeadless.dll"]
