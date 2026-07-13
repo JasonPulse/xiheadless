@@ -13,7 +13,7 @@ namespace XiHeadless.Brains;
 /// is shared across phases), ids verified vs the server DB. Matre Bell (21460, GEO ranged-slot focus) and
 /// the Plate of Indi-Poison (6074) are the unlock rewards — kept, bell equipped on GEO.
 public sealed class GeoBrain(
-    IPerception p, INavigation nav, ICombat combat, IZoning zoning, IGear gear, IAuctionHouse ah,
+    IPerception p, INavigation nav, ICombat combat, IMagic magic, IZoning zoning, IGear gear, IAuctionHouse ah,
     IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs, IQuests quests, ITradeNpc trade, IEvents events) : IBrain
 {
     const byte ClubSkill = 11;                // wands are clubs; both GEO and the WHM phases swing them
@@ -63,7 +63,7 @@ public sealed class GeoBrain(
                 UnlockStockItems = new[] { (PetrifiedLog, 1) }, StealthUnlock = true,
                 UnlockTrekZone = "Western_Adoulin", UnlockTrekZoneId = 256,
                 GrindCfgFor = GrindCfg, Tag = "geo",
-            }).RunAsync(ct);
+            }, magic: magic).RunAsync(ct);
 
     LevelGrind.Config GrindCfg(byte job) => new()
     {

@@ -11,7 +11,7 @@ namespace XiHeadless.Brains;
 ///     MATCHING WEATHER — the ZoneInFrom rows in QuestDefs are placeholders; the real flow needs a
 ///     weather-watch roam loop, which QuestRunner cannot express yet.
 public sealed class SmnBrain(
-    IPerception p, INavigation nav, ICombat combat, IZoning zoning, IGear gear, IAuctionHouse ah,
+    IPerception p, INavigation nav, ICombat combat, IMagic magic, IZoning zoning, IGear gear, IAuctionHouse ah,
     IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs, IQuests quests, ITradeNpc trade, IEvents events) : IBrain
 {
     const byte ClubSkill = 11;                // LSB skill enum (Club=11 — same id WhmBrain/BlmBrain train)
@@ -51,7 +51,7 @@ public sealed class SmnBrain(
                 MainJob = Job.Smn, SubJob = Job.Whm, Advanced = true,
                 UnlockSteps = QuestDefs.Unlock[Job.Smn],   // "I Can Hear a Rainbow"
                 GrindCfgFor = GrindCfg, Tag = "smn",
-            }).RunAsync(ct);
+            }, magic: magic).RunAsync(ct);
 
     LevelGrind.Config GrindCfg(byte job) => new()
     {

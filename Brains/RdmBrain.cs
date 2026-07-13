@@ -4,7 +4,7 @@ namespace XiHeadless.Brains;
 /// West Sarutabaruta until the canyon is survivable, then the shared solo LevelGrind on the Windurst path.
 /// Config only: the network-gnomes RDM gear ladder (sword + mage cloth), sword WS, mage rest (MP too).
 public sealed class RdmBrain(
-    IPerception p, INavigation nav, ICombat combat, IZoning zoning, IGear gear,
+    IPerception p, INavigation nav, ICombat combat, IMagic magic, IZoning zoning, IGear gear,
     IAuctionHouse ah, IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs) : IBrain
 {
     const byte SwordSkill = 3;
@@ -49,7 +49,7 @@ public sealed class RdmBrain(
             {
                 MainJob = Job.Rdm, SubJob = Job.Mnk, Advanced = false,
                 GrindCfgFor = GrindCfg, Tag = "rdm",
-            }).RunAsync(ct);
+            }, magic: magic).RunAsync(ct);
 
     LevelGrind.Config GrindCfg(byte job) => new()
     {

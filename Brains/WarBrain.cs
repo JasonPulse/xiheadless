@@ -3,7 +3,7 @@ namespace XiHeadless.Brains;
 /// WAR leveling brain. The grind loop lives in the reusable LevelGrind routine; this class only supplies
 /// WAR-specific job logic: the gear set (Great Axe + Leather), the weapon-skill the equipped weapon trains,
 /// the job abilities to pop, and the con band. Gear guide (network-gnomes WAR guide, lv1-18 bracket).
-public sealed class WarBrain(IPerception p, INavigation nav, ICombat combat, IZoning zoning, IGear gear, IAuctionHouse ah, IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs) : IBrain
+public sealed class WarBrain(IPerception p, INavigation nav, ICombat combat, IMagic magic, IZoning zoning, IGear gear, IAuctionHouse ah, IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs) : IBrain
 {
     const Nation HomeNation = Nation.Windurst; // selects the HuntZones leveling path (the bot is a Windurst char)
     const string AhZone = "Windurst Woods";  // where we buy gear (has the AH)
@@ -49,7 +49,7 @@ public sealed class WarBrain(IPerception p, INavigation nav, ICombat combat, IZo
             {
                 MainJob = Job.War, SubJob = Job.Mnk, Advanced = false,
                 GrindCfgFor = GrindCfg, Tag = "war",
-            }).RunAsync(ct);
+            }, magic: magic).RunAsync(ct);
 
     LevelGrind.Config GrindCfg(byte job)
     {

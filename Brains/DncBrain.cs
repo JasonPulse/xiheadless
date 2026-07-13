@@ -8,7 +8,7 @@ namespace XiHeadless.Brains;
 ///   3. Seesaw: level DNC main / WAR sub (JobLeveling switches whenever WAR < ceil(DNC/2)).
 /// Gear: network-gnomes DNC guide lv1-29 bracket (dagger + light DD), ids verified vs the server DB.
 public sealed class DncBrain(
-    IPerception p, INavigation nav, ICombat combat, IZoning zoning, IGear gear, IAuctionHouse ah,
+    IPerception p, INavigation nav, ICombat combat, IMagic magic, IZoning zoning, IGear gear, IAuctionHouse ah,
     IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs, IQuests quests, ITradeNpc trade, IEvents events) : IBrain
 {
     const byte DaggerSkill = 2;
@@ -57,7 +57,7 @@ public sealed class DncBrain(
                 UnlockSteps = QuestDefs.Unlock[Job.Dnc],   // "Lakeside Minuet"
                 StealthUnlock = true, UnlockTrekZone = "Upper_Jeuno", UnlockTrekZoneId = 244,
                 GrindCfgFor = GrindCfg, Tag = "dnc",
-            }).RunAsync(ct);
+            }, magic: magic).RunAsync(ct);
 
     LevelGrind.Config GrindCfg(byte job) => new()
     {

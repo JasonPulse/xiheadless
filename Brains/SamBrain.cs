@@ -12,7 +12,7 @@ namespace XiHeadless.Brains;
 ///     — QuestRunner has no wait primitive.
 ///   * Norg access is a server-enforced prereq (Sea Serpent Grotto route).
 public sealed class SamBrain(
-    IPerception p, INavigation nav, ICombat combat, IZoning zoning, IGear gear, IAuctionHouse ah,
+    IPerception p, INavigation nav, ICombat combat, IMagic magic, IZoning zoning, IGear gear, IAuctionHouse ah,
     IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs, IQuests quests, ITradeNpc trade, IEvents events) : IBrain
 {
     const byte GreatKatanaSkill = 10;         // LSB skill enum (GreatKatana=10 — verified vs the generated WS table)
@@ -51,7 +51,7 @@ public sealed class SamBrain(
                 MainJob = Job.Sam, SubJob = Job.War, Advanced = true,
                 UnlockSteps = QuestDefs.Unlock[Job.Sam],   // "Forge Your Destiny"
                 GrindCfgFor = GrindCfg, Tag = "sam",
-            }).RunAsync(ct);
+            }, magic: magic).RunAsync(ct);
 
     LevelGrind.Config GrindCfg(byte job) => new()
     {

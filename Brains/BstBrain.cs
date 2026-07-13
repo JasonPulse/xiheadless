@@ -12,7 +12,7 @@ namespace XiHeadless.Brains;
 ///   * Save My Son: the Qufim Nightflowers examine only works at game NIGHT (21:30-05:40) — needs a
 ///     game-clock wait/retry loop.
 public sealed class BstBrain(
-    IPerception p, INavigation nav, ICombat combat, IZoning zoning, IGear gear, IAuctionHouse ah,
+    IPerception p, INavigation nav, ICombat combat, IMagic magic, IZoning zoning, IGear gear, IAuctionHouse ah,
     IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs, IQuests quests, ITradeNpc trade, IEvents events) : IBrain
 {
     const byte AxeSkill = 5;
@@ -59,7 +59,7 @@ public sealed class BstBrain(
                 MainJob = Job.Bst, SubJob = Job.Whm, Advanced = true,
                 UnlockSteps = QuestDefs.Prereqs[Job.Bst].Concat(QuestDefs.Unlock[Job.Bst]).ToArray(),
                 GrindCfgFor = GrindCfg, Tag = "bst",
-            }).RunAsync(ct);
+            }, magic: magic).RunAsync(ct);
 
     LevelGrind.Config GrindCfg(byte job) => new()
     {

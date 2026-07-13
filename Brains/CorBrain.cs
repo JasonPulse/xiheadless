@@ -11,7 +11,7 @@ namespace XiHeadless.Brains;
 /// whole bracket — so the melee fallback is DAGGER (skill 2), not sword. RDM phases ride a sword.
 /// Gear: network-gnomes COR guide lv1-30 bracket, ids verified vs the server DB (guns omitted — unusable).
 public sealed class CorBrain(
-    IPerception p, INavigation nav, ICombat combat, IZoning zoning, IGear gear, IAuctionHouse ah,
+    IPerception p, INavigation nav, ICombat combat, IMagic magic, IZoning zoning, IGear gear, IAuctionHouse ah,
     IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs, IQuests quests, ITradeNpc trade, IEvents events) : IBrain
 {
     const byte DaggerSkill = 2;
@@ -64,7 +64,7 @@ public sealed class CorBrain(
                 UnlockSteps = QuestDefs.Unlock[Job.Cor],   // "Luck of the Draw"
                 StealthUnlock = true, UnlockTrekZone = "Aht_Urhgan_Whitegate", UnlockTrekZoneId = 50,
                 GrindCfgFor = GrindCfg, Tag = "cor",
-            }).RunAsync(ct);
+            }, magic: magic).RunAsync(ct);
 
     LevelGrind.Config GrindCfg(byte job) => new()
     {

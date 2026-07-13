@@ -62,7 +62,7 @@ public sealed class WhmBrain(
             {
                 MainJob = Job.Whm, SubJob = 0, MainTarget = 0,
                 GrindCfgFor = _ => BuildCfg(), Tag = "whm",
-            }).RunAsync(ct);
+            }, magic: magic).RunAsync(ct);
     }
 
     LevelGrind.Config BuildCfg() => new()

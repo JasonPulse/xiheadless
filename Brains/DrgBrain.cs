@@ -13,7 +13,7 @@ namespace XiHeadless.Brains;
 ///     Cutauleon, and answer the win CS with a NON-ZERO option (the wyvern's name; 0 = decline) —
 ///     battlefield entry/fight/CS-option are not expressible as QuestRunner steps yet.
 public sealed class DrgBrain(
-    IPerception p, INavigation nav, ICombat combat, IZoning zoning, IGear gear, IAuctionHouse ah,
+    IPerception p, INavigation nav, ICombat combat, IMagic magic, IZoning zoning, IGear gear, IAuctionHouse ah,
     IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs, IQuests quests, ITradeNpc trade, IEvents events) : IBrain
 {
     const byte PolearmSkill = 8;              // LSB skill enum (Polearm=8 — verified vs the generated WS table)
@@ -53,7 +53,7 @@ public sealed class DrgBrain(
                 UnlockSteps = QuestDefs.Unlock[Job.Drg],   // "The Holy Crest"
                 UnlockStockItems = new[] { (Pickaxe, 1) }, StealthUnlock = true,
                 GrindCfgFor = GrindCfg, Tag = "drg",
-            }).RunAsync(ct);
+            }, magic: magic).RunAsync(ct);
 
     LevelGrind.Config GrindCfg(byte job) => new()
     {

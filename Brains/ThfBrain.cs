@@ -5,7 +5,7 @@ namespace XiHeadless.Brains;
 /// Config only: gear bracket (daggers + the job-shared leather set), dagger WS, THF ability rotation.
 /// Subjob (MNK per user) comes later — it needs its own subjob-quest item run at 18+.
 public sealed class ThfBrain(
-    IPerception p, INavigation nav, ICombat combat, IZoning zoning, IGear gear,
+    IPerception p, INavigation nav, ICombat combat, IMagic magic, IZoning zoning, IGear gear,
     IAuctionHouse ah, IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs) : IBrain
 {
     const byte DaggerSkill = 2;
@@ -36,7 +36,7 @@ public sealed class ThfBrain(
             {
                 MainJob = Job.Thf, SubJob = Job.War, Advanced = false,   // user roster: THF/WAR
                 GrindCfgFor = GrindCfg, Tag = "thf",
-            }).RunAsync(ct);
+            }, magic: magic).RunAsync(ct);
 
     LevelGrind.Config GrindCfg(byte job)
     {

@@ -5,7 +5,7 @@ namespace XiHeadless.Brains;
 /// path until the target level. H2H needs no weapon purchases early (fists work); armor rides whatever
 /// the character owns (the leather/beetle sets are job-shared).
 public sealed class MnkBrain(
-    IPerception p, INavigation nav, ICombat combat, IZoning zoning, IGear gear,
+    IPerception p, INavigation nav, ICombat combat, IMagic magic, IZoning zoning, IGear gear,
     IAuctionHouse ah, IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs, ILifecycle lifecycle) : IBrain
 {
     const byte TargetLevel = 20;   // MNK 20 = full WAR/MNK sub once WAR main reaches 40 (user goal)

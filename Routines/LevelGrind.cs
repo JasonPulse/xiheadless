@@ -21,7 +21,11 @@ public sealed class LevelGrind(
         public Func<CancellationToken, Task> Equip = _ => Task.CompletedTask;  // re-run on level-up
         public Func<byte, byte> WepSkillForLevel = _ => 1;  // skill id of the weapon equipped at this level
         public int ConMin = 2, ConMax = 2;        // con band to engage
-        public Func<uint, int, CancellationToken, Task> UseAbilities = (_, _, _) => Task.CompletedTask;
+        // SENTINEL defaults (shared statics, not fresh lambdas): JobLifecycle reference-compares against
+        // these to know a brain wired NO kit, and injects the generic JobKits rotation for the job.
+        public static readonly Func<uint, int, CancellationToken, Task> NoAbilities = (_, _, _) => Task.CompletedTask;
+        public static readonly Func<CancellationToken, Task<bool>> NoHeal = _ => Task.FromResult(false);
+        public Func<uint, int, CancellationToken, Task> UseAbilities = NoAbilities;
         public int RestHpTrigger = 50;            // rest after a kill if HP% below this...
         public int RestHpTarget = 75;             // ...up to this HP%
         public int RestMpPct = 0;                 // also recover MP to this % (mages); 0 = HP-only (melee)
@@ -34,7 +38,7 @@ public sealed class LevelGrind(
         public string[] SkipMobNames = Array.Empty<string>();   // universal hazards only (sleep-lock Mandragora/Saplin)
         public Func<CancellationToken, Task> OnSetup = _ => Task.CompletedTask;     // one-time, after zone-in
         public Func<uint, CancellationToken, Task> Pull = (_, __) => Task.CompletedTask;   // ranged opener (WHM Dia)
-        public Func<CancellationToken, Task<bool>> EmergencyHeal = _ => Task.FromResult(false);
+        public Func<CancellationToken, Task<bool>> EmergencyHeal = NoHeal;
         public Func<CancellationToken, Task> PostKillHeal = _ => Task.CompletedTask;
         public Func<uint, CancellationToken, Task<bool>>? LedgePull;   // ranged hate yank for ledge mobs (WAR Provoke)
 

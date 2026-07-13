@@ -12,7 +12,7 @@ namespace XiHeadless.Brains;
 /// Gear: network-gnomes "Rune Fencer" guide lv1-29 bracket (light DD armor), ids verified vs the server
 /// DB (the guide's Kampf set is WAR/PLD-only there, so the Beetle+1 line is the 21-29 body instead).
 public sealed class RunBrain(
-    IPerception p, INavigation nav, ICombat combat, IZoning zoning, IGear gear, IAuctionHouse ah,
+    IPerception p, INavigation nav, ICombat combat, IMagic magic, IZoning zoning, IGear gear, IAuctionHouse ah,
     IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs, IQuests quests, ITradeNpc trade, IEvents events) : IBrain
 {
     const byte GreatSwordSkill = 4;
@@ -65,7 +65,7 @@ public sealed class RunBrain(
                 UnlockSteps = QuestDefs.Unlock[Job.Run],   // "Children of the Rune"
                 StealthUnlock = true, UnlockTrekZone = "Eastern_Adoulin", UnlockTrekZoneId = 257,
                 GrindCfgFor = GrindCfg, Tag = "run",
-            }).RunAsync(ct);
+            }, magic: magic).RunAsync(ct);
 
     LevelGrind.Config GrindCfg(byte job) => new()
     {

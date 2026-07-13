@@ -35,7 +35,7 @@ public sealed class JobLifecycle(
     IPerception p, INavigation nav, ICombat combat, IZoning zoning, IGear gear,
     IAuctionHouse ah, IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs,
     IQuests? quests, ITradeNpc? trade, IEvents? events, JobLifecycle.Config cfg, ILifecycle? lifecycle = null,
-    IChat? chat = null)
+    IChat? chat = null, IMagic? magic = null)
 {
     public sealed class Config
     {
@@ -236,18 +236,20 @@ public sealed class JobLifecycle(
                 g.HomeNation = dn;
                 g.AhZone = cfg.HomeCity;     // both swapped home cities have the AH (misc 0x200 verified)
             }
-            // CON CAPS ARE ROLE-AWARE (fleet field data 2026-07-12): on a bot economy the AH is EMPTY, so
-            // chars fight ungeared — fragile jobs (mage/support/light DD) lose fights the geared duo won.
-            // Live evidence: lvl-1 BRD lost to a con-2 rabbit (17 deaths/h); lvl-12 RDM lost to con-3
-            // Mist_Lizards (14 deaths/h, re-dying on the same mob). Heavy DD/tanks keep the proven bands.
-            bool sturdy = Game.PartyRoles.IsHeavyDd(job) || Game.PartyRoles.PrimaryOf(job) == Game.PartyRoles.Role.Tank;
+            // COMBAT KIT injection: most fleet brains are gear+quest configs with NO UseAbilities/EmergencyHeal
+            // — they pure-melee'd every fight (live: a lvl-1 BRD never sang, lost to a con-2 rabbit 17x/h).
+            // Inject the generic per-job kit when the brain left the sentinels in place; curated brains
+            // (WarBrain/BlmBrain) keep their own rotations untouched.
+            JobKits.Apply(g, job, combat, magic, p, cfg.Tag);
+            // (The 2026-07-12 role-aware con caps were REVERTED: the death-loopers' real defect was fighting
+            // with NO JOB KIT — a lvl-1 BRD that actually sings kills far above these caps (user). The kit
+            // injection below is the fix; con bands stay as the brains tuned them.)
             if (plan is (string zone, ushort id))
             {
                 g.FixedZone = zone; g.FixedZoneId = id;
                 g.TravelVia = id == cfg.SafeGateZoneId ? cfg.SafeGateVia : (ushort)0;
                 g.RecoveryTravel = c => RecoverToHuntZone(job, c);
-                if (p.World.MainJobLevel < cfg.BabyUntil) { g.ConMin = 0; g.ConMax = sturdy ? 3 : 1; g.RoamHop = 25f; }
-                else if (p.World.MainJobLevel < 15) g.ConMax = Math.Min(g.ConMax, sturdy ? 3 : 2);
+                if (p.World.MainJobLevel < cfg.BabyUntil) { g.ConMin = 0; g.ConMax = 4; g.RoamHop = 25f; }
                 // Exit when the gated band should ADVANCE (level crossed into another zone) or `done` fires.
                 g.Done = () => done() || cfg.HuntZonePlan(p.World.MainJobLevel)?.id != id;
             }

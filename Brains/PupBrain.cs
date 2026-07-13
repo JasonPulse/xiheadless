@@ -11,7 +11,7 @@ namespace XiHeadless.Brains;
 /// hand-to-hand (skill 1) like a lesser MNK until pet support exists.
 /// Gear: network-gnomes PUP guide lv1-30 bracket (baghnakhs + light cloth), ids verified vs the server DB.
 public sealed class PupBrain(
-    IPerception p, INavigation nav, ICombat combat, IZoning zoning, IGear gear, IAuctionHouse ah,
+    IPerception p, INavigation nav, ICombat combat, IMagic magic, IZoning zoning, IGear gear, IAuctionHouse ah,
     IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs, IQuests quests, ITradeNpc trade, IEvents events) : IBrain
 {
     const byte H2HSkill = 1;
@@ -54,7 +54,7 @@ public sealed class PupBrain(
                 UnlockSteps = QuestDefs.Unlock[Job.Pup],   // "No Strings Attached"
                 StealthUnlock = true, UnlockTrekZone = "Bastok_Markets", UnlockTrekZoneId = 235,
                 GrindCfgFor = GrindCfg, Tag = "pup",
-            }).RunAsync(ct);
+            }, magic: magic).RunAsync(ct);
 
     LevelGrind.Config GrindCfg(byte job) => new()
     {

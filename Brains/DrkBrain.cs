@@ -9,7 +9,7 @@ namespace XiHeadless.Brains;
 /// no weapon skills), so it is already rule-compliant. TODO: KillWith counts a kill when the target's HP
 /// hits 0 nearby — it doesn't verify WE landed the blow, so the 100-count may drift on contested mobs.
 public sealed class DrkBrain(
-    IPerception p, INavigation nav, ICombat combat, IZoning zoning, IGear gear, IAuctionHouse ah,
+    IPerception p, INavigation nav, ICombat combat, IMagic magic, IZoning zoning, IGear gear, IAuctionHouse ah,
     IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs, IQuests quests, ITradeNpc trade, IEvents events) : IBrain
 {
     const byte ScytheSkill = 7;               // LSB skill enum (Scythe=7 — verified vs the generated WS table)
@@ -47,7 +47,7 @@ public sealed class DrkBrain(
                 MainJob = Job.Drk, SubJob = Job.War, Advanced = true,
                 UnlockSteps = QuestDefs.Unlock[Job.Drk],   // "Blade of Darkness"; KillWith(Chaosbringer,100) is rule-compliant
                 GrindCfgFor = GrindCfg, Tag = "drk",
-            }).RunAsync(ct);
+            }, magic: magic).RunAsync(ct);
 
     LevelGrind.Config GrindCfg(byte job) => new()
     {

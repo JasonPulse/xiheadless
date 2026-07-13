@@ -8,7 +8,7 @@ namespace XiHeadless.Brains;
 /// between the two examines — QuestRunner has no "clear the spawned NMs" step, so the second examine
 /// will fail until that fight is handled (live work needed).
 public sealed class NinBrain(
-    IPerception p, INavigation nav, ICombat combat, IZoning zoning, IGear gear, IAuctionHouse ah,
+    IPerception p, INavigation nav, ICombat combat, IMagic magic, IZoning zoning, IGear gear, IAuctionHouse ah,
     IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs, IQuests quests, ITradeNpc trade, IEvents events) : IBrain
 {
     const byte KatanaSkill = 9;               // LSB skill enum (Katana=9 — verified vs the generated WS table)
@@ -58,7 +58,7 @@ public sealed class NinBrain(
                 MainJob = Job.Nin, SubJob = Job.War, Advanced = true,
                 UnlockSteps = QuestDefs.Unlock[Job.Nin],   // "Ayame and Kaede"
                 GrindCfgFor = GrindCfg, Tag = "nin",
-            }).RunAsync(ct);
+            }, magic: magic).RunAsync(ct);
 
     LevelGrind.Config GrindCfg(byte job) => new()
     {

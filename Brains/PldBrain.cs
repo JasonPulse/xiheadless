@@ -7,7 +7,7 @@ namespace XiHeadless.Brains;
 /// (Navigation/NavLinks) now bridges the shelf -> pool descent, so QuestRunner can reach and trigger them
 /// (the qm use messageSpecial — pure Talk trigger, retried). Needs a Revival Tree Root (940) for Squire I.
 public sealed class PldBrain(
-    IPerception p, INavigation nav, ICombat combat, IZoning zoning, IGear gear, IAuctionHouse ah,
+    IPerception p, INavigation nav, ICombat combat, IMagic magic, IZoning zoning, IGear gear, IAuctionHouse ah,
     IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs, IQuests quests, ITradeNpc trade, IEvents events,
     ILifecycle lifecycle, IChat chat) : IBrain
 {
@@ -81,7 +81,7 @@ public sealed class PldBrain(
                 StealthUnlock = true,                       // the overland trek to San d'Oria crosses lv30-40 aggro
                 UnlockTrekZone = "Southern_San_dOria", UnlockTrekZoneId = 230,
                 GrindCfgFor = GrindCfg, Tag = "pld",
-            }, chat: chat).RunAsync(ct);
+            }, chat: chat, magic: magic).RunAsync(ct);
 
     LevelGrind.Config GrindCfg(byte job) => new()
     {

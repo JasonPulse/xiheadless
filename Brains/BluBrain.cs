@@ -10,7 +10,7 @@ namespace XiHeadless.Brains;
 ///   3. Seesaw: level BLU main / WAR sub (JobLeveling switches whenever WAR < ceil(BLU/2)).
 /// Gear: network-gnomes BLU guide lv1-30 bracket (sword + light DD), ids verified vs the server DB.
 public sealed class BluBrain(
-    IPerception p, INavigation nav, ICombat combat, IZoning zoning, IGear gear, IAuctionHouse ah,
+    IPerception p, INavigation nav, ICombat combat, IMagic magic, IZoning zoning, IGear gear, IAuctionHouse ah,
     IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs, IQuests quests, ITradeNpc trade, IEvents events) : IBrain
 {
     const byte SwordSkill = 3;
@@ -59,7 +59,7 @@ public sealed class BluBrain(
                 UnlockSteps = QuestDefs.Unlock[Job.Blu],   // "An Empty Vessel"
                 StealthUnlock = true, UnlockTrekZone = "Aht_Urhgan_Whitegate", UnlockTrekZoneId = 50,
                 GrindCfgFor = GrindCfg, Tag = "blu",
-            }).RunAsync(ct);
+            }, magic: magic).RunAsync(ct);
 
     LevelGrind.Config GrindCfg(byte job) => new()
     {

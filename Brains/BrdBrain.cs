@@ -8,7 +8,7 @@ namespace XiHeadless.Brains;
 ///   3. Seesaw: level BRD main / WHM sub (JobLeveling switches whenever WHM < ceil(BRD/2)).
 /// Gear: network-gnomes BRD guide lv1-38 bracket (dagger + light cloth), ids verified vs the server DB.
 public sealed class BrdBrain(
-    IPerception p, INavigation nav, ICombat combat, IZoning zoning, IGear gear, IAuctionHouse ah,
+    IPerception p, INavigation nav, ICombat combat, IMagic magic, IZoning zoning, IGear gear, IAuctionHouse ah,
     IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs, IQuests quests, ITradeNpc trade, IEvents events) : IBrain
 {
     const byte DaggerSkill = 2;
@@ -56,7 +56,7 @@ public sealed class BrdBrain(
                 UnlockStockItems = new[] { (SheetOfParchment, 1) }, StealthUnlock = true,
                 UnlockTrekZone = "Lower_Jeuno", UnlockTrekZoneId = 245,
                 GrindCfgFor = GrindCfg, Tag = "brd",
-            }).RunAsync(ct);
+            }, magic: magic).RunAsync(ct);
 
     LevelGrind.Config GrindCfg(byte job) => new()
     {

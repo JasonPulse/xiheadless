@@ -10,7 +10,7 @@ namespace XiHeadless.Brains;
 /// Gear: network-gnomes SCH guide lv1-29 bracket (wand + mage cloth, shared with the WHM phases since
 /// every piece is WHM+SCH wearable), ids verified vs the server DB.
 public sealed class SchBrain(
-    IPerception p, INavigation nav, ICombat combat, IZoning zoning, IGear gear, IAuctionHouse ah,
+    IPerception p, INavigation nav, ICombat combat, IMagic magic, IZoning zoning, IGear gear, IAuctionHouse ah,
     IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs, IQuests quests, ITradeNpc trade, IEvents events) : IBrain
 {
     const byte ClubSkill = 11;                // wands are clubs; both SCH and the WHM phases swing them
@@ -57,7 +57,7 @@ public sealed class SchBrain(
                 UnlockStockItems = new[] { (Rolanberry, 12) }, StealthUnlock = true,
                 UnlockTrekZone = "The_Eldieme_Necropolis_[S]", UnlockTrekZoneId = 175,
                 GrindCfgFor = GrindCfg, Tag = "sch",
-            }).RunAsync(ct);
+            }, magic: magic).RunAsync(ct);
 
     LevelGrind.Config GrindCfg(byte job) => new()
     {
