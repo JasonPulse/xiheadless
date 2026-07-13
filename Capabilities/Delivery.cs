@@ -25,7 +25,7 @@ internal static class DeliveryPacket
     }
 }
 
-public sealed class Delivery(ISession s) : IDelivery
+public sealed class Delivery(ISession s, IZoning zoning) : IDelivery
 {
     /// Enter the bot's Mog House (required before the delivery box / job change work) by sending the
     /// current zone's entrance maprect. Entrances come from Game.ZoneGraph.MogHouseEntry (generated from
@@ -38,7 +38,7 @@ public sealed class Delivery(ISession s) : IDelivery
             Log.Info($"[delivery] no Mog House entrance in the data for zone {s.State.ZoneId}");
             return false;
         }
-        s.Enqueue(ZoneRequestPacket.Build(rect, s.State.X, s.State.Y, s.State.Z)); // 0x5E maprect -> sets m_moghouseID
+        zoning.RequestZoneLine(rect); // 0x5E maprect -> sets m_moghouseID (the ONE zone-request entry point)
         await Task.Delay(1500, ct);
         return true;
     }
@@ -51,7 +51,7 @@ public sealed class Delivery(ISession s) : IDelivery
     /// existing DoZoneChange handles, same as entry.
     public async Task ExitMogHouse(CancellationToken ct = default)
     {
-        s.Enqueue(ZoneRequestPacket.Build(MogHouseExitRect, s.State.X, s.State.Y, s.State.Z));
+        zoning.RequestZoneLine(MogHouseExitRect);
         await Task.Delay(1500, ct);
     }
 

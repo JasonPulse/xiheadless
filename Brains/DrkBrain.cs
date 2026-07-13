@@ -59,7 +59,6 @@ public sealed class DrkBrain(
         WepSkillForLevel = _ => job == Job.War ? GreatAxeSkill : ScytheSkill,
         ConMin = 1, ConMax = 3,
         CleanPullNeighborCon = 3,
-        SkipMobNames = new[] { "Saplin", "Mandragora" },
         RestHpTrigger = 70, RestHpTarget = 90,
         Tag = "drk",
     };

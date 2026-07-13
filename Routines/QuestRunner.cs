@@ -48,13 +48,7 @@ public sealed class QuestRunner(
         // ENFORCE arrival: dungeon paths stall mid-way (mesh gaps/timeouts) — the old single-leg walk once
         // stopped 150y short and the nearest-entity search then TALKED TO A GOBLIN. Retry legs; if we still
         // can't get near the step coords, fail the step honestly instead of eventing at whatever's nearby.
-        for (int leg = 0; leg < 3 && p.DistanceTo(step.X, step.Z) > 10f && !ct.IsCancellationRequested; leg++)
-        {
-            nav.MoveTo(step.X, step.Y, step.Z);
-            for (int t = 0; t < 90000 && nav.IsMoving && !ct.IsCancellationRequested; t += 100) await Task.Delay(100, ct);
-            nav.Stop();
-            await Task.Delay(500, ct);
-        }
+        await NavRoutines.WalkTo(nav, p, step.X, step.Z, within: 10f, ct, y: step.Y, legs: 3);
         if (p.DistanceTo(step.X, step.Z) > 12f)
         {
             Log.Info($"[{tag}] couldn't reach step coords ({step.X:F0},{step.Z:F0}) — stopped {p.DistanceTo(step.X, step.Z):F0}y away");
@@ -89,13 +83,10 @@ public sealed class QuestRunner(
             // VERTICAL-LAYER correction: Ordelle's pool sits UNDER a walkable overhang — the planar walk
             // landed 29y ABOVE the object (my Y=30, qm Y=1) where the server's ~6y interact range fails.
             // Re-approach the object's LIVE 3D position (entity Y beats the step's approximate Y).
+            // Outer loop keeps the Y-layer check (WalkTo's arrival test is 2D; the wrong vertical layer
+            // at the right X/Z must still retry).
             for (int a = 0; a < 3 && (MathF.Abs(p.World.Y - npc.Y) > 5f || p.DistanceTo(npc.X, npc.Z) > 5f) && !ct.IsCancellationRequested; a++)
-            {
-                nav.MoveTo(npc.X, npc.Y, npc.Z);
-                for (int t = 0; t < 60000 && nav.IsMoving && !ct.IsCancellationRequested; t += 200) await Task.Delay(200, ct);
-                nav.Stop();
-                await Task.Delay(500, ct);
-            }
+                await NavRoutines.WalkTo(nav, p, npc.X, npc.Z, within: 5f, ct, y: npc.Y, legTimeoutMs: 60_000);
             if (MathF.Abs(p.World.Y - npc.Y) > 5f || p.DistanceTo(npc.X, npc.Z) > 6f)
             {
                 Log.Info($"[{tag}] WRONG LEVEL/RANGE: me ({p.World.X:F0},{p.World.Y:F0},{p.World.Z:F0}) vs object ({npc.X:F0},{npc.Y:F0},{npc.Z:F0}) — failing step honestly");
@@ -122,9 +113,7 @@ public sealed class QuestRunner(
             if (near is not null)
             {
                 Log.Info($"[{tag}] '{near.Name}' visible at {p.DistanceTo(near.X, near.Z):F0}y — approaching directly");
-                nav.MoveTo(near.X, near.Z);
-                for (int t = 0; t < 20000 && nav.IsMoving && !ct.IsCancellationRequested; t += 200) await Task.Delay(200, ct);
-                nav.Stop();
+                await NavRoutines.WalkTo(nav, p, near.X, near.Z, within: 3f, ct, legTimeoutMs: 20_000);
                 await Task.Delay(1000, ct);
                 npc = p.Nearest(e => e.Id != p.World.MyId && e.Name.Length > 0 && p.DistanceTo(e.X, e.Z) <= NpcReach);
             }
@@ -213,7 +202,8 @@ public sealed class QuestRunner(
         int killed = 0;
         while (killed < count && !ct.IsCancellationRequested)
         {
-            var mob = p.Nearest(e => e.IsMob && e.Hpp > 0);
+            var mob = p.Nearest(e => e.IsMob && e.Hpp > 0 && CombatRoutines.NotObject(e)
+                && !CombatRoutines.SleepLockMobs.Any(n => e.Name.Contains(n, StringComparison.OrdinalIgnoreCase)));
             if (mob is null) { await Task.Delay(2000, ct); continue; }
             if (await KillRoutine.Fight(combat, p, nav, gear, mob, fightCon: 4, hooks, breakOffHpp: 0, ct))
             {

@@ -74,7 +74,6 @@ public sealed class WhmBrain(
         Equip = Equip,
         WepSkillForLevel = _ => ClubSkill,
         ConMin = 2, ConMax = 4,                                // lvl-1 cons everything EvenMatch; cap at 4
-        SkipMobNames = new[] { "Saplin", "Mandragora" },       // sleep-lock = death for a squishy mage
         SellJunkWhenFull = true, SellAtItems = 18,             // SELL DROPS to fund upgrades (no grants)
         OnRestock = Restock,
         Pull = Pull,
@@ -120,33 +119,31 @@ public sealed class WhmBrain(
         await ShopRoutines.BuyItem(ah, p, inv, id, Keep, ShopRoutines.NoFree, ct);
     }
 
+    // (item, slot, min level) — ascending per slot, so the best wearable OWNED piece wins per slot
+    // (EquipSet skips unowned; the server ignores over-level). The old hand-rolled inv.Has ladder is gone.
+    static readonly (ushort item, byte slot, byte lvl)[] GearTable =
+    {
+        (AshClub, EquipSlot.Main, 1),
+        (BrassHairpin, EquipSlot.Head, 10),
+        (BattleGloves, EquipSlot.Hands, 14),
+        (ChestnutClub, EquipSlot.Main, 16),
+        (SilverHairpin, EquipSlot.Head, 20),
+        (BaronsSaio, EquipSlot.Body, 20),
+        (BaronsSlops, EquipSlot.Legs, 20),
+        (PixieMace, EquipSlot.Main, 24),
+        (HolyPhial, EquipSlot.Neck, 26),
+        (DevoteesMitts, EquipSlot.Hands, 27),
+        (SeersTunic, EquipSlot.Body, 29),
+        (SeersPumps, EquipSlot.Feet, 29),
+        (MelampusStaff, EquipSlot.Main, 29),
+        (PeacockCharm, EquipSlot.Neck, 33),
+        (HolyMaul, EquipSlot.Main, 38),
+    };
+
     async Task Equip(CancellationToken ct)
     {
-        // Best owned weapon for our level + armor pieces low->high per slot in one EquipSet: the server
-        // ignores over-level pieces and later equips replace earlier ones, so each slot ends at the best
-        // wearable item this character owns.
-        byte lvl = p.World.MainJobLevel;
-        ushort club = (inv.Has(HolyMaul) && lvl >= 38) ? HolyMaul
-                    : (inv.Has(MelampusStaff) && lvl >= 29) ? MelampusStaff
-                    : (inv.Has(PixieMace) && lvl >= 24) ? PixieMace
-                    : (inv.Has(ChestnutClub) && lvl >= 16) ? ChestnutClub : AshClub;
-        var set = new List<(byte, uint)>();
-        if (inv.Has(club)) set.Add(((byte)EquipSlot.Main, club));
-        if (inv.Has(BrassHairpin)) set.Add(((byte)EquipSlot.Head, BrassHairpin));
-        if (inv.Has(BattleGloves)) set.Add(((byte)EquipSlot.Hands, BattleGloves));
-        if (inv.Has(SilverHairpin)) set.Add(((byte)EquipSlot.Head, SilverHairpin));
-        if (inv.Has(BaronsSaio)) set.Add(((byte)EquipSlot.Body, BaronsSaio));
-        if (inv.Has(BaronsSlops)) set.Add(((byte)EquipSlot.Legs, BaronsSlops));
-        if (inv.Has(HolyPhial)) set.Add(((byte)EquipSlot.Neck, HolyPhial));
-        if (inv.Has(DevoteesMitts)) set.Add(((byte)EquipSlot.Hands, DevoteesMitts));
-        if (inv.Has(SeersTunic)) set.Add(((byte)EquipSlot.Body, SeersTunic));
-        if (inv.Has(SeersPumps)) set.Add(((byte)EquipSlot.Feet, SeersPumps));
-        if (inv.Has(PeacockCharm)) set.Add(((byte)EquipSlot.Neck, PeacockCharm));
-        if (set.Count > 0)
-        {
-            int n = await gear.EquipSet(set, ct);
-            Log.Info($"[whm] equipped {n}/{set.Count} (lvl {p.World.MainJobLevel}, club skill {gear.SkillLevel(ClubSkill)})");
-        }
+        var (n, total) = await GearRoutines.EquipByLevel(gear, p, GearTable, ct);
+        Log.Info($"[whm] equipped {n}/{total} (lvl {p.World.MainJobLevel}, club skill {gear.SkillLevel(ClubSkill)})");
         await LearnIfReady(ScrollDia, Spell.Dia, 3, ct);
         await LearnIfReady(ScrollCure, Spell.Cure, 5, ct);
     }

@@ -57,13 +57,8 @@ public sealed class Hunter(INavigation nav, IPerception p, Nation nation)
     public async Task GoToCamp(CancellationToken ct)
     {
         if (Camp() is not { } c || p.DistanceTo(c.x, c.z) <= 15f) return;
-        nav.MoveTo(c.x, c.y, c.z);
-        // Bail if we die en route (e.g. aggro while walking) — otherwise we'd keep walking the corpse the full
-        // ~90s to the anchor before the brain's top-of-loop Dead check ever runs, wasting the whole revive.
-        for (int t = 0; t < 90000 && p.DistanceTo(c.x, c.z) > 15f && nav.IsMoving && !ct.IsCancellationRequested
-             && !(p.World.MaxHp > 0 && p.World.Hpp == 0); t += 200)
-            await Task.Delay(200, ct);
-        nav.Stop();
+        // WalkTo aborts if we die en route (never walk the corpse the full ~90s to the anchor).
+        await NavRoutines.WalkTo(nav, p, c.x, c.z, within: 15f, ct, y: c.y);
     }
 
     // (In-zone roaming used to live here — camp-anchored sweeps and the Roam.Far committed march. Both are

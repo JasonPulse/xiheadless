@@ -23,6 +23,17 @@ public static class MailRoutines
         return slots;
     }
 
+    /// The standard bag-maintenance pair: bank surplus subjob-quest seals (1126/1127 — EX, unmailable,
+    /// keep-set survivors that pin the bag) into `container`, then optionally junk-sell in place.
+    /// This exact sequence was copy-pasted 5x across SubjobBrain/PartyLeechBrain.
+    public static async Task BagMaintenance(IInventory inv, IPerception p, CancellationToken ct,
+                                            HashSet<ushort>? sellKeep = null, byte container = MogCase)
+    {
+        await StashExcess(inv, p, 1126, keepMax: 2, ct, container);
+        await StashExcess(inv, p, 1127, keepMax: 2, ct, container);
+        if (sellKeep is not null) await inv.SellAllJunk(sellKeep, ct);
+    }
+
     /// Move every slot of `itemId` beyond `keepMax` into `container` (default Mog Case — works in the field;
     /// Mog Safe works only inside the Mog House). Bails after the FIRST failed move: a full container fails
     /// every slot, and the old retry-every-cycle churn burned ~36s per bag-clear forever once the Case filled.

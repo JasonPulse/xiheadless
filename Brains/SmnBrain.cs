@@ -64,7 +64,6 @@ public sealed class SmnBrain(
         WepSkillForLevel = lvl => lvl < 10 ? DaggerSkill : lvl >= 30 ? StaffSkill : ClubSkill,
         ConMin = 1, ConMax = 3,
         CleanPullNeighborCon = 3,
-        SkipMobNames = new[] { "Saplin", "Mandragora" },
         RestHpTrigger = 70, RestHpTarget = 90,
         RestMpPct = 40,                        // both phases are mages
         Tag = "smn",

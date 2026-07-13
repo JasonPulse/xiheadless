@@ -82,9 +82,7 @@ public sealed class PartyLeechBrain(
                     {
                         try
                         {
-                            await MailRoutines.StashExcess(inv, p, 1126, keepMax: 2, ct);
-                            await MailRoutines.StashExcess(inv, p, 1127, keepMax: 2, ct);
-                            await inv.SellAllJunk(Keep, ct);
+                            await MailRoutines.BagMaintenance(inv, p, ct, sellKeep: Keep);
                         }
                         catch (OperationCanceledException) { throw; }
                         catch (Exception e) { Log.Info($"[leech] bag maintenance failed (retrying next cycle): {e.Message}"); }
@@ -108,8 +106,7 @@ public sealed class PartyLeechBrain(
             // Same seal offload as the WAR: stash to the Mog Case (EX — mailing is server-refused).
             AtStaging = async c =>
             {
-                await MailRoutines.StashExcess(inv, p, 1126, keepMax: 2, c);
-                await MailRoutines.StashExcess(inv, p, 1127, keepMax: 2, c);
+                await MailRoutines.BagMaintenance(inv, p, c);
             },
         });
         var support = new PartySupport(party, p, nav, zoning, magic, combat);

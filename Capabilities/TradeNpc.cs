@@ -23,18 +23,18 @@ internal static class TradePacket
     }
 }
 
-public sealed class TradeNpc(ISession s) : ITradeNpc
+public sealed class TradeNpc(ISession s, IInventory inv) : ITradeNpc
 {
     public Task<bool> Trade(uint npcId, ushort npcIndex, IReadOnlyList<(ushort itemId, uint qty)> items, CancellationToken ct = default)
     {
         var slots = new List<(byte slot, uint qty)>();
         foreach (var (itemId, qty) in items)
         {
-            byte? slot = null;
-            foreach (var ((container, s2), id) in s.State.Inventory)
-                if (container == 0 && id == itemId) { slot = s2; break; }
-            if (slot is null) { Log.Info($"[trade] item {itemId} not in inventory — abort"); return Task.FromResult(false); }
-            slots.Add((slot.Value, qty));
+            // The shared slot scan (its snapshot guard matters — a bare enumeration here raced live
+            // inventory mutation, the exact crash class Inventory's helpers were centralized to kill).
+            ushort slot = inv.SlotOf(itemId);
+            if (slot == 0) { Log.Info($"[trade] item {itemId} not in inventory — abort"); return Task.FromResult(false); }
+            slots.Add(((byte)slot, qty));
         }
         Log.Info($"[trade] {items.Count} item(s) -> npc 0x{npcId:X} idx={npcIndex}");
         s.Enqueue(TradePacket.Build(npcId, npcIndex, slots));

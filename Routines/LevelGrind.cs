@@ -35,7 +35,7 @@ public sealed class LevelGrind(
         // would strand the party (e.g. the duo in Buburimu). Checked before SellJunkWhenFull; rate-limited.
         public Func<CancellationToken, Task>? OnBagFull;
         public Func<CancellationToken, Task> OnRestock = _ => Task.CompletedTask;   // post-sell, at the vendor with fresh gil
-        public string[] SkipMobNames = Array.Empty<string>();   // universal hazards only (sleep-lock Mandragora/Saplin)
+        public string[] SkipMobNames = CombatRoutines.SleepLockMobs;   // universal hazards only — the sanctioned sleep-lock pair by default
         public Func<CancellationToken, Task> OnSetup = _ => Task.CompletedTask;     // one-time, after zone-in
         public Func<uint, CancellationToken, Task> Pull = (_, __) => Task.CompletedTask;   // ranged opener (WHM Dia)
         public Func<CancellationToken, Task<bool>> EmergencyHeal = NoHeal;
@@ -421,10 +421,7 @@ public sealed class LevelGrind(
 
             Entity? mob;
             bool preferred = false;
-            // Non-combat objects that pass IsMob (chests, GoV books, teleports) — never valid combat targets.
-            bool NotObject(Entity e) => !e.Name.Contains("Manual") && !e.Name.Contains("Maw")
-                && !e.Name.Contains("Footprint") && !e.Name.Contains("Casket", StringComparison.OrdinalIgnoreCase)
-                && !e.Name.Contains("Hieroglyphics", StringComparison.OrdinalIgnoreCase);
+            bool NotObject(Entity e) => CombatRoutines.NotObject(e);   // shared: never fight chests/books/???s
             bool LeashOk(Entity e) => cfg.PullLeash <= 0f || p.DistanceTo(e.X, e.Z) <= cfg.PullLeash;
             bool BaseOk(Entity e) => e.IsMob && e.Hpp > 0 && e.Y < 100 && NotObject(e)
                 && !cfg.SkipMobNames.Any(n => e.Name.Contains(n, StringComparison.OrdinalIgnoreCase))

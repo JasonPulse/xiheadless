@@ -43,10 +43,7 @@ public static class ShopRoutines
             await Task.Delay(2000, ct);   // let inventory/position resettle after the zone change
         }
         Log.Info($"[sell] walking to {v.Name} at ({v.X:F0},{v.Z:F0})");
-        nav.MoveTo(v.X, v.Y, v.Z);
-        for (int t = 0; t < 60000 && p.DistanceTo(v.X, v.Z) > 5f && nav.IsMoving && !ct.IsCancellationRequested; t += 200)
-            await Task.Delay(200, ct);
-        nav.Stop();
+        await NavRoutines.WalkTo(nav, p, v.X, v.Z, within: 5f, ct, y: v.Y, legTimeoutMs: 60_000);
         var stock = await shop.Open(v.NpcId, ct);
         if (stock.Count == 0)
         {

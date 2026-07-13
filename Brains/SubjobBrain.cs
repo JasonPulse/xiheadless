@@ -174,8 +174,7 @@ public sealed class SubjobBrain(
                     // In town: bank seals into the MOG SAFE (the field-reachable Mog Case filled up at ~20).
                     if (await delivery.EnterMogHouse(c))
                     {
-                        await MailRoutines.StashExcess(inv, p, 1126, keepMax: 2, c, MailRoutines.MogSafe);
-                        await MailRoutines.StashExcess(inv, p, 1127, keepMax: 2, c, MailRoutines.MogSafe);
+                        await MailRoutines.BagMaintenance(inv, p, c, container: MailRoutines.MogSafe);
                         await delivery.ExitMogHouse(c);
                     }
                 },
@@ -197,7 +196,6 @@ public sealed class SubjobBrain(
                 ConMin = 2, ConMax = 3,
                 UseAbilities = hooks.UseAbilities,
                 LedgePull = hooks.LedgePull,
-                SkipMobNames = new[] { "Saplin", "Mandragora" },   // sleep-lock: the only allowed name skip
                 // Prefer a dropper while EITHER char needs its item (Rare/EX pool routes duplicates correctly).
                 PreferTarget = e => FarmItems.Select((f, i) => (f.mob, i)).Any(t => SpeciesNeeded(t.i)
                                     && e.Name.Contains(t.mob, StringComparison.OrdinalIgnoreCase)),
@@ -241,10 +239,8 @@ public sealed class SubjobBrain(
                 {
                     // Stash BEFORE selling: seals are keep-set (unsellable junk-pass survivors) and the Mog
                     // Case move works in the field — this is what actually frees slots when seals pile up.
-                    await MailRoutines.StashExcess(inv, p, 1126, keepMax: 2, c);
-                    await MailRoutines.StashExcess(inv, p, 1127, keepMax: 2, c);
-                    await inv.SellAllJunk(
-                        Keep.Concat(new[] { WarBrain.Weapon20 }).Concat(WarBrain.Armor21.Select(g => g.item)).ToHashSet(), c);
+                    await MailRoutines.BagMaintenance(inv, p, c,
+                        sellKeep: Keep.Concat(new[] { WarBrain.Weapon20 }).Concat(WarBrain.Armor21.Select(g => g.item)).ToHashSet());
                 },
                 SellAtItems = 24,
                 OnKill = _ =>   // per-kill farm telemetry: drop progress visible mid-run, not just at the end

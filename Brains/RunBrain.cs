@@ -77,7 +77,6 @@ public sealed class RunBrain(
         WepSkillForLevel = _ => job == Job.War ? GreatAxeSkill : GreatSwordSkill,
         ConMin = 1, ConMax = 3,
         CleanPullNeighborCon = 3,
-        SkipMobNames = new[] { "Saplin", "Mandragora" },
         RestHpTrigger = 70, RestHpTarget = 90,
         Tag = "run",
     };

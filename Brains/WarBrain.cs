@@ -67,8 +67,6 @@ public sealed class WarBrain(IPerception p, INavigation nav, ICombat combat, IMa
             WepSkillForLevel = lvl => job == Job.Mnk ? (byte)1 : lvl >= 5 ? WepSkill : (byte)3,
             ConMin = 1, ConMax = 4,   // IncrediblyEasy..EvenMatch
             UseAbilities = abils,
-            // Skip Mandragoras/Saplins: they Dream Flower / Sleepga-lock a low-DPS melee, which then bleeds out.
-            SkipMobNames = new[] { "Saplin", "Mandragora" },
             RestHpTrigger = 50, RestHpTarget = 75, RestMpPct = 0,   // no cure on WAR/MNK — HP rest only
             Tag = "war",
         };

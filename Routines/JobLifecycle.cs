@@ -116,9 +116,7 @@ public sealed class JobLifecycle(
     /// the QuestSteps that perform it. TryUnlock skips Steps when QuestComplete(QuestId, DonePort) is set.
     public readonly record struct UnlockQuest(int QuestId, ushort DonePort, IReadOnlyList<QuestStep> Steps);
 
-    static readonly string[] JobNames =
-        { "NON","WAR","MNK","WHM","BLM","RDM","THF","PLD","DRK","BST","BRD","RNG","SAM","NIN","DRG","SMN","BLU","COR","PUP","DNC","SCH","GEO","RUN" };
-    static string JN(byte j) => j < JobNames.Length ? JobNames[j] : j.ToString();
+    static string JN(byte j) => Game.PartyRoles.NameOf(j);
 
     void Log(string m) => XiHeadless.Log.Auto($"[{cfg.Tag}] {m}");
     int LevelOf(byte job) => p.World.JobLevels.TryGetValue(job, out var l) ? l : 0;
@@ -308,11 +306,7 @@ public sealed class JobLifecycle(
         if (cfg.UnlockTrekZone is { } trekZone && zoning.CurrentZone != cfg.UnlockTrekZoneId && StealthRoutines.HasPowders(inv))
         {
             Log($"stealth trek to {trekZone} (applying before moving)");
-            nav.Stop();
-            using var stealthCts = await StealthRoutines.BeginStealth(inv, p, ct);
-            await zoning.GoTo(trekZone, ct);
-            stealthCts.Cancel();
-            await Task.Delay(2000, ct);
+            await StealthRoutines.StealthCross(zoning, nav, inv, p, trekZone, ct);
         }
 
         // HOME POINT at the quest nation (user rule): set it EVERY unlock run so every death mid-quest revives

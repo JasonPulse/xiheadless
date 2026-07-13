@@ -61,7 +61,6 @@ public sealed class ThfBrain(
             ConMin = 1, ConMax = 3,
             CleanPullNeighborCon = 3,   // solo + fragile: never pull next to a same-band neighbor (nest chains kill us)
             UseAbilities = abils,
-            SkipMobNames = new[] { "Saplin", "Mandragora" },  // sleep-lock: the only allowed name skip
             // 70/90: chaining fights down to ~39% is what every death has in common — a higher floor makes
             // forced fights survivable.
             RestHpTrigger = 70, RestHpTarget = 90,

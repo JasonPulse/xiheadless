@@ -43,7 +43,7 @@ public sealed class CapabilitySet
         Events = new Events(s);
         Inventory = new Inventory(s);
         Gear = new Gear(s, Inventory);   // Gear queries the bag (Has/SlotOf) via the shared Inventory
-        Delivery = new Delivery(s);
+        Delivery = new Delivery(s, Zoning);
         GilGrant = new BotApi();   // HTTP client; auth/endpoint from deployment secrets (env)
         World = new WorldApi();     // read-only world session-count API; for GM/RMT self-stop
         Bazaar = new Bazaar(s);
@@ -54,7 +54,7 @@ public sealed class CapabilitySet
         Auction = new AuctionHouse(s);
         Quests = new Quests(Events);
         JobChange = new JobChange(s, Delivery);
-        TradeNpc = new TradeNpc(s);
+        TradeNpc = new TradeNpc(s, Inventory);
     }
 
     /// Hot-swap the navmesh after a zone change (the brain keeps its same INavigation/IZoning refs).

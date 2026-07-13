@@ -27,9 +27,8 @@ public sealed class HomePointBrain(IPerception p, INavigation nav, IZoning zonin
                 await StealthRoutines.EnsureStock(ah, p, inv, 12, Keep, ShopRoutines.NoFree, ct);
                 Log.Info($"[hp] powders: oil={inv.CountOf(StealthRoutines.SilentOil)} prism={inv.CountOf(StealthRoutines.PrismPowder)}");
             }
-            _ = await StealthRoutines.BeginStealth(inv, p, ct);
             Log.Info("[hp] crossing to Mhaura under Sneak+Invis to set the home point");
-            await zoning.GoTo("Mhaura", ct);
+            await StealthRoutines.StealthCross(zoning, nav, inv, p, "Mhaura", ct);
         }
         // Crystal-set MECHANICS (walk to the crystal, clear blocking zone-in events, Examine + blind EVENTEND
         // option 1 = SET_HOMEPOINT) live in the shared HomePointRoutines.SetHere — a hardened superset of the

@@ -43,7 +43,6 @@ public sealed class BlmBrain(
         ConMin = 1, ConMax = 3,                            // squishier than a melee — cap at DecentChallenge
         RoamHop = 60f,   // the default 150y overshot the safe bee ground into 3-threat clusters and a lv9 BLM
                          // got ganged there (died to a con-2 crow amid 3 threats). Shorter hops stay local.
-        SkipMobNames = new[] { "Saplin", "Mandragora" },   // sleep-lock = certain death for a squishy mage
         RestHpTrigger = 60, RestHpTarget = 90, RestMpPct = 40,
         Pull = Pull,                                       // Stone from range: DoT-free nuke opener
         UseAbilities = Nuke,                               // keep nuking through the fight (BLM's real damage)

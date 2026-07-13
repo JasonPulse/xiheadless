@@ -76,7 +76,6 @@ public sealed class CorBrain(
         WepSkillForLevel = _ => job == Job.Rdm ? SwordSkill : DaggerSkill,
         ConMin = 1, ConMax = 3,
         CleanPullNeighborCon = 3,
-        SkipMobNames = new[] { "Saplin", "Mandragora" },
         RestHpTrigger = 70, RestHpTarget = 90,
         RestMpPct = job == Job.Rdm ? 40 : 0,     // the RDM phase casts — rest MP back too
         Tag = "cor",

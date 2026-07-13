@@ -41,13 +41,7 @@ public static class HomePointRoutines
         // ENFORCE arrival: the crystal's onTrigger has a ~6y server-side range check, and a short-stopped
         // city walk makes the whole set silently no-op (the BLM's first Windurst set never took — it still
         // revived in Mhaura). Retry the approach; refuse to attempt from out of range.
-        for (int leg = 0; leg < 3 && p.DistanceTo(pos.x, pos.z) > 4f && !ct.IsCancellationRequested; leg++)
-        {
-            nav.MoveTo(pos.x, pos.y, pos.z);
-            for (int t = 0; t < 150000 && p.DistanceTo(pos.x, pos.z) > 3f && nav.IsMoving && !ct.IsCancellationRequested; t += 200) await Task.Delay(200, ct);
-            nav.Stop();
-            await Task.Delay(500, ct);
-        }
+        await NavRoutines.WalkTo(nav, p, pos.x, pos.z, within: 4f, ct, y: pos.y, legs: 3, legTimeoutMs: 150_000);
         float dist = p.DistanceTo(pos.x, pos.z);
         Log.Info($"[hp] at ({p.World.X:F0},{p.World.Z:F0}) — {dist:F1}y from the crystal");
         if (dist > 6f) { Log.Info("[hp] too far from the crystal — NOT attempting (the set would silently no-op)"); return false; }

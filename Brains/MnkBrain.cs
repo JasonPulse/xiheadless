@@ -25,7 +25,6 @@ public sealed class MnkBrain(
                     Keep = new HashSet<ushort> { 1126, 1127 },        // seals are never junk
                     WepSkillForLevel = _ => H2HSkill,
                     ConMin = 1, ConMax = 4,
-                    SkipMobNames = new[] { "Saplin", "Mandragora" },  // sleep-lock: the only allowed name skip
                     RestHpTrigger = 50, RestHpTarget = 80,
                     Tag = "mnk",
                 },

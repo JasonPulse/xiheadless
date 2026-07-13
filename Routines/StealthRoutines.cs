@@ -24,9 +24,23 @@ public static class StealthRoutines
         await ShopRoutines.BuyAtLeast(ah, p, inv, PrismPowder, to, keep, freeSpace, ct);
     }
 
+    /// The full stealth-crossing: apply standing still, walk the zone route, drop stealth on arrival.
+    /// (JobLifecycle and HomePointBrain carried copies; HomePointBrain's also leaked the maintainer —
+    /// it discarded the CTS, so Sneak/Invis re-application kept burning powders after arrival.)
+    public static async Task<bool> StealthCross(IZoning zoning, INavigation nav, IInventory inv, IPerception p,
+                                                string zone, CancellationToken ct)
+    {
+        nav.Stop();
+        using var cts = await BeginStealth(inv, p, ct);
+        bool ok = await zoning.GoTo(zone, ct);
+        cts.Cancel();
+        await Task.Delay(2000, ct);
+        return ok;
+    }
+
     /// Apply Sneak+Invis once (standing still — item use is interrupted by movement) then start the background
-    /// Maintain on a token linked to `ct`. Returns the CTS so the caller cancels it on arrival. The
-    /// apply-then-maintain-on-a-linked-token dance was duplicated in JobLifecycle/SubjobQuest/HomePointBrain.
+    /// Maintain on a token linked to `ct`. Returns the CTS so the caller cancels it on arrival (SubjobQuest
+    /// deliberately HOLDS its stealth past arrival, so it calls this directly instead of StealthCross).
     public static async Task<CancellationTokenSource> BeginStealth(IInventory inv, IPerception p, CancellationToken ct)
     {
         await Apply(inv, p, ct);

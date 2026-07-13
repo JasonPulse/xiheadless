@@ -95,7 +95,6 @@ public sealed class PldBrain(
         WepSkillForLevel = _ => SwordSkill,   // PLD rides swords; the WAR sub phase keeps its Great Axe (Equip)
         ConMin = 1, ConMax = 3,
         CleanPullNeighborCon = 3,
-        SkipMobNames = new[] { "Saplin", "Mandragora" },
         RestHpTrigger = 70, RestHpTarget = 90,
         Tag = "pld",
     };

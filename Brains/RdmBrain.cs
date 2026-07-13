@@ -61,7 +61,6 @@ public sealed class RdmBrain(
         WepSkillForLevel = _ => job == Job.Mnk ? (byte)1 : SwordSkill,   // MNK sub melees hand-to-hand
         ConMin = 1, ConMax = 3,
         CleanPullNeighborCon = 3,
-        SkipMobNames = new[] { "Saplin", "Mandragora" },
         RestHpTrigger = 70, RestHpTarget = 90,
         RestMpPct = job == Job.Rdm ? 40 : 0,             // RDM casts — rest MP back; the MNK sub is pure melee
         Tag = "rdm",

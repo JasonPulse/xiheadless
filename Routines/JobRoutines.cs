@@ -13,6 +13,15 @@ public static class JobRoutines
     static readonly ushort[] MogHouseCities =
         { 230, 231, 232,   234, 235, 236,   238, 239, 240, 241,   243, 244, 245, 246 };
 
+    /// The job worth traveling as: the char's strongest leveled job when it beats the current main by
+    /// `advantage`+ levels (the fleet safe-travel rule). 0 = travel as-is.
+    public static byte StrongestTravelJob(IPerception p, int advantage = 10)
+    {
+        var strongest = p.World.JobLevels.OrderByDescending(kv => kv.Value).FirstOrDefault();
+        return strongest.Key != 0 && strongest.Key != p.World.MainJob
+            && strongest.Value >= p.World.MainJobLevel + advantage ? strongest.Key : (byte)0;
+    }
+
     public static async Task<bool> ChangeJobViaMogHouse(
         IJobChange jobs, IZoning zoning, byte main, byte sub, string fallbackCity, CancellationToken ct)
     {

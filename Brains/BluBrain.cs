@@ -71,7 +71,6 @@ public sealed class BluBrain(
         WepSkillForLevel = _ => job == Job.War ? GreatAxeSkill : SwordSkill,
         ConMin = 1, ConMax = 3,
         CleanPullNeighborCon = 3,
-        SkipMobNames = new[] { "Saplin", "Mandragora" },
         RestHpTrigger = 70, RestHpTarget = 90,
         RestMpPct = job == Job.Blu ? 40 : 0,     // BLU casts — rest MP back too
         Tag = "blu",

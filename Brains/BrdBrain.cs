@@ -68,7 +68,6 @@ public sealed class BrdBrain(
         WepSkillForLevel = _ => job == Job.Whm ? ClubSkill : DaggerSkill,
         ConMin = 1, ConMax = 3,
         CleanPullNeighborCon = 3,
-        SkipMobNames = new[] { "Saplin", "Mandragora" },
         RestHpTrigger = 70, RestHpTarget = 90,
         RestMpPct = job == Job.Whm ? 40 : 0,     // the WHM phase casts — rest MP back too
         Tag = "brd",

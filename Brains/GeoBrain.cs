@@ -75,7 +75,6 @@ public sealed class GeoBrain(
         WepSkillForLevel = _ => ClubSkill,        // every phase (GEO and WHM) swings a wand
         ConMin = 1, ConMax = 3,
         CleanPullNeighborCon = 3,
-        SkipMobNames = new[] { "Saplin", "Mandragora" },
         RestHpTrigger = 70, RestHpTarget = 90,
         RestMpPct = 40,                           // mage on both sides of the seesaw — rest MP back
         Tag = "geo",

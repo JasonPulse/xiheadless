@@ -22,14 +22,13 @@ public sealed class FleetTestBrain(
         // real job. Skip entirely when already at the meet zone.
         if (zoning.CurrentZone != MeetZoneId)
         {
-            var strongest = p.World.JobLevels.OrderByDescending(kv => kv.Value).FirstOrDefault();
-            if (strongest.Key != 0 && strongest.Key != p.World.MainJob && strongest.Value >= p.World.MainJobLevel + 10)
+            if (JobRoutines.StrongestTravelJob(p) is var travelJob && travelJob != 0)
             {
-                Log.Always($"[fleettest] traveling as job {strongest.Key} lv{strongest.Value} (main is lv{p.World.MainJobLevel})");
+                Log.Always($"[fleettest] traveling as job {travelJob} (main is lv{p.World.MainJobLevel})");
                 byte realMain = p.World.MainJob;
-                await JobRoutines.ChangeJobViaMogHouse(jobs, zoning, strongest.Key, 0, MeetZone, ct);
+                await JobRoutines.ChangeJobViaMogHouse(jobs, zoning, travelJob, 0, MeetZone, ct);
                 if (!await zoning.GoTo(MeetZone, ct)) { Log.Always("[fleettest] couldn't reach the meet zone"); lifecycle.Logout(); return; }
-                await JobRoutines.ChangeJobViaMogHouse(jobs, zoning, realMain, strongest.Key, MeetZone, ct);
+                await JobRoutines.ChangeJobViaMogHouse(jobs, zoning, realMain, travelJob, MeetZone, ct);
             }
             else if (!await zoning.GoTo(MeetZone, ct)) { Log.Always("[fleettest] couldn't reach the meet zone"); lifecycle.Logout(); return; }
         }

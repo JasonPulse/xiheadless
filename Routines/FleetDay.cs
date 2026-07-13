@@ -48,8 +48,7 @@ public static class FleetDay
                 await hooks.GoToHuntZone(ct);
                 if (hooks.MeetSpot is { } meet)   // converge into shout range (180y) before recruiting
                 {
-                    nav.MoveTo(meet.x, meet.z);
-                    for (int t = 0; t < 120_000 && nav.IsMoving && !ct.IsCancellationRequested; t += 500) await Task.Delay(500, ct);
+                    await NavRoutines.WalkTo(nav, p, meet.x, meet.z, within: 3f, ct, legTimeoutMs: 120_000);
                 }
                 var finder = new PartyFinder(p, party, chat, nav, hooks.Tag);
                 long jobAnnounceMs = 0;

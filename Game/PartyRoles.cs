@@ -60,13 +60,19 @@ public static class PartyRoles
         _ => Role.None,
     };
 
+    // THE job-id <-> short-name table (was copied verbatim in PartyFinder, PartyCombat, and JobLifecycle).
+    static readonly string[] JobNames =
+        { "NON", "WAR", "MNK", "WHM", "BLM", "RDM", "THF", "PLD", "DRK", "BST", "BRD",
+          "RNG", "SAM", "NIN", "DRG", "SMN", "BLU", "COR", "PUP", "DNC", "SCH", "GEO", "RUN" };
+
+    /// Job id -> short name ("WAR"); out-of-range ids read as "ADV" (an unknown adventurer).
+    public static string NameOf(byte j) => j >= 1 && j < JobNames.Length ? JobNames[j] : "ADV";
+
     /// Job short-name (WAR/WHM/...) -> job id, for parsing "LFP WHM 18"-style responses. 0 = no match.
     public static byte ParseJobToken(string word)
     {
-        var names = new[] { "NON", "WAR", "MNK", "WHM", "BLM", "RDM", "THF", "PLD", "DRK", "BST", "BRD",
-                            "RNG", "SAM", "NIN", "DRG", "SMN", "BLU", "COR", "PUP", "DNC", "SCH", "GEO", "RUN" };
         var u = word.ToUpperInvariant();
-        for (byte i = 1; i < names.Length; i++) if (names[i] == u) return i;
+        for (byte i = 1; i < JobNames.Length; i++) if (JobNames[i] == u) return i;
         return 0;
     }
 }

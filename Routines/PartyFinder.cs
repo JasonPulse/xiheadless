@@ -198,7 +198,5 @@ public sealed class PartyFinder(IPerception p, IParty party, IChat chat, INaviga
         return string.Join("/", parts);
     }
 
-    static string JobName(byte j) => j is >= 1 and <= 22
-        ? new[] { "", "WAR", "MNK", "WHM", "BLM", "RDM", "THF", "PLD", "DRK", "BST", "BRD", "RNG",
-                  "SAM", "NIN", "DRG", "SMN", "BLU", "COR", "PUP", "DNC", "SCH", "GEO", "RUN" }[j] : "ADV";
+    static string JobName(byte j) => Game.PartyRoles.NameOf(j);
 }

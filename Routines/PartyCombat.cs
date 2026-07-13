@@ -101,7 +101,10 @@ public static class PartyCombat
     public static async Task BardPull(IMagic magic, IPerception p, INavigation nav, uint mobId,
                                       (float x, float z) camp, CancellationToken ct)
     {
-        magic.Cast(Spell.BattlefieldElegy, mobId);
+        // Line selectors with Ready gating — raw Cast on an unknown song is the historic silent no-op.
+        // Elegy (BRD 39) is the doctrine pull; a younger bard establishes hate with Requiem instead.
+        if (!magic.CastHighest(SpellLine.BattlefieldElegy, mobId) && !magic.CastHighest(SpellLine.FoeRequiem, mobId))
+        { Log.Info("[brd-pull] no pull song castable — aborting pull"); return; }
         await Task.Delay(3500, ct);              // song cast time — let it land before walking
         nav.MoveTo(camp.x, camp.z);
         // Wait for the mob to arrive near camp (it chases us), then sleep it there.
@@ -113,8 +116,8 @@ public static class PartyCombat
             if (dx * dx + dz * dz < 12f * 12f) break;                   // mob is at camp
             await Task.Delay(500, ct);
         }
-        magic.Cast(Spell.FoeLullaby, mobId);
-        await Task.Delay(2500, ct);
+        if (magic.CastHighest(SpellLine.FoeLullaby, mobId))   // sleep it AT camp (BRD 17+; gated, not blind)
+            await Task.Delay(2500, ct);
     }
 
     // ---- SATA choreography --------------------------------------------------------------------------------
@@ -133,8 +136,7 @@ public static class PartyCombat
         // Stand 2y behind the tank on the mob->tank line: pos = tank + normalize(tank - mob) * 2.
         float dx = tank.X - mob.X, dz = tank.Z - mob.Z;
         float len = MathF.Max(0.5f, MathF.Sqrt(dx * dx + dz * dz));
-        nav.MoveTo(tank.X + dx / len * 2f, tank.Z + dz / len * 2f);
-        for (int t = 0; t < 6000 && nav.IsMoving && !ct.IsCancellationRequested; t += 200) await Task.Delay(200, ct);
+        await NavRoutines.WalkTo(nav, p, tank.X + dx / len * 2f, tank.Z + dz / len * 2f, within: 1f, ct, legTimeoutMs: 6_000);
 
         await combat.UseAbility(Ability.SneakAttack, mobId, ct);
         await combat.UseAbility(Ability.TrickAttack, mobId, ct);
@@ -154,12 +156,9 @@ public static class PartyCombat
         if (mob is null || puller is null) return;
         float dx = mob.X - puller.X, dz = mob.Z - puller.Z;    // direction puller -> mob, extended past the mob = its back side
         float len = MathF.Max(0.5f, MathF.Sqrt(dx * dx + dz * dz));
-        nav.MoveTo(mob.X + dx / len * 2f, mob.Z + dz / len * 2f);
-        for (int t = 0; t < 6000 && nav.IsMoving && !ct.IsCancellationRequested; t += 200) await Task.Delay(200, ct);
+        await NavRoutines.WalkTo(nav, p, mob.X + dx / len * 2f, mob.Z + dz / len * 2f, within: 1f, ct, legTimeoutMs: 6_000);
         nav.Face(mobId);
     }
 
-    static string JobToken(byte j) => j is >= 1 and <= 22
-        ? new[] { "", "WAR", "MNK", "WHM", "BLM", "RDM", "THF", "PLD", "DRK", "BST", "BRD", "RNG",
-                  "SAM", "NIN", "DRG", "SMN", "BLU", "COR", "PUP", "DNC", "SCH", "GEO", "RUN" }[j] : "ADV";
+    static string JobToken(byte j) => Game.PartyRoles.NameOf(j);
 }

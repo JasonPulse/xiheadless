@@ -77,7 +77,6 @@ public sealed class RngBrain(
         WepSkillForLevel = lvl => job == Job.War ? GreatAxeSkill : lvl >= 28 ? DaggerSkill : AxeSkill,
         ConMin = 1, ConMax = 3,
         CleanPullNeighborCon = 3,
-        SkipMobNames = new[] { "Saplin", "Mandragora" },
         RestHpTrigger = 70, RestHpTarget = 90,
         Tag = "rng",
     };
