@@ -135,7 +135,7 @@ public static class PartyCombat
 
         // Stand 2y behind the tank on the mob->tank line: pos = tank + normalize(tank - mob) * 2.
         float dx = tank.X - mob.X, dz = tank.Z - mob.Z;
-        float len = MathF.Max(0.5f, MathF.Sqrt(dx * dx + dz * dz));
+        float len = MathF.Max(0.5f, Geometry.Dist2D(tank.X, tank.Z, mob.X, mob.Z));
         await NavRoutines.WalkTo(nav, p, tank.X + dx / len * 2f, tank.Z + dz / len * 2f, within: 1f, ct, legTimeoutMs: 6_000);
 
         await combat.UseAbility(Ability.SneakAttack, mobId, ct);
@@ -155,7 +155,7 @@ public static class PartyCombat
         var puller = p.World.Entities.GetValueOrDefault(pullerId);
         if (mob is null || puller is null) return;
         float dx = mob.X - puller.X, dz = mob.Z - puller.Z;    // direction puller -> mob, extended past the mob = its back side
-        float len = MathF.Max(0.5f, MathF.Sqrt(dx * dx + dz * dz));
+        float len = MathF.Max(0.5f, Geometry.Dist2D(mob.X, mob.Z, puller.X, puller.Z));
         await NavRoutines.WalkTo(nav, p, mob.X + dx / len * 2f, mob.Z + dz / len * 2f, within: 1f, ct, legTimeoutMs: 6_000);
         nav.Face(mobId);
     }

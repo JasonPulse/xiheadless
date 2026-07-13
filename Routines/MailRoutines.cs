@@ -11,17 +11,6 @@ public static class MailRoutines
     public const byte MogCase = 7;
     public const byte MogSafe = 1;   // Mog Safe: bigger, but moves to it only work INSIDE the Mog House
 
-    static List<(byte slot, ushort qty)> SlotsOf(IPerception p, ushort itemId)
-    {
-        var slots = new List<(byte slot, ushort qty)>();
-        foreach (var ((c, slot), id) in p.World.Inventory.ToArray())
-        {
-            if (c != 0 || slot == 0 || id != itemId) continue;
-            ushort q = p.World.InventoryQty.TryGetValue((c, slot), out var qq) && qq > 0 ? qq : (ushort)1;
-            slots.Add((slot, q));
-        }
-        return slots;
-    }
 
     /// The standard bag-maintenance pair: bank surplus subjob-quest seals (1126/1127 — EX, unmailable,
     /// keep-set survivors that pin the bag) into `container`, then optionally junk-sell in place.
@@ -40,7 +29,7 @@ public static class MailRoutines
     public static async Task<int> StashExcess(IInventory inv, IPerception p, ushort itemId, int keepMax,
                                               CancellationToken ct, byte container = MogCase)
     {
-        var slots = SlotsOf(p, itemId);
+        var slots = inv.SlotsOf(itemId);
         int excess = slots.Count - keepMax;
         if (excess <= 0) return 0;
 
@@ -58,10 +47,10 @@ public static class MailRoutines
     }
 
     /// Mail every slot of `itemId` beyond `keepMax` to `recipient` (city only; NOT for EX items).
-    public static async Task<int> MailExcess(IDelivery delivery, IPerception p, ushort itemId, int keepMax,
+    public static async Task<int> MailExcess(IDelivery delivery, IInventory inv, ushort itemId, int keepMax,
                                              string recipient, CancellationToken ct)
     {
-        var slots = SlotsOf(p, itemId);
+        var slots = inv.SlotsOf(itemId);
         int excess = slots.Count - keepMax;
         if (excess <= 0) return 0;
 

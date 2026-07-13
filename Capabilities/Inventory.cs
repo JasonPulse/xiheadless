@@ -113,6 +113,22 @@ public sealed class Inventory(ISession s) : IInventory
         foreach (var ((c, slot), id) in s.State.Inventory.ToArray()) if (c == 0 && id == itemId) return slot;
         return 0;
     }
+    public List<(byte slot, ushort qty)> SlotsOf(ushort itemId)
+    {
+        var slots = new List<(byte slot, ushort qty)>();
+        foreach (var ((c, slot), id) in s.State.Inventory.ToArray())
+        {
+            if (c != 0 || slot == 0 || id != itemId) continue;
+            slots.Add((slot, s.State.InventoryQty.TryGetValue((c, slot), out var q) && q > 0 ? q : (ushort)1));
+        }
+        return slots;
+    }
+    public int CountSlots()
+    {
+        int n = 0;
+        foreach (var ((c, slot), id) in s.State.Inventory.ToArray()) if (c == 0 && slot != 0 && id != 0) n++;
+        return n;
+    }
 
     public void UseItem(byte container, byte slot) =>
         s.Enqueue(UseItemPacket.Build(s.State.MyId, s.State.MyIndex, container, slot));
@@ -156,7 +172,7 @@ public sealed class Inventory(ISession s) : IInventory
         {
             // Find the next sellable junk slot (main inventory, not gil, not gear, not known-stuck).
             (byte c, byte slot, ushort id, ushort qty)? pick = null;
-            foreach (var ((c, slot), id) in s.State.Inventory)
+            foreach (var ((c, slot), id) in s.State.Inventory.ToArray())   // snapshot — same mutation guard as every scan above
             {
                 if (c != 0 || slot == 0 || id == 0 || keep.Contains(id) || _stuck.Contains((c, slot))) continue;
                 ushort q = s.State.InventoryQty.TryGetValue((c, slot), out var qq) && qq > 0 ? qq : (ushort)1;

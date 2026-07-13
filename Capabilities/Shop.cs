@@ -30,6 +30,7 @@ public sealed class Shop(ISession s) : IShop
         long start = s.State.NowMs;
         for (int attempt = 0; attempt < 6 && !ct.IsCancellationRequested; attempt++)
         {
+            s.State.LastEventDrivenUtc = DateTime.UtcNow;   // a shop Talk IS event-driven — warn off the auto-completer (Events.Trigger does the same)
             s.Enqueue(ActionPacket.Build(ActionPacket.Talk, npcId, idx));
             for (int t = 0; t < 4000 && s.State.Shop.Count == 0 && !ct.IsCancellationRequested; t += 100)
                 await Task.Delay(100, ct);

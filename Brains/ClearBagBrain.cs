@@ -5,10 +5,10 @@ namespace XiHeadless.Brains;
 /// frees slots. Logs gil + item count before/after, then logs out.
 public sealed class ClearBagBrain(IPerception p, IInventory inv, IShop shop, INavigation nav, IZoning zoning, IAuctionHouse ah, ILifecycle lifecycle) : IBrain
 {
-    static readonly HashSet<ushort> Keep = new()
-    {
-        16704, 16534, 13014, 17280, 13380, 13194, 13522,  // WAR gear + Onion Sword kept; only the bought crystal is junk.
-    };
+    // WAR gear + the starter sword kept; only the bought crystal is junk. Named sources, not raw ids.
+    static readonly HashSet<ushort> Keep =
+        new ushort[] { WarBrain.Weapon, GearRoutines.StarterSword }
+            .Concat(WarBrain.Armor.Select(g => g.item)).ToHashSet();
 
     public async Task RunAsync(CancellationToken ct)
     {

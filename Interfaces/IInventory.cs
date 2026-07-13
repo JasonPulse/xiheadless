@@ -21,6 +21,12 @@ public interface IInventory
     /// (never a real item), so 0 doubles as the "not found" sentinel.
     ushort SlotOf(ushort itemId);
 
+    /// Every main-bag slot holding `itemId`, with quantities (seals and other non-stackers span slots).
+    List<(byte slot, ushort qty)> SlotsOf(ushort itemId);
+
+    /// Occupied main-bag slots (bag-pressure metric — NOT item quantity).
+    int CountSlots();
+
     /// Drop `qty` of the item in (container, slot) — 0x028 ITEM_DUMP. Last-resort; prefer SellAllJunk.
     void Drop(byte container, byte slot, ushort qty);
 

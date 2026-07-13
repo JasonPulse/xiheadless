@@ -12,7 +12,7 @@ public static class RestRoutines
     public static bool StepAway(INavigation nav, IPerception p, float threatX, float threatZ, float dist)
     {
         float dx = p.World.X - threatX, dz = p.World.Z - threatZ;
-        float len = MathF.Max(1f, MathF.Sqrt(dx * dx + dz * dz));
+        float len = MathF.Max(1f, Geometry.Dist2D(p.World.X, p.World.Z, threatX, threatZ));
         float tx = p.World.X + dx / len * dist, tz = p.World.Z + dz / len * dist;
         if (!nav.CanReach(tx, p.World.Y, tz)) return false;
         nav.MoveTo(tx, tz);

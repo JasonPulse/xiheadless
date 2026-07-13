@@ -40,7 +40,8 @@ public sealed class PartyBrain(IParty party, IPerception p, INavigation nav, IZo
         // Converge on one fixed spot (by Manyny, the AH-area vendor) so we're near the partner — and so the
         // partner's entity (hence a real targid) is in view if the char-id-only lookup needs it.
         const float MeetX = 15f, MeetZ = -157f;
-        nav.MoveTo(MeetX, MeetZ);
+        if (!nav.CanReach(MeetX, p.World.Y, MeetZ)) Log.Info("[party] meet point off-mesh from here — holding in place");
+        else nav.MoveTo(MeetX, MeetZ);
         for (int i = 0; i < 90 && !ct.IsCancellationRequested && p.DistanceTo(MeetX, MeetZ) > 6f; i++) await Task.Delay(1000, ct);
         nav.Stop();
         Log.Info($"[party] at meet point dist={p.DistanceTo(MeetX, MeetZ):F0}; entities={p.World.Entities.Count}; partnerEntity={(p.World.Entities.ContainsKey(partnerId) ? "visible" : "no")}");

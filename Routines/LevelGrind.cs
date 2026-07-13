@@ -561,11 +561,5 @@ public sealed class LevelGrind(
     }
 
     // Occupied main-inventory (container 0) slots, gil-slot 0 excluded — drives the "bag full, go sell" trip.
-    int CountItems()
-    {
-        int n = 0;
-        foreach (var ((c, slot), id) in p.World.Inventory.ToArray())
-            if (c == 0 && slot != 0 && id != 0) n++;
-        return n;
-    }
+    int CountItems() => inv.CountSlots();
 }

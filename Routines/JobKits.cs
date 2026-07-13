@@ -30,7 +30,7 @@ public static class JobKits
             var w = p.World;
             switch (job)
             {
-                // ---- BARD: songs ARE the kit. Foe Requiem (DoT, lowest known tier) on the mob, re-sung on a
+                // ---- BARD: songs ARE the kit. Foe Requiem (DoT, BEST castable tier) on the mob, re-sung on a
                 // song-length cadence; melee carries the rest. (Lv-1 BRD + Requiem beats far above its level.)
                 case Job.Brd:
                     if (magic is not null && w.NowMs - lastSongMs > 30_000
