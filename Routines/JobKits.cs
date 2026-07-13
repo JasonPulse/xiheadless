@@ -56,7 +56,8 @@ public static class JobKits
                 // picks the lowest READY tier; the line list covers each caster's early book.
                 case Job.Blm or Job.Rdm or Job.Sch or Job.Geo or Job.Smn:
                     if (magic is null || w.Mpp < 10) return;
-                    foreach (var line in new[] { SpellLine.Stone, SpellLine.Water, SpellLine.Aero, SpellLine.Bio, SpellLine.Banish })
+                    // Dia LAST: it's a one-per-fight DoT, but it's also all a lvl-1-3 RDM has (Stone is RDM 4)
+                    foreach (var line in new[] { SpellLine.Stone, SpellLine.Water, SpellLine.Aero, SpellLine.Bio, SpellLine.Banish, SpellLine.Dia })
                         if (magic.Lowest(line) is { } sp && magic.Ready(sp))
                         {
                             magic.Cast(sp, mob);
