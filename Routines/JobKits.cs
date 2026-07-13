@@ -15,14 +15,14 @@ public static class JobKits
     {
         if (ReferenceEquals(g.UseAbilities, LevelGrind.Config.NoAbilities))
             g.UseAbilities = For(job, combat, magic, p, tag);
-        // Any job that can Cure (WHM/RDM main, or a WHM/RDM sub once set) self-heals below 50% — extracted
-        // from the proven BlmBrain pattern; magic gates it (not known / no MP = no-op).
+        // Any job that can Cure (WHM/RDM main, or a WHM/RDM sub once set) self-heals below 50% — via the
+        // Cure LINE selector (best affordable tier), never a hardcoded tier; magic gates known/MP itself.
         if (magic is not null && ReferenceEquals(g.EmergencyHeal, LevelGrind.Config.NoHeal))
             g.EmergencyHeal = async ct =>
             {
-                if (p.World.Hpp >= 50 || p.World.Mpp < 10 || !magic.Ready(Spell.Cure)) return false;
+                if (p.World.Hpp >= 50 || p.World.Mpp < 10) return false;
+                if (!magic.CastHighest(SpellLine.Cure, p.World.MyId)) return false;
                 Log.Info($"[{tag}] Cure self (HP {p.World.Hpp}%)");
-                magic.Cast(Spell.Cure, p.World.MyId);
                 await Task.Delay(2500, ct);
                 return true;
             };
@@ -40,15 +40,12 @@ public static class JobKits
                 // ---- BARD: songs ARE the kit. Foe Requiem (DoT, lowest known tier) on the mob, re-sung on a
                 // song-length cadence; melee carries the rest. (Lv-1 BRD + Requiem beats far above its level.)
                 case Job.Brd:
-                    if (magic is not null && w.NowMs - lastSongMs > 30_000 && w.Mpp >= 0)   // songs cost no MP
+                    if (magic is not null && w.NowMs - lastSongMs > 30_000
+                        && magic.CastHighest(SpellLine.FoeRequiem, mob))   // tier selector — best known Requiem
                     {
-                        if (magic.Lowest(SpellLine.FoeRequiem) is { } req && magic.Ready(req))
-                        {
-                            lastSongMs = w.NowMs;
-                            Log.Info($"[{tag}] singing {req} on the mob");
-                            magic.Cast(req, mob);
-                            await Task.Delay(3000, ct);
-                        }
+                        lastSongMs = w.NowMs;
+                        Log.Info($"[{tag}] singing Requiem on the mob");
+                        await Task.Delay(3000, ct);
                     }
                     return;
 
@@ -58,9 +55,8 @@ public static class JobKits
                     if (magic is null || w.Mpp < 10) return;
                     // Dia LAST: it's a one-per-fight DoT, but it's also all a lvl-1-3 RDM has (Stone is RDM 4)
                     foreach (var line in new[] { SpellLine.Stone, SpellLine.Water, SpellLine.Aero, SpellLine.Bio, SpellLine.Banish, SpellLine.Dia })
-                        if (magic.Lowest(line) is { } sp && magic.Ready(sp))
+                        if (magic.CastLowest(line, mob))   // tier selector: cheapest ready tier of the line
                         {
-                            magic.Cast(sp, mob);
                             await Task.Delay(3000, ct);
                             return;
                         }
@@ -68,11 +64,8 @@ public static class JobKits
 
                 // ---- WHM offense: Banish between cures (heal comes via EmergencyHeal).
                 case Job.Whm:
-                    if (magic is not null && w.Mpp >= 25 && magic.Lowest(SpellLine.Banish) is { } ban && magic.Ready(ban))
-                    {
-                        magic.Cast(ban, mob);
+                    if (magic is not null && w.Mpp >= 25 && magic.CastLowest(SpellLine.Banish, mob))
                         await Task.Delay(3000, ct);
-                    }
                     return;
 
                 // ---- MELEE/other: fire the job's signature low/mid JAs. UseAbility self-gates on

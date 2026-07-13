@@ -47,14 +47,16 @@ public sealed class Magic(ISession s) : IMagic
         return null;
     }
     // Cast the best/cheapest tier we can actually afford right now.
-    public void CastHighest(SpellLine line, uint target)
+    public bool CastHighest(SpellLine line, uint target)
     {
-        if (!Spells.Tiers.TryGetValue(line, out var tiers)) return;
-        for (int i = tiers.Length - 1; i >= 0; i--) if (Ready(tiers[i])) { Cast(tiers[i], target); return; }
+        if (!Spells.Tiers.TryGetValue(line, out var tiers)) return false;
+        for (int i = tiers.Length - 1; i >= 0; i--) if (Ready(tiers[i])) { Cast(tiers[i], target); return true; }
+        return false;
     }
-    public void CastLowest(SpellLine line, uint target)
+    public bool CastLowest(SpellLine line, uint target)
     {
-        if (!Spells.Tiers.TryGetValue(line, out var tiers)) return;
-        foreach (var t in tiers) if (Ready(t)) { Cast(t, target); return; }
+        if (!Spells.Tiers.TryGetValue(line, out var tiers)) return false;
+        foreach (var t in tiers) if (Ready(t)) { Cast(t, target); return true; }
+        return false;
     }
 }
