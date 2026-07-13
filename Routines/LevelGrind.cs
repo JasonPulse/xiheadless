@@ -332,6 +332,19 @@ public sealed class LevelGrind(
                 // ESCALATE after 3 fruitless treks: nearest-first kept shuffling adjacent guarded spots
                 // (night-skeleton pocket) — from the 3rd dry trek on, jump to the FARTHEST known ground.
                 _dryTreks++;
+                // ZONE-RESET after 6: far treks can't escape a DISCONNECTED MESH POCKET (live fleet NIN in
+                // S.Gustaberg: every mob 30-50y away "couldn't close", every trek re-rolled inside the same
+                // pocket, for an hour). Hop through the nearest zone line — the re-entry point is on-mesh by
+                // construction and outside the pocket; the existing wrong-zone handling (RecoveryTravel /
+                // Hunter.TargetZone) owns the walk back to the hunt ground.
+                if (_dryTreks >= 6 && Game.Zonelines.All.FirstOrDefault(z => z.From == zoning.CurrentZone) is { To: not 0 } exitLine)
+                {
+                    Log($"still dry after {_dryTreks} treks — zone-resetting via {Game.Zonelines.Name(exitLine.To)} (mesh-pocket escape)");
+                    await zoning.ToZone(exitLine.To, ct);
+                    _dryTreks = 0;
+                    _lastKillMs = p.World.NowMs;
+                    continue;
+                }
                 Log($"hunt is dry here (150s, no kill) — forcing a deep trek{(_dryTreks >= 3 ? " [FAR — escaping fruitless ground]" : "")}");
                 roam.ForceTrek(far: _dryTreks >= 3);
                 _lastKillMs = p.World.NowMs;

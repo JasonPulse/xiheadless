@@ -236,12 +236,18 @@ public sealed class JobLifecycle(
                 g.HomeNation = dn;
                 g.AhZone = cfg.HomeCity;     // both swapped home cities have the AH (misc 0x200 verified)
             }
+            // CON CAPS ARE ROLE-AWARE (fleet field data 2026-07-12): on a bot economy the AH is EMPTY, so
+            // chars fight ungeared — fragile jobs (mage/support/light DD) lose fights the geared duo won.
+            // Live evidence: lvl-1 BRD lost to a con-2 rabbit (17 deaths/h); lvl-12 RDM lost to con-3
+            // Mist_Lizards (14 deaths/h, re-dying on the same mob). Heavy DD/tanks keep the proven bands.
+            bool sturdy = Game.PartyRoles.IsHeavyDd(job) || Game.PartyRoles.PrimaryOf(job) == Game.PartyRoles.Role.Tank;
             if (plan is (string zone, ushort id))
             {
                 g.FixedZone = zone; g.FixedZoneId = id;
                 g.TravelVia = id == cfg.SafeGateZoneId ? cfg.SafeGateVia : (ushort)0;
                 g.RecoveryTravel = c => RecoverToHuntZone(job, c);
-                if (p.World.MainJobLevel < cfg.BabyUntil) { g.ConMin = 0; g.ConMax = 4; g.RoamHop = 25f; }
+                if (p.World.MainJobLevel < cfg.BabyUntil) { g.ConMin = 0; g.ConMax = sturdy ? 3 : 1; g.RoamHop = 25f; }
+                else if (p.World.MainJobLevel < 15) g.ConMax = Math.Min(g.ConMax, sturdy ? 3 : 2);
                 // Exit when the gated band should ADVANCE (level crossed into another zone) or `done` fires.
                 g.Done = () => done() || cfg.HuntZonePlan(p.World.MainJobLevel)?.id != id;
             }
