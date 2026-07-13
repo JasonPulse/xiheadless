@@ -74,7 +74,11 @@ public sealed class WarBrain(IPerception p, INavigation nav, ICombat combat, IMa
         };
     }
 
-    async Task Equip(CancellationToken ct)
+    Task Equip(CancellationToken ct) => EquipWarSet(gear, p, ct, "war");
+
+    /// The ONE WAR gear set (level-picked weapon + Armor + Armor21) — static + parameterized so SubjobBrain
+    /// equips the SAME set (its old EquipWarSet was a near-verbatim fork of this method).
+    public static async Task EquipWarSet(IGear gear, IPerception p, CancellationToken ct, string tag = "war")
     {
         // One main-hand weapon, chosen by level: Neckchopper at 20+, Butterfly Axe at 5+, else Onion Sword.
         ushort weapon = p.World.MainJobLevel >= 20 ? Weapon20 : p.World.MainJobLevel >= 5 ? Weapon : EarlyWeapon;
@@ -82,7 +86,7 @@ public sealed class WarBrain(IPerception p, INavigation nav, ICombat combat, IMa
         set.AddRange(Armor.Select(g => (g.slot, (uint)g.item)));
         set.AddRange(Armor21.Select(g => (g.slot, (uint)g.item)));   // after Armor: replaces lv7 pieces once wearable
         int n = await gear.EquipSet(set, ct);
-        Log.Info($"[war] equipped {n}/{set.Count} (lvl {p.World.MainJobLevel}, wep={weapon} sword={gear.SkillLevel(3)} ga={gear.SkillLevel(6)})");
+        Log.Info($"[{tag}] equipped {n}/{set.Count} (lvl {p.World.MainJobLevel}, wep={weapon} sword={gear.SkillLevel(3)} ga={gear.SkillLevel(6)})");
     }
 
     // WAR job abilities — reused by the leveling brain (via cfg.UseAbilities) AND the subjob farm's KillTarget,

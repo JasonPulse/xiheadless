@@ -157,37 +157,18 @@ public sealed class WhmBrain(
         await MagicRoutines.LearnFromScroll(inv, magic, p, scrollId, spell, ct, "whm");
     }
 
-    // Pull with Dia from range (also a DoT). Only if learned + affordable + the mob is within casting range.
-    async Task Pull(uint mobId, CancellationToken ct)
-    {
-        if (!magic.Ready(Spell.Dia)) return;
-        if (!p.World.Entities.TryGetValue(mobId, out var e) || p.DistanceTo(e.X, e.Z) > 20f) return;
-        Log.Info($"[whm] Dia pull on 0x{mobId:X}");
-        magic.Cast(Spell.Dia, mobId);
-        await Task.Delay(3000, ct);
-    }
+    // Pull with the Dia line from range (also a DoT) — the shared selector-driven spell pull.
+    Task Pull(uint mobId, CancellationToken ct) => MagicRoutines.SpellPull(magic, p, SpellLine.Dia, mobId, ct, range: 20f, tag: "whm");
 
     // After a kill (mob dead -> no cast interruption), Cure self up toward full FAST instead of slow /heal
-    // regen that adds keep interrupting. Stop if MP gets low (keep enough for the next fight's emergency cure).
+    // regen. The shared EmergencyCure picks the best affordable tier; stop if MP gets low.
     async Task PostKillHeal(CancellationToken ct)
     {
-        for (int i = 0; i < 4 && p.World.Hpp < 85 && p.World.Mpp > 20 && magic.Ready(Spell.Cure) && !ct.IsCancellationRequested; i++)
-        {
-            Log.Info($"[whm] post-kill Cure (HP {p.World.Hpp}% MP {p.World.Mpp}%)");
-            magic.Cast(Spell.Cure, p.World.MyId);
-            await Task.Delay(2500, ct);
-        }
+        for (int i = 0; i < 4 && !ct.IsCancellationRequested; i++)
+            if (!await MagicRoutines.EmergencyCure(magic, p, ct, hppBelow: 85, minMpp: 20, tag: "whm")) break;
     }
 
     // Self-Cure when getting low. Trigger at 60% (not 40%): a cast takes ~2.5s and ANY hit during it can
     // interrupt the spell, so curing only at critical HP means it's usually interrupted and we die anyway.
-    // Curing with more buffer lands more heals and keeps us off the floor. Target is self (MyId).
-    async Task<bool> EmergencyHeal(CancellationToken ct)
-    {
-        if (p.World.Hpp >= 60 || !magic.Ready(Spell.Cure)) return false;
-        Log.Info($"[whm] Cure self (HP {p.World.Hpp}% MP {p.World.Mpp}%)");
-        magic.Cast(Spell.Cure, p.World.MyId);
-        await Task.Delay(2500, ct);
-        return true;
-    }
+    Task<bool> EmergencyHeal(CancellationToken ct) => MagicRoutines.EmergencyCure(magic, p, ct, hppBelow: 60, tag: "whm");
 }

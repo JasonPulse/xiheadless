@@ -52,32 +52,18 @@ public sealed class BlmBrain(
     };
 
     // Self-Cure via the WHM sub (BLM/WHM). Nursery deaths are frequent and each recovery is a long round-trip,
-    // so healing through a fight is a big net win. Cure I is available from the sub at low level.
-    async Task<bool> EmergencyHeal(CancellationToken ct)
-    {
-        if (p.World.Hpp >= 50 || p.World.Mpp < 10 || !magic.Ready(Spell.Cure)) return false;
-        Log.Info($"[blm] Cure self (HP {p.World.Hpp}% MP {p.World.Mpp}%)");
-        magic.Cast(Spell.Cure, p.World.MyId);
-        await Task.Delay(2500, ct);
-        return true;
-    }
+    // so healing through a fight is a big net win — the shared selector-driven EmergencyCure.
+    Task<bool> EmergencyHeal(CancellationToken ct) => MagicRoutines.EmergencyCure(magic, p, ct, tag: "blm");
 
-    async Task Pull(uint mobId, CancellationToken ct)
-    {
-        if (!magic.Ready(Spell.Stone)) return;
-        if (!p.World.Entities.TryGetValue(mobId, out var e) || p.DistanceTo(e.X, e.Z) > 18f) return;
-        Log.Info($"[blm] Stone pull on 0x{mobId:X}");
-        magic.Cast(Spell.Stone, mobId);
-        await Task.Delay(3000, ct);
-    }
+    // Pull with the cheapest ready Stone tier (shared selector pull — no-op on the WHM phase, Ready gates it).
+    Task Pull(uint mobId, CancellationToken ct) => MagicRoutines.SpellPull(magic, p, SpellLine.Stone, mobId, ct, tag: "blm");
 
     // In-fight nuking — BLM's actual damage. Without it the bot MELEED every fight (hp 100->0 while the mob
     // sat at 79% and MP never left 100%). Called every kill-loop tick; keep an MP floor so the last nukes can
-    // still finish a low mob. Stone won't cast on the WHM phase (magic.Ready gates it) — a safe no-op there.
+    // still finish a low mob. CastLowest = cheapest ready Stone tier (MP economy while grinding).
     async Task Nuke(uint mob, int con, CancellationToken ct)
     {
-        if (p.World.Mpp < 10 || !magic.Ready(Spell.Stone)) return;
-        magic.Cast(Spell.Stone, mob);
+        if (p.World.Mpp < 10 || !magic.CastLowest(SpellLine.Stone, mob)) return;
         await Task.Delay(4000, ct);   // cast time + a swing between nukes; the recast gate is server-side
     }
 }

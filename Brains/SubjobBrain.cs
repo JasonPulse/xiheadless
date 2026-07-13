@@ -77,17 +77,8 @@ public sealed class SubjobBrain(
                     && (t.mob != "Bogy" || (p.World.MainJobLevel >= 24 && (Game.VanaTime.Hour >= 18 || Game.VanaTime.Hour < 4))))
         .Select(t => t.mob).ToArray();
 
-    // WAR gear/abilities — REUSED from WarBrain (no duplicate sets/rotations).
-    async Task EquipWarSet(CancellationToken ct)
-    {
-        ushort wep = p.World.MainJobLevel >= 20 ? WarBrain.Weapon20
-                   : p.World.MainJobLevel >= 5 ? WarBrain.Weapon : WarBrain.EarlyWeapon;
-        var gset = new List<(byte slot, uint item)> { (EquipSlot.Main, wep) };
-        gset.AddRange(WarBrain.Armor.Select(g => (g.slot, (uint)g.item)));
-        gset.AddRange(WarBrain.Armor21.Select(g => (g.slot, (uint)g.item)));
-        int eq = await gear.EquipSet(gset, ct);
-        Log.Info($"[subjob] equipped {eq}/{gset.Count} gear pieces (lvl {p.World.MainJobLevel})");
-    }
+    // WAR gear — the ONE shared set method on WarBrain (this used to be a near-verbatim fork of its Equip).
+    Task EquipWarSet(CancellationToken ct) => WarBrain.EquipWarSet(gear, p, ct, "subjob");
 
     // The 21/24-bracket shopping list: Neckchopper (lv20 here) + the Beetle set + Spike Necklace (lv21),
     // bought SELF-FUNDED from the AH at the first round-start where we're 20+ and missing pieces — the

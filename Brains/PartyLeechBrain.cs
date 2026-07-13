@@ -116,8 +116,7 @@ public sealed class PartyLeechBrain(
         await support.RunAsync(new PartySupport.Config
         {
             TankId = WarId, TankName = WarName,
-            GrindZone = GrindZone, GrindZoneId = GrindZoneId,
-            Reunion = reunion,    // no camp coords: follow the tank, and any split rallies both bots
+            Reunion = reunion,    // follow the tank; any split rallies both bots (Reunion owns zone re-entry)
             Heal = Spell.Cure,
             CureSelfBelow = 80, // keep itself topped to ~full when safe — so it reaches the WAR's "ready" gate (>=70)
                                 // instead of idling in a 55-85% dead band that deadlocks the pull

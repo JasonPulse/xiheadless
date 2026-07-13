@@ -1,20 +1,12 @@
 namespace XiHeadless.Routines;
 
-/// Reusable party-formation helpers, shared by any brain that needs to group up. Invites and accepts are
-/// restricted to a trusted name set (our own bot fleet) so the bot never grabs a real player by mistake,
-/// and the inviter↔invitee pairing the server expects is satisfied (we invite by the live in-zone entity,
-/// whose Id == char id and Index == targid).
+/// Reusable party-formation helpers, shared by any brain that needs to group up. Invite ACCEPTANCE is owned
+/// by BotHost.AutoAcceptParty (accept-all — fleet doctrine: parties are OPEN, real players may invite/join;
+/// a trusted-name-gated AutoAccept used to live here but contradicted that and had zero callers). The
+/// inviter↔invitee pairing the server expects is satisfied by inviting the live in-zone entity
+/// (Id == char id, Index == targid).
 public static class PartyRoutines
 {
-    /// Accept a pending invite iff it came from a trusted fleet name. Returns true if we accepted.
-    public static bool AutoAccept(IParty party, IReadOnlyCollection<string> trusted)
-    {
-        if (!party.InvitePending) return false;
-        bool ok = trusted.Any(n => string.Equals(n, party.InviterName, StringComparison.OrdinalIgnoreCase));
-        if (ok) party.AcceptInvite();
-        return ok;
-    }
-
     /// Invite a named fleet PC if it's visible in-zone. Match by NAME (the reliable fleet identifier) and not
     /// TypeKnown/Allegiance: an idle PC sends position-only updates, so those type fields may never be set,
     /// but its Id/Index/Name are populated once it's in view. Returns true if an invite was sent this call.

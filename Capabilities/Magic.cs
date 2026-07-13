@@ -31,8 +31,30 @@ public sealed class Magic(ISession s) : IMagic
         s.Enqueue(p);
         Log.Info($"[magic] {(set ? "set" : "unset")} blue spell {blueSpellId} slot {slot}");
     }
-    public bool Ready(Spell spell) // known + affordable MP (recast timers TODO)
-        => Known(spell) && (!Spells.Info.TryGetValue(spell, out var i) || i.Mp <= s.State.Mp);
+    // known + LEVEL-usable + affordable MP (recast timers TODO). The level gate matters: Known persists
+    // across job changes, so a lv17 WHM was "Ready" for Cure III (lv21) and spam-failed every cast
+    // (battle-msg 47) while the tank bled out — PartySupport hand-laddered around this for months.
+    public bool Ready(Spell spell) => Known(spell) && UsableAtLevel(spell)
+        && (!Spells.Info.TryGetValue(spell, out var i) || i.Mp <= s.State.Mp);
+
+    // Main OR sub job reaches the spell's required level (SpellLevels: server spell_list jobs binary(22)).
+    // Spells with no data stay permissive — never brick a cast on a data gap.
+    bool UsableAtLevel(Spell sp)
+    {
+        if (!SpellLevels.HasData((ushort)sp)) return true;
+        return (SpellLevels.For((ushort)sp, s.State.MainJob) is { } m && s.State.MainJobLevel >= m)
+            || (SpellLevels.For((ushort)sp, s.State.SubJob) is { } su && s.State.SubJobLevel >= su);
+    }
+
+    /// Highest READY tier of the line, optionally capped (e.g. maxTier:3 = Cure III cap for MP economy).
+    public Spell? BestReady(SpellLine line, byte maxTier = byte.MaxValue)
+    {
+        if (!Spells.Tiers.TryGetValue(line, out var tiers)) return null;
+        for (int i = tiers.Length - 1; i >= 0; i--)
+            if (Ready(tiers[i]) && (!Spells.Info.TryGetValue(tiers[i], out var inf) || inf.Tier <= maxTier))
+                return tiers[i];
+        return null;
+    }
 
     public Spell? Highest(SpellLine line)
     {
@@ -46,12 +68,12 @@ public sealed class Magic(ISession s) : IMagic
         foreach (var t in tiers) if (Known(t)) return t;
         return null;
     }
-    // Cast the best/cheapest tier we can actually afford right now.
-    public bool CastHighest(SpellLine line, uint target)
+    // Cast the best/cheapest tier we can actually cast right now (level-gated via Ready).
+    public bool CastHighest(SpellLine line, uint target, byte maxTier = byte.MaxValue)
     {
-        if (!Spells.Tiers.TryGetValue(line, out var tiers)) return false;
-        for (int i = tiers.Length - 1; i >= 0; i--) if (Ready(tiers[i])) { Cast(tiers[i], target); return true; }
-        return false;
+        if (BestReady(line, maxTier) is not { } sp) return false;
+        Cast(sp, target);
+        return true;
     }
     public bool CastLowest(SpellLine line, uint target)
     {

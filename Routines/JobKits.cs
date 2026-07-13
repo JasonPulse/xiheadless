@@ -15,17 +15,10 @@ public static class JobKits
     {
         if (ReferenceEquals(g.UseAbilities, LevelGrind.Config.NoAbilities))
             g.UseAbilities = For(job, combat, magic, p, tag);
-        // Any job that can Cure (WHM/RDM main, or a WHM/RDM sub once set) self-heals below 50% — via the
-        // Cure LINE selector (best affordable tier), never a hardcoded tier; magic gates known/MP itself.
+        // Any job that can Cure (WHM/RDM main, or a WHM/RDM sub once set) self-heals below 50% — the one
+        // shared MagicRoutines.EmergencyCure (level-gated Cure line selector, never a hardcoded tier).
         if (magic is not null && ReferenceEquals(g.EmergencyHeal, LevelGrind.Config.NoHeal))
-            g.EmergencyHeal = async ct =>
-            {
-                if (p.World.Hpp >= 50 || p.World.Mpp < 10) return false;
-                if (!magic.CastHighest(SpellLine.Cure, p.World.MyId)) return false;
-                Log.Info($"[{tag}] Cure self (HP {p.World.Hpp}%)");
-                await Task.Delay(2500, ct);
-                return true;
-            };
+            g.EmergencyHeal = ct => MagicRoutines.EmergencyCure(magic, p, ct, tag: tag);
     }
 
     // The per-beat rotation for `job`. One action per beat max (each firing path delays internally).

@@ -4,10 +4,11 @@ public interface IMagic
 {
     void Cast(Spell spell, uint target);            // a specific spell, straight up
     bool Known(Spell spell);                         // learned (0x0AA bitmap)
-    bool Ready(Spell spell);                          // known + enough MP (recast TODO)
+    bool Ready(Spell spell);                          // known + level-usable (main/sub) + enough MP (recast TODO)
     Spell? Highest(SpellLine line);                   // highest KNOWN tier
     Spell? Lowest(SpellLine line);                    // lowest KNOWN tier
-    bool CastHighest(SpellLine line, uint target);    // cast highest READY (known + affordable) tier; true = fired
+    Spell? BestReady(SpellLine line, byte maxTier = byte.MaxValue); // highest READY tier ≤ maxTier (MP-economy cap)
+    bool CastHighest(SpellLine line, uint target, byte maxTier = byte.MaxValue); // cast BestReady; true = fired
     bool CastLowest(SpellLine line, uint target);     // cast lowest READY tier; true = fired
     // BLU: equip/unequip a LEARNED blue spell into a set slot (0-19) via 0x102 EXTENDED_JOB. Blue magic is
     // unusable until SET — learning comes from the GM !addspell grant (bots can't farm learns-by-being-hit).

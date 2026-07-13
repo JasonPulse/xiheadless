@@ -456,11 +456,9 @@ public sealed class LevelGrind(
                 // resumes rather than idling. A dropper march is COMMITTED either way.
                 if (!preferred && ((cfg.PreferredOnly && neededNow.Length > 0) || roam.OnDropperTrek)) { mob = null; }
                 else
-                // NM names are listed with spaces but entity names arrive with underscores — normalize.
-                mob ??= p.Nearest(e => BaseOk(e) && LeashOk(e)
-                    && !e.Name.Contains("Quadav", StringComparison.OrdinalIgnoreCase)
-                    && !Game.HuntZones.NmNames.Any(n => e.Name.Replace('_', ' ').Contains(n, StringComparison.OrdinalIgnoreCase)) // NMs con normal but are unwinnable
-                    && p.DistanceTo(e.X, e.Z) <= 50f);
+                // Con is the SOLE arbiter (BaseOk's con band) — the Quadav and NmNames name-blocks that used
+                // to sit here violated the hard rule and are gone (a lost fight recovers via the death path).
+                mob ??= p.Nearest(e => BaseOk(e) && LeashOk(e) && p.DistanceTo(e.X, e.Z) <= 50f);
             }
 
             if (mob is null)

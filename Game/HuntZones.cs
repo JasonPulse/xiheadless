@@ -15,19 +15,10 @@ public readonly record struct HuntLeg(string Zone, byte Min, byte Max, float Cam
 
 public static class HuntZones
 {
-    // Notorious Monsters — NEVER engage these. An NM cons by LEVEL like any mob (e.g. Sylvestre /checks as a
-    // level-17 Decent Challenge), but it has NM-inflated HP/stats that the con can't reflect, so a leveling bot
-    // that trusts con walks into an unwinnable fight and dies (and FFXI hate can't be shaken once engaged, so
-    // there's no recovery). Con is fundamentally blind to NM-ness — the only reliable filter is the server's NM
-    // name list. Sourced from xiserver scripts/zones/*/mobs + sql/mob_pools. Matched as a case-insensitive
-    // substring against the entity name, so list the display name (spaces, not underscores). All bots skip these.
-    public static readonly string[] NmNames =
-    {
-        // Buburimu_Peninsula (118). Sylvestre was WRONGLY listed here — mob_spawn_points shows 57 spawns at
-        // lv15-19 (the zone's main in-band leveling population; one was field-killed by the duo). Bull Dhalmel
-        // is 47 spawns lv20-24 — a normal (aggressive) population and the CUP dropper; the con gate handles it.
-        "Backoo", "Buburimboo", "Helldiver", "Ketos", "Wake Warder Wanda",
-    };
+    // (An NmNames blocklist used to live here. REMOVED per the hard rule: con is the SOLE arbiter — no mob
+    // name allow/block lists, explicitly including NM lists. It also mis-fired as substrings: "Helldiver"
+    // blanket-skipped Qufim's normal helldiver leveling population, and Sylvestre had been wrongly listed.
+    // A bot that loses to an even-con NM recovers through the normal death path; never blacklist by name.)
 
     // Each nation's walkable chain: starting dunes -> gateway -> "dunes-tier" -> 20s zone -> Qufim.
     public static readonly IReadOnlyDictionary<Nation, HuntLeg[]> Paths = new Dictionary<Nation, HuntLeg[]>

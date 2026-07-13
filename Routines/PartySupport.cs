@@ -10,10 +10,7 @@ public sealed class PartySupport(IParty party, IPerception p, INavigation nav, I
     {
         public uint TankId;                  // the ally we heal + follow (the tank that holds hate)
         public string TankName = "";         // for the REFORM tell handshake (partyless tank asks us to re-invite)
-        public string GrindZone = "";        // re-cross here if we get warped out (death/homepoint)
-        public ushort GrindZoneId;
-        public float CampX, CampY, CampZ;     // tank's camp — converge target while the tank isn't visible
-        public Spell Heal = Spell.Cure;
+        public Spell Heal = Spell.Cure;      // floor when no Cure line tier is castable yet (BestReady picks above it)
         public byte CureTankBelow = 60;       // cure the tank below this HP% (60 per the user — above it, curing is wasted MP)
         public byte CureSelfBelow = 55;       // self-cure below this HP% (when safe)
         public float StayWithin = 13f;        // close the gap before curing if the tank drifts past this
@@ -24,14 +21,18 @@ public sealed class PartySupport(IParty party, IPerception p, INavigation nav, I
         public bool Enfeeble = false;         // cast Dia (DoT + Def-down) + Paralyze on the tank's foe
         public int CastHoldMs = 3200;         // STAND STILL this long after starting a cast — moving interrupts it (covers Cure I/II ~2.25-2.5s cast + margin)
         public byte RestMpTo = 50;            // between-fights MP rest target %
-        // The shared split/reunite owner. When set it REPLACES the dead-tank regroup and stuck-homepoint below:
-        // any split (our death, tank death, tank zoned, RALLY chat) routes through Reunion's rally protocol.
+        // The shared split/reunite owner — REQUIRED in practice: any split (our death, tank death, tank
+        // zoned, RALLY chat) routes through Reunion's rally protocol. The old Reunion-less legacy branches
+        // (solo re-cross, homepoint regroup, Raise-the-tank) were dead code duplicating Reunion and were
+        // removed; a caller without one gets a loud warning and no split recovery.
         public Reunion? Reunion;
         public bool Inviter = false;          // we own party formation — re-invite the tank after a detected disband
     }
 
     public async Task RunAsync(Config cfg, CancellationToken ct)
     {
+        if (cfg.Reunion is null)
+            Log.Always($"[{cfg.Tag}] WARNING: no Reunion configured — PartySupport has NO split recovery without one (the legacy Reunion-less branches were removed as dead duplicates of Reunion)");
         byte lastHpp = p.World.Hpp;
         bool converged = false;
         bool sawTankAlive = false;   // guards the dead-tank regroup so a not-yet-populated tank (Hpp reads 0 at start) doesn't trip it
@@ -51,7 +52,7 @@ public sealed class PartySupport(IParty party, IPerception p, INavigation nav, I
             long castMs0 = p.World.NowMs;
             magic.Cast(sp, tgt);
             await Task.Delay(cfg.CastHoldMs, ct);  // remain stationary through the cast (+ margin) so it resolves
-            if (sp is Spell.Cure or Spell.CureII or Spell.CureIII)
+            if (Spells.Info.TryGetValue(sp, out var si) && si.Line == SpellLine.Cure)   // any Cure tier — verify the landed heal
             {
                 var h = p.World.LastHeal;
                 if (h.actor == p.World.MyId && h.target == tgt && h.ms >= castMs0)
@@ -79,17 +80,6 @@ public sealed class PartySupport(IParty party, IPerception p, INavigation nav, I
             if (combat.Dead) { converged = false; stuckTicks = 0; await Task.Delay(2000, ct); continue; }
             if (party.InvitePending) party.AcceptInvite();
 
-            // Warped out (homepoint/death) → re-cross to the grind zone FIRST, else we sit stuck issuing a
-            // cross-zone MoveTo. LEGACY (Reunion==null) only: a Reunion-managed duo never crosses solo — entry
-            // always goes through the rally protocol (either side's Force/RALLY pulls both bots in together).
-            if (cfg.Reunion is null && zoning.CurrentZone != cfg.GrindZoneId)
-            {
-                Log.Info($"[{cfg.Tag}] in zone {zoning.CurrentZone} (not {cfg.GrindZone}) — re-crossing to rejoin the tank");
-                await zoning.GoTo(cfg.GrindZone, ct);
-                converged = false; stuckTicks = 0;
-                continue;
-            }
-
             bool tankVisible = p.World.Entities.TryGetValue(cfg.TankId, out var tank) && (tank.X != 0 || tank.Z != 0);
             float tankDist = tankVisible ? p.DistanceTo(tank!.X, tank.Z) : 999f;
 
@@ -101,18 +91,15 @@ public sealed class PartySupport(IParty party, IPerception p, INavigation nav, I
             {
                 Log.Info($"[{cfg.Tag}] STUCK reaching tank — regrouping");
                 if (cfg.Reunion is { } ru2) { await ru2.RunAsync(ct); converged = true; }
-                else { await combat.Homepoint(ct); await Task.Delay(6000, ct); converged = false; }
                 stuckTicks = 0;
                 continue;
             }
 
-            bool hasCamp = cfg.CampX != 0 || cfg.CampZ != 0;   // legacy anchor; a Reunion-managed duo passes none
             if (!converged)
             {
                 if (tankVisible && tankDist < 25f) { converged = true; cfg.OnConverged?.Invoke(); Log.Info($"[{cfg.Tag}] reached tank — supporting"); }
                 else if (tankVisible) nav.Follow(cfg.TankId);
-                else if (hasCamp && p.DistanceTo(cfg.CampX, cfg.CampZ) > 15f) nav.MoveTo(cfg.CampX, cfg.CampY, cfg.CampZ);  // 3-arg: camp ground-Y
-                else nav.Stop();   // no camp: hold — the tank walks to US (tether) or a split triggers the rally
+                else nav.Stop();   // hold — the tank walks to US (tether) or a split triggers the rally
                 if (tick % 8 == 0) Log.Info($"[{cfg.Tag}] converging tankVisible={tankVisible} tankDist={(tankVisible ? tankDist : -1):F0} party={party.MemberCount}");
                 await Task.Delay(2000, ct);
                 continue;
@@ -162,35 +149,18 @@ public sealed class PartySupport(IParty party, IPerception p, INavigation nav, I
             // sat down DURING the tank's fight and arrived late/out of cast range when it finally stood.
             int tankAttackers = p.AttackersOn(cfg.TankId, 12000);
             bool tankInRange = tankVisible && tankDist <= CastRange;
-            // Heal with the BEST Cure tier we can CAST, capped at Cure III for MP economy on a low-level WHM
-            // (Cure IV/V cost 88-135 MP/cast and would OOM fast). LEVEL-GATED EXPLICITLY: the generated
-            // SpellInfo carries no level requirement, so magic.Ready is known+MP only — a lv17 WHM "Ready"
-            // for Cure III (lv21) spam-failed every cast (battle-msg 47) while the tank bled out and died.
-            // WHM cure tiers: Cure lv1, Cure II lv11, Cure III lv21 (xiserver spell_list).
-            byte lvl = p.World.MainJobLevel;
-            Spell heal = lvl >= 21 && magic.Ready(Spell.CureIII) ? Spell.CureIII
-                       : lvl >= 11 && magic.Ready(Spell.CureII) ? Spell.CureII
-                       : cfg.Heal;
+            // Heal with the BEST Cure tier we can CAST (the shared selector — Ready is now level-gated via
+            // SpellLevels, the fix for the lv17 WHM that spam-failed Cure III while the tank died), capped at
+            // Cure III for MP economy (Cure IV/V cost 88-135 MP/cast and would OOM a leveling WHM fast).
+            Spell heal = magic.BestReady(SpellLine.Cure, maxTier: 3) ?? cfg.Heal;
             bool canHeal = magic.Ready(heal);
 
             if (tick % 10 == 0) Log.Info($"[{cfg.Tag}] party={party.MemberCount} tankDist={(tankVisible ? tankDist : -1):F0} tankHP={tankHp}% tankAtk={tankAttackers} myHP={p.World.Hpp}% mp={p.World.Mpp}% lvl={p.World.MainJobLevel} exp={p.World.ExpNow}/{p.World.ExpNext}");
 
             if (tankHp > 0) sawTankAlive = true;
-            // 0) TANK IS DEAD (Hpp==0) — legacy regroup, ONLY when no Reunion is configured (Reunion owns splits
-            //    now, and unlike this check it can tell dead from zoned-away via 0x0DD ZoneNo). Kept for a
-            //    Reunion-less caller. Guarded by sawTankAlive so a not-yet-populated roster (Hpp reads 0 at
-            //    startup) can't trip it.
-            if (cfg.Reunion is null && sawTankAlive && party.MemberCount > 0 && tankHp == 0)
-            {
-                if (haveMp && magic.Ready(Spell.Raise) && tankVisible)
-                {
-                    if (!tankInRange) { nav.Follow(cfg.TankId); await Task.Delay(500, ct); continue; }
-                    await StandCast(Spell.Raise, cfg.TankId, "Raise tank (KO'd)"); continue;
-                }
-                Log.Always($"[{cfg.Tag}] tank KO'd + no Raise — Home Pointing to regroup at the staging town (cross back together)");
-                nav.Stop(); await combat.Homepoint(ct); await Task.Delay(6000, ct);
-                converged = false; sawTankAlive = false; continue;
-            }
+            // (Dead tank is Reunion's job — it distinguishes dead from zoned-away via 0x0DD ZoneNo. The legacy
+            // Reunion-less regroup that lived here, including a Raise-the-tank path the doctrine forbids, was
+            // removed as dead code duplicating Reunion.)
             // 1) CURE THE TANK below the threshold (60% per the user — topping a healthy WAR above that is
             //    wasted MP; below it, curing outranks everything).
             if (haveMp && canHeal && tankHp > 0 && tankHp < cfg.CureTankBelow)
@@ -209,8 +179,9 @@ public sealed class PartySupport(IParty party, IPerception p, INavigation nav, I
                 if (foe0 != null)
                 {
                     bool castOne = false;
-                    foreach (var (sp, every) in new[] { (Spell.Dia, 60_000L), (Spell.Paralyze, 90_000L) })
-                        if (magic.Ready(sp) && (!castMs.TryGetValue((sp, foe0.Id), out var eLast) || p.World.NowMs - eLast > every))
+                    foreach (var (line, every) in new[] { (SpellLine.Dia, 60_000L), (SpellLine.Paralyze, 90_000L) })
+                        if (magic.BestReady(line) is { } sp
+                            && (!castMs.TryGetValue((sp, foe0.Id), out var eLast) || p.World.NowMs - eLast > every))
                         {
                             castMs[(sp, foe0.Id)] = p.World.NowMs;
                             await StandCast(sp, foe0.Id, $"{sp} on {foe0.Name} (early)");
@@ -223,27 +194,20 @@ public sealed class PartySupport(IParty party, IPerception p, INavigation nav, I
             if (haveMp && canHeal && p.World.Hpp > 0 && p.World.Hpp < cfg.CureSelfBelow)
             { await StandCast(heal, p.World.MyId, $"{heal} self (HP {p.World.Hpp}%)"); continue; }
 
-            // 3) BUFFS — keep Protect + Shell on tank + self (recast on a long timer; they last ~30 min).
+            // 3) BUFFS — keep Protect + Shell on tank + self (recast on a long timer; they last ~30 min),
+            //    best known tier via the line selector.
             if (cfg.Buff && haveMp && tankInRange)
             {
                 bool buffed = false;
-                foreach (var (sp, who) in new[] { (Spell.Protect, cfg.TankId), (Spell.Shell, cfg.TankId), (Spell.Protect, p.World.MyId), (Spell.Shell, p.World.MyId) })
-                    if (magic.Ready(sp) && (!castMs.TryGetValue((sp, who), out var last) || p.World.NowMs - last > 1_500_000L))
+                foreach (var (line, who) in new[] { (SpellLine.Protect, cfg.TankId), (SpellLine.Shell, cfg.TankId), (SpellLine.Protect, p.World.MyId), (SpellLine.Shell, p.World.MyId) })
+                    if (magic.BestReady(line) is { } sp
+                        && (!castMs.TryGetValue((sp, who), out var last) || p.World.NowMs - last > 1_500_000L))
                     { castMs[(sp, who)] = p.World.NowMs; await StandCast(sp, who, $"{sp} on 0x{who:X}"); buffed = true; break; }
                 if (buffed) continue;
             }
-            // 4) ENFEEBLE the tank's foe — Dia (DoT + Def-down) then Paralyze. Faster kills + less incoming damage.
-            if (cfg.Enfeeble && haveMp && tankAttackers > 0)
-            {
-                var foe = p.Nearest(e => e.IsMob && e.Hpp > 0 && p.DistanceTo(e.X, e.Z) <= CastRange);
-                if (foe != null)
-                {
-                    foreach (var (sp, every) in new[] { (Spell.Dia, 60_000L), (Spell.Paralyze, 90_000L) })
-                        if (magic.Ready(sp) && (!castMs.TryGetValue((sp, foe.Id), out var last) || p.World.NowMs - last > every))
-                        { castMs[(sp, foe.Id)] = p.World.NowMs; await StandCast(sp, foe.Id, $"{sp} on {foe.Name}"); break; }
-                    continue;
-                }
-            }
+            // (The old #4 late-enfeeble block was a verbatim copy of #2 under identical conditions — never
+            // reachable with anything to cast, and its unconditional `continue` starved the critical-OOM rest
+            // whenever a foe stood within cast range. Deleted.)
             // 5) REST MP — ONLY between fights (no mob on the tank) with the tank topped, so we're NEVER seated
             //    while the WAR is being beaten (the rest-lock bug). Trigger at the REST TARGET, not a lower
             //    floor: a floor of 20 with the tank's ready-gate at 30 left MP parked at 29% in the dead band
@@ -299,7 +263,6 @@ public sealed class PartySupport(IParty party, IPerception p, INavigation nav, I
             // 6) Nothing to cast — hold in heal range (FollowBuffer behind the tank), or drift to camp if the tank
             //    isn't visible. Stand otherwise.
             if (tankVisible && tankDist > cfg.FollowBuffer) nav.Follow(cfg.TankId);
-            else if (!tankVisible && hasCamp && p.DistanceTo(cfg.CampX, cfg.CampZ) > 12f) nav.MoveTo(cfg.CampX, cfg.CampY, cfg.CampZ);
             else nav.Stop();
             await Task.Delay(900, ct);
         }
