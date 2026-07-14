@@ -43,7 +43,7 @@ public static class KillRoutine
 
         byte bestHpp = mob.Hpp;               // lowest mob HP we've driven it to
         long lastProgressMs = p.World.NowMs;  // last time the mob actually took damage
-        int ft = 0, kites = 0;
+        int ft = 0, kites = 0, zeroDamageStays = 0;
         while (!ct.IsCancellationRequested && mob.Hpp > 0 && p.World.Hpp > 0
                && (breakOffHpp == 0 || p.World.Hpp > breakOffHpp)
                && (p.World.NowMs - mob.LastSeenMs) < 20000)
@@ -119,8 +119,15 @@ public static class KillRoutine
                 lastProgressMs = p.World.NowMs;
                 continue;
             }
-            // Kited out and still no damage while toe-to-toe: it HAS hate and hate can't be shaken — stay on
-            // it (evasive/slept mobs kill slowly) rather than walking off and stacking an add.
+            // Kited out and still no damage while toe-to-toe. HATE-LOCK still applies to any mob we have
+            // actually damaged (fleeing low-HP mobs stall progress; abandoning eats returning swings). But a
+            // mob we have NEVER scratched (hpp still 100) that ISN'T attacking us is unkillable-and-deaggroed
+            // (live: an aggro NM held a PLD for 2h+ at mob 100%/attackers=0) — break off; the caller skips it.
+            if (mob.Hpp == 100 && p.AttackersOn(p.World.MyId) == 0 && ++zeroDamageStays >= 2)
+            {
+                Log($"UNKILLABLE: 0x{mob.Id:X} '{mob.Name}' untouched after {kites} kites and deaggroed — breaking off");
+                break;
+            }
             Log($"slow kill on 0x{mob.Id:X} '{mob.Name}' after {kites} kites — staying on it (hp%={p.World.Hpp})");
             lastProgressMs = p.World.NowMs;
         }

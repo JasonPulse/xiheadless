@@ -33,6 +33,7 @@ public sealed class WorldState
     public byte[] KnownSpellBits = System.Array.Empty<byte>(); // 0x0AA bitmap; bit N = spell N known
     public uint CurrentTargetId; // last target we engaged/acted on (for disengage etc.)
     public bool InZone;         // true once 0x00A zone-in parsed
+    public bool MainHandEquipped;   // 0x050 equip_list, EquipKind 0: inventory slot != 0 = a weapon is on
 
     // Job-ability recast tracking (client-side): NowMs when each ability was last fired. Combat.AbilityReady
     // compares against AbilityInfo.Recast (seconds); the server enforces the real recast, so this only has

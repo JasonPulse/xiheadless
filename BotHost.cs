@@ -79,6 +79,22 @@ public static class BotHost
         using var onTerm = PosixSignalRegistration.Create(PosixSignal.SIGTERM, c => { c.Cancel = true; stop.Set(); });
         using var onInt = PosixSignalRegistration.Create(PosixSignal.SIGINT, c => { c.Cancel = true; stop.Set(); });
 
+        // SESSION CAP (user rule: max 6h play; bots END THEIR OWN sessions). The evening-wave bug: four bots
+        // sat online 12h+ because nothing in-process ever ended the day — the seeded SessionPlan existed but
+        // only fleet-day brains consulted it, and a bot stuck inside a fight/travel/rest loop never reaches a
+        // between-activities check. This timer fires the SAME stop signal SIGTERM uses, so the full graceful
+        // path (retreat from aggro, KO-revive, 40s logout) runs no matter what loop the brain is stuck in.
+        var plan = Routines.SessionPlan.ForToday(client.CharId);
+        var remaining = plan.EndUtc - DateTime.UtcNow;
+        if (remaining < TimeSpan.FromMinutes(15)) remaining = TimeSpan.FromMinutes(15);   // late login: brief check-in day
+        if (remaining > TimeSpan.FromHours(6)) remaining = TimeSpan.FromHours(6);         // absolute ceiling
+        Log.Always($"session cap: ending the day in {remaining.TotalMinutes:F0} min (plan {plan.Mode}, end {plan.EndUtc:HH:mm}Z)");
+        using var sessionCap = new Timer(_ =>
+        {
+            Log.Always("session cap reached -> ending the day (same graceful path as SIGTERM)");
+            stop.Set();
+        }, null, remaining, Timeout.InfiniteTimeSpan);
+
         Log.Info("zoning in...");
         bool zoned = conn.ZoneInSync();
         Log.Info(zoned ? $"IN ZONE: {conn.State}" : "did not receive zone-in");

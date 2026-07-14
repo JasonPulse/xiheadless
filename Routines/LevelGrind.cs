@@ -78,6 +78,7 @@ public sealed class LevelGrind(
     float _trackX, _trackZ; double _walkedSinceFight;   // distance-between-pulls metric (wandering waste, per user)
     long _lastKillMs;                                    // hunger clock: dry spells force a deep trek
     long _lastWeakLogMs;                                 // throttle for the post-revive weakness hold log line
+    long _lastUnarmedLogMs;                              // throttle for the unarmed prey-only cap log line
     string? _lastSteerTarget;                            // last dropper-seek species — a fruitless repeat yields its turn
     int _dryTreks;                                       // consecutive hunger treks with no kill — escalates trek DISTANCE
     long _campUntilMs;                                   // camp window after a needed-dropper kill (wait out repops)
@@ -414,7 +415,8 @@ public sealed class LevelGrind(
                 if (now - _lastWeakLogMs > 30_000) { _lastWeakLogMs = now; Log($"weakened after revive — holding {(300_000 - (now - p.World.RevivedMs)) / 1000}s more (no pulls)"); }
                 // Hold SOMEWHERE SAFE: a bare in-place wait left the weakened THF standing in a goblin's
                 // sight line — RestSafely steps away from wanderers and sits (regen while we wait it out).
-                await RestSafely(ct);
+                // Only if there's something to regen: at full vitals it looped rest/wake ~10k times live.
+                if (p.World.Hpp < cfg.RestHpTarget || (cfg.RestMpPct > 0 && p.World.Mpp < cfg.RestMpPct)) await RestSafely(ct);
                 await Task.Delay(3000, ct);
                 continue;
             }
@@ -485,9 +487,19 @@ public sealed class LevelGrind(
             {
                 fightCon = await roam.ConsiderCached(mob.Id, ct);
                 int floor = preferred ? 0 : cfg.ConMin;   // droppers are worth killing below the exp band
-                if (fightCon < floor || fightCon > cfg.ConMax)
+                // UNARMED (non-h2h) = prey only: a weaponless caster-phase char punches at skill 0 and CANNOT
+                // hit an even-match (live: the fresh WHM-phase SCH landed literally zero damage on con-4 bees
+                // all night — 116 city round-trips, 1 kill). Con<=1 prey is hittable; the cap self-clears the
+                // moment a weapon equips (0x050). MNK/PUP fight h2h natively and are exempt.
+                int conCap = cfg.ConMax;
+                if (!p.World.MainHandEquipped && p.World.MainJob is not (Job.Mnk or Job.Pup) && conCap > 1)
                 {
-                    Log($"skip 0x{mob.Id:X} '{mob.Name}' con={fightCon} (want {floor}-{cfg.ConMax}{(preferred ? ", dropper" : "")})");
+                    conCap = 1;
+                    if (p.World.NowMs - _lastUnarmedLogMs > 60_000) { _lastUnarmedLogMs = p.World.NowMs; Log("UNARMED (no main-hand) — hunting prey only (con<=1) until a weapon equips"); }
+                }
+                if (fightCon < floor || fightCon > conCap)
+                {
+                    Log($"skip 0x{mob.Id:X} '{mob.Name}' con={fightCon} (want {floor}-{conCap}{(preferred ? ", dropper" : "")})");
                     _skip.Add(mob.Id);
                     // Sustained TOO-WEAK cons = we've out-levelled this zone -> advance a leg (path mode only).
                     if (!preferred && fightCon >= 0 && fightCon < cfg.ConMin)
@@ -539,6 +551,13 @@ public sealed class LevelGrind(
             bool killed = await KillRoutine.Fight(combat, p, nav, gear, mob, preferred ? Math.Max(fightCon, 3) : fightCon, killHooks, breakOffHpp: 0, ct);
 
             if (killed) { _lastKillMs = p.World.NowMs; _dryTreks = 0; }
+            else if (mob.Hpp > 0)
+            {
+                // Fight broke off with the mob alive (KillRoutine's unkillable give-up, or death). Skip THIS
+                // entity for a while — entity-id based and periodically cleared, NOT a name list (con rule).
+                Log($"fight broke off with '{mob.Name}' alive — skipping 0x{mob.Id:X} for now");
+                _skip.Add(mob.Id);
+            }
             if (killed)
                 foreach (var n in cfg.SeedNames.Where(n => mob.Name.Contains(n, StringComparison.OrdinalIgnoreCase)))
                 {

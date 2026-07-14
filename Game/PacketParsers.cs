@@ -97,6 +97,10 @@ public static class PacketParsers
             case 0x00E: EntityUpdate(sub, w, isPc: false); break; // CEntityUpdatePacket (NPC/mob; name @0x34)
             case 0x01B: JobInfo(sub, w); break;    // GP_SERV_COMMAND_JOB_INFO (job/level/maxHP/MP/stats)
             case 0x037: CharStatus(sub, w); break; // CCharStatusPacket (HP%, status, effect icons)
+            // 0x050 equip_list: PropertyItemIndex@4 (inventory slot; 0 = unequipped), EquipKind@5 (0 = main
+            // hand), Category@6. Tracks armed/naked — a weaponless non-h2h char must hunt prey-only (con<=1).
+            case 0x050: if (sub[5] == 0) w.MainHandEquipped = sub[4] != 0; break;
+            case 0x04F: w.MainHandEquipped = false; break; // equip_clear: everything off (zone/job change)
             case 0x0AA: MagicData(sub, w); break;  // GP_SERV_COMMAND_MAGIC_DATA (known-spell bitmap)
             case 0x0DD: GroupMember(sub, w, isAttr: false); break; // group_list: Hpp@body25 (b[29])
             case 0x0DF: GroupMember(sub, w, isAttr: true);  break; // group_attr: NO GAttr field -> Hpp@body18 (b[22])
