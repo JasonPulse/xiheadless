@@ -32,5 +32,7 @@ public static class NewCharCutscene
     /// HomePointRoutines (crystal-set pre-clear) and the auto-completer both sweep it.
     /// 839 also observed live (Zzshekashi, after a mog-house EXIT transition — the current event flipped
     /// 30000 -> 839 mid-sweep, proving the id MOVES with zone transitions; hence the sweep must BURST).
-    public static readonly ushort[] KnownBlockers = { 30000, 839, 30035, 368, 367, 305, 531, 0, 1, 535, 503, 500 };
+    /// 22 observed live (Thiga/GEO, fresh BASTOK char blocked in Bastok Markets 235 — the map log named it
+    /// on rejection: "mismatch 22 != <every guess>"); the Bastok start-city/moghouse zone-in cutscene.
+    public static readonly ushort[] KnownBlockers = { 30000, 839, 30035, 368, 367, 305, 531, 0, 1, 535, 503, 500, 22 };
 }
