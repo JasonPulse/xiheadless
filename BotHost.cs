@@ -86,8 +86,11 @@ public static class BotHost
         // path (retreat from aggro, KO-revive, 40s logout) runs no matter what loop the brain is stuck in.
         var plan = Routines.SessionPlan.ForToday(client.CharId);
         var remaining = plan.EndUtc - DateTime.UtcNow;
-        if (remaining < TimeSpan.FromMinutes(15)) remaining = TimeSpan.FromMinutes(15);   // late login: brief check-in day
-        if (remaining > TimeSpan.FromHours(6)) remaining = TimeSpan.FromHours(6);         // absolute ceiling
+        // 2-6h HARD BAND (user rule: sessions are 2-6 hours, NEVER less). The seeded day-end still varies
+        // end times across the fleet, but a wave login late in a char's seeded day plays a full >=2h session
+        // (first live wave: the anchor alone produced 32-63 MINUTE sessions — mostly travel, zero grinding).
+        if (remaining < TimeSpan.FromHours(2)) remaining = TimeSpan.FromHours(2);
+        if (remaining > TimeSpan.FromHours(6)) remaining = TimeSpan.FromHours(6);
         Log.Always($"session cap: ending the day in {remaining.TotalMinutes:F0} min (plan {plan.Mode}, end {plan.EndUtc:HH:mm}Z)");
         using var sessionCap = new Timer(_ =>
         {

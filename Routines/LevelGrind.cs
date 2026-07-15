@@ -78,7 +78,6 @@ public sealed class LevelGrind(
     float _trackX, _trackZ; double _walkedSinceFight;   // distance-between-pulls metric (wandering waste, per user)
     long _lastKillMs;                                    // hunger clock: dry spells force a deep trek
     long _lastWeakLogMs;                                 // throttle for the post-revive weakness hold log line
-    long _lastUnarmedLogMs;                              // throttle for the unarmed prey-only cap log line
     string? _lastSteerTarget;                            // last dropper-seek species — a fruitless repeat yields its turn
     int _dryTreks;                                       // consecutive hunger treks with no kill — escalates trek DISTANCE
     long _campUntilMs;                                   // camp window after a needed-dropper kill (wait out repops)
@@ -487,19 +486,13 @@ public sealed class LevelGrind(
             {
                 fightCon = await roam.ConsiderCached(mob.Id, ct);
                 int floor = preferred ? 0 : cfg.ConMin;   // droppers are worth killing below the exp band
-                // UNARMED (non-h2h) = prey only: a weaponless caster-phase char punches at skill 0 and CANNOT
-                // hit an even-match (live: the fresh WHM-phase SCH landed literally zero damage on con-4 bees
-                // all night — 116 city round-trips, 1 kill). Con<=1 prey is hittable; the cap self-clears the
-                // moment a weapon equips (0x050). MNK/PUP fight h2h natively and are exempt.
-                int conCap = cfg.ConMax;
-                if (!p.World.MainHandEquipped && p.World.MainJob is not (Job.Mnk or Job.Pup) && conCap > 1)
+                // NOTE: no unarmed con cap — the band is the SAME for everyone (user rule). A con<=1 "prey"
+                // cap is an EMPTY band for a fresh char (no mob can be below level 1, so a lvl-1 sees
+                // everything at con>=3) — three mages stood targetless a whole session under it. Unhittable
+                // INDIVIDUALS are handled downstream (zero-damage kite -> unkillable give-up -> entity skip).
+                if (fightCon < floor || fightCon > cfg.ConMax)
                 {
-                    conCap = 1;
-                    if (p.World.NowMs - _lastUnarmedLogMs > 60_000) { _lastUnarmedLogMs = p.World.NowMs; Log("UNARMED (no main-hand) — hunting prey only (con<=1) until a weapon equips"); }
-                }
-                if (fightCon < floor || fightCon > conCap)
-                {
-                    Log($"skip 0x{mob.Id:X} '{mob.Name}' con={fightCon} (want {floor}-{conCap}{(preferred ? ", dropper" : "")})");
+                    Log($"skip 0x{mob.Id:X} '{mob.Name}' con={fightCon} (want {floor}-{cfg.ConMax}{(preferred ? ", dropper" : "")})");
                     _skip.Add(mob.Id);
                     // Sustained TOO-WEAK cons = we've out-levelled this zone -> advance a leg (path mode only).
                     if (!preferred && fightCon >= 0 && fightCon < cfg.ConMin)

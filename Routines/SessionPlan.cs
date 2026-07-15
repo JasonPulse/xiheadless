@@ -14,8 +14,8 @@ public static class SessionPlan
     const int PartyPct = 60, SoloPct = 25;   // Upkeep = the remainder (15)
 
     // Session-length band (minutes). The seeded roll lands inside; Upkeep days run the SHORTER band.
-    const int MinMinutes = 180, MaxMinutes = 360;         // grind days: 3-6h (user rule: max 6 hours of play)
-    const int UpkeepMinMinutes = 45, UpkeepMaxMinutes = 120;   // chore days: 45m-2h
+    const int MinMinutes = 120, MaxMinutes = 360;         // 2-6h (user rule: sessions are 2-6 hours, NEVER less)
+    const int UpkeepMinMinutes = 120, UpkeepMaxMinutes = 180;  // chore days: 2-3h (the 2h floor applies to EVERY session)
 
     public readonly record struct Plan(DayMode Mode, DateTime StartUtc, DateTime EndUtc)
     {
