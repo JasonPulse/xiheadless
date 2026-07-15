@@ -1,0 +1,296 @@
+# FFXI bot fleet — 36 bots (fleetbot01-36) in 2 daily waves of 18.
+# Each wave is one Indexed Job; a pod derives its account from WAVE_OFFSET +
+# JOB_COMPLETION_INDEX, so each account belongs to exactly one wave slot and
+# can never be logged in twice. Bots self-register accounts on first login
+# (ACCOUNT_CREATION=true) and handle session length internally.
+#
+# Gate rules (init container, read-only DB access):
+#   real players online              -> 75% chance to log in
+#   no players, but this bot hasn't
+#   played in >36h (missed ~3 waves) -> 75% chance to log in (catch-up)
+#   otherwise                        -> skip (job completes, no error)
+# (Catch-up was 60h — ~5 missed waves at 2/day, double the intended "missed
+#  the last 3 sessions"; tightened 2026-07-15 per spec.)
+# Stagger starts at 330s so fleet logins never overlap the gm/rmt bot
+# windows (0-300s), with 40s per-index slots to avoid lobby collisions.
+#
+# Navmeshes come from the RWX claim below (Longhorn share-manager) so pods
+# can schedule on any node; the server stack keeps the original RWO claim.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ffxi-navmeshes-rwx-pvc
+  namespace: homelab
+spec:
+  storageClassName: longhorn
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 2Gi
+---
+# One-shot seed of the RWX claim from the ximeshes image — same mechanism as
+# ffxi-map's mesh-sync init, but standalone so the server stack never restarts.
+# The LOS half of the sync goes to a throwaway emptyDir. To re-seed after a
+# ximeshes image update: kubectl delete job ffxi-navmeshes-rwx-seed -n homelab
+# and Argo recreates it.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ffxi-navmeshes-rwx-seed
+  namespace: homelab
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      nodeSelector:
+        kubernetes.io/arch: amd64
+      restartPolicy: OnFailure
+      containers:
+        - name: mesh-sync
+          image: jasonpulse/ximeshes:latest
+          volumeMounts:
+            - name: navmeshes-rwx
+              mountPath: /nav-pvc
+            - name: los-scratch
+              mountPath: /los-pvc
+      volumes:
+        - name: navmeshes-rwx
+          persistentVolumeClaim:
+            claimName: ffxi-navmeshes-rwx-pvc
+        - name: los-scratch
+          emptyDir: {}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: ffxi-fleet-afternoon
+  namespace: homelab
+spec:
+  schedule: "0 14 * * *"
+  timeZone: America/Los_Angeles
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      completionMode: Indexed
+      completions: 18
+      parallelism: 18
+      backoffLimitPerIndex: 0
+      maxFailedIndexes: 18
+      activeDeadlineSeconds: 72000
+      template:
+        metadata:
+          labels:
+            app: ffxi-fleet
+            wave: afternoon
+        spec:
+          restartPolicy: Never
+          terminationGracePeriodSeconds: 90
+          initContainers:
+            - name: gate
+              image: mariadb:10.11
+              env:
+                - name: MARIADB_ROOT_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: ffxi-database-secret
+                      key: MARIADB_ROOT_PASSWORD
+                - name: WAVE_OFFSET
+                  value: "0"
+                - name: BRAIN_POOL
+                  value: "War Mnk Whm Blm Rdm Thf Pld Drk Bst Brd Rng Sam Nin Drg Smn Blu Cor Pup Dnc Sch Geo Run"
+                - name: JOB_COMPLETION_INDEX
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.annotations['batch.kubernetes.io/job-completion-index']
+              volumeMounts:
+                - name: gate-verdict
+                  mountPath: /gate
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  BOTNUM=$(( WAVE_OFFSET + JOB_COMPLETION_INDEX + 1 ))
+                  ACCOUNT=$(printf 'fleetbot%02d' "$BOTNUM")
+                  set -- $BRAIN_POOL
+                  shift $(( (BOTNUM - 1) % $# ))
+                  BRAIN=$1
+                  echo "$ACCOUNT" > /gate/account
+                  echo "$BRAIN" > /gate/brain
+                  REAL=$(mariadb -h mariadb-service -uroot -p"$MARIADB_ROOT_PASSWORD" xidb -N -B -e "SELECT COUNT(*) FROM accounts_sessions s JOIN accounts a ON a.id = s.accid WHERE a.login NOT LIKE 'rmtbot%' AND a.login NOT LIKE 'gmbot%' AND a.login NOT LIKE 'fleetbot%';" 2>/dev/null)
+                  if [ -z "$REAL" ]; then echo "gate[$ACCOUNT]: DB query failed"; exit 1; fi
+                  MODE=skip
+                  if [ "$REAL" -gt 0 ]; then
+                    MODE=play
+                  else
+                    LAST=$(mariadb -h mariadb-service -uroot -p"$MARIADB_ROOT_PASSWORD" xidb -N -B -e "SELECT UNIX_TIMESTAMP(MAX(c.last_logout)) FROM chars c JOIN accounts a ON a.id = c.accid WHERE a.login = '$ACCOUNT';" 2>/dev/null)
+                    NOW=$(date +%s)
+                    if [ -z "$LAST" ] || [ "$LAST" = "NULL" ]; then
+                      MODE=catchup
+                    elif [ $(( NOW - LAST )) -gt 129600 ]; then
+                      MODE=catchup
+                    fi
+                  fi
+                  if [ "$MODE" = "skip" ]; then echo "gate[$ACCOUNT]: no players, not stale -> skip"; echo skip > /gate/verdict; exit 0; fi
+                  ROLL=$(( $(od -An -N2 -tu2 /dev/urandom | tr -d ' ') % 100 ))
+                  if [ "$ROLL" -ge 75 ]; then echo "gate[$ACCOUNT]: $MODE window, rolled $ROLL (need <75) -> skip"; echo skip > /gate/verdict; exit 0; fi
+                  STAGGER=$(( 330 + JOB_COMPLETION_INDEX * 40 + $(od -An -N2 -tu2 /dev/urandom | tr -d ' ') % 25 ))
+                  echo "gate[$ACCOUNT]: $MODE (roll=$ROLL) brain=$BRAIN, staggering ${STAGGER}s"
+                  sleep "$STAGGER"
+                  echo go > /gate/verdict
+          containers:
+            - name: fleetbot
+              image: ghcr.io/jasonpulse/xiheadless:latest
+              imagePullPolicy: Always
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  if [ "$(cat /gate/verdict 2>/dev/null)" != "go" ]; then echo "skipped by gate"; exit 0; fi
+                  XIBOT_ACCOUNT=$(cat /gate/account)
+                  XIBOT_PASSWORD="${XIBOT_ACCOUNT}pass"
+                  XIBOT_BRAIN=$(cat /gate/brain)
+                  export XIBOT_ACCOUNT XIBOT_PASSWORD XIBOT_BRAIN
+                  exec dotnet /app/XiHeadless.dll
+              env:
+                - name: XIBOT_NAVMESH_DIR
+                  value: "/server/navmeshes"
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 192Mi
+                limits:
+                  cpu: 500m
+                  memory: 384Mi
+              volumeMounts:
+                - name: navmeshes
+                  mountPath: /server/navmeshes
+                  readOnly: true
+                - name: gate-verdict
+                  mountPath: /gate
+                  readOnly: true
+          volumes:
+            - name: navmeshes
+              persistentVolumeClaim:
+                claimName: ffxi-navmeshes-rwx-pvc
+            - name: gate-verdict
+              emptyDir: {}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: ffxi-fleet-evening
+  namespace: homelab
+spec:
+  schedule: "30 19 * * *"
+  timeZone: America/Los_Angeles
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      completionMode: Indexed
+      completions: 18
+      parallelism: 18
+      backoffLimitPerIndex: 0
+      maxFailedIndexes: 18
+      activeDeadlineSeconds: 72000
+      template:
+        metadata:
+          labels:
+            app: ffxi-fleet
+            wave: evening
+        spec:
+          restartPolicy: Never
+          terminationGracePeriodSeconds: 90
+          initContainers:
+            - name: gate
+              image: mariadb:10.11
+              env:
+                - name: MARIADB_ROOT_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: ffxi-database-secret
+                      key: MARIADB_ROOT_PASSWORD
+                - name: WAVE_OFFSET
+                  value: "18"
+                - name: BRAIN_POOL
+                  value: "War Mnk Whm Blm Rdm Thf Pld Drk Bst Brd Rng Sam Nin Drg Smn Blu Cor Pup Dnc Sch Geo Run"
+                - name: JOB_COMPLETION_INDEX
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.annotations['batch.kubernetes.io/job-completion-index']
+              volumeMounts:
+                - name: gate-verdict
+                  mountPath: /gate
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  BOTNUM=$(( WAVE_OFFSET + JOB_COMPLETION_INDEX + 1 ))
+                  ACCOUNT=$(printf 'fleetbot%02d' "$BOTNUM")
+                  set -- $BRAIN_POOL
+                  shift $(( (BOTNUM - 1) % $# ))
+                  BRAIN=$1
+                  echo "$ACCOUNT" > /gate/account
+                  echo "$BRAIN" > /gate/brain
+                  REAL=$(mariadb -h mariadb-service -uroot -p"$MARIADB_ROOT_PASSWORD" xidb -N -B -e "SELECT COUNT(*) FROM accounts_sessions s JOIN accounts a ON a.id = s.accid WHERE a.login NOT LIKE 'rmtbot%' AND a.login NOT LIKE 'gmbot%' AND a.login NOT LIKE 'fleetbot%';" 2>/dev/null)
+                  if [ -z "$REAL" ]; then echo "gate[$ACCOUNT]: DB query failed"; exit 1; fi
+                  MODE=skip
+                  if [ "$REAL" -gt 0 ]; then
+                    MODE=play
+                  else
+                    LAST=$(mariadb -h mariadb-service -uroot -p"$MARIADB_ROOT_PASSWORD" xidb -N -B -e "SELECT UNIX_TIMESTAMP(MAX(c.last_logout)) FROM chars c JOIN accounts a ON a.id = c.accid WHERE a.login = '$ACCOUNT';" 2>/dev/null)
+                    NOW=$(date +%s)
+                    if [ -z "$LAST" ] || [ "$LAST" = "NULL" ]; then
+                      MODE=catchup
+                    elif [ $(( NOW - LAST )) -gt 129600 ]; then
+                      MODE=catchup
+                    fi
+                  fi
+                  if [ "$MODE" = "skip" ]; then echo "gate[$ACCOUNT]: no players, not stale -> skip"; echo skip > /gate/verdict; exit 0; fi
+                  ROLL=$(( $(od -An -N2 -tu2 /dev/urandom | tr -d ' ') % 100 ))
+                  if [ "$ROLL" -ge 75 ]; then echo "gate[$ACCOUNT]: $MODE window, rolled $ROLL (need <75) -> skip"; echo skip > /gate/verdict; exit 0; fi
+                  STAGGER=$(( 330 + JOB_COMPLETION_INDEX * 40 + $(od -An -N2 -tu2 /dev/urandom | tr -d ' ') % 25 ))
+                  echo "gate[$ACCOUNT]: $MODE (roll=$ROLL) brain=$BRAIN, staggering ${STAGGER}s"
+                  sleep "$STAGGER"
+                  echo go > /gate/verdict
+          containers:
+            - name: fleetbot
+              image: ghcr.io/jasonpulse/xiheadless:latest
+              imagePullPolicy: Always
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  if [ "$(cat /gate/verdict 2>/dev/null)" != "go" ]; then echo "skipped by gate"; exit 0; fi
+                  XIBOT_ACCOUNT=$(cat /gate/account)
+                  XIBOT_PASSWORD="${XIBOT_ACCOUNT}pass"
+                  XIBOT_BRAIN=$(cat /gate/brain)
+                  export XIBOT_ACCOUNT XIBOT_PASSWORD XIBOT_BRAIN
+                  exec dotnet /app/XiHeadless.dll
+              env:
+                - name: XIBOT_NAVMESH_DIR
+                  value: "/server/navmeshes"
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 192Mi
+                limits:
+                  cpu: 500m
+                  memory: 384Mi
+              volumeMounts:
+                - name: navmeshes
+                  mountPath: /server/navmeshes
+                  readOnly: true
+                - name: gate-verdict
+                  mountPath: /gate
+                  readOnly: true
+          volumes:
+            - name: navmeshes
+              persistentVolumeClaim:
+                claimName: ffxi-navmeshes-rwx-pvc
+            - name: gate-verdict
+              emptyDir: {}
