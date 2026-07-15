@@ -238,7 +238,7 @@ public sealed class JobLifecycle(
             // — they pure-melee'd every fight (live: a lvl-1 BRD never sang, lost to a con-2 rabbit 17x/h).
             // Inject the generic per-job kit when the brain left the sentinels in place; curated brains
             // (WarBrain/BlmBrain) keep their own rotations untouched.
-            JobKits.Apply(g, job, combat, magic, p, cfg.Tag);
+            JobKits.Apply(g, job, combat, magic, p, cfg.Tag, inv);
             // (The 2026-07-12 role-aware con caps were REVERTED: the death-loopers' real defect was fighting
             // with NO JOB KIT — a lvl-1 BRD that actually sings kills far above these caps (user). The kit
             // injection below is the fix; con bands stay as the brains tuned them.)

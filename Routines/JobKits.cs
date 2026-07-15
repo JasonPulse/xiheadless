@@ -10,11 +10,46 @@ namespace XiHeadless.Routines;
 /// their own rotations; this covers the other ~18.
 public static class JobKits
 {
+    // "Mages use spells" (user) — the early scroll kit IS a caster's weapon. Per-job relevance comes from
+    // SpellLevels (usable by ~lv12), so WHM resolves to Cure/Dia/Banish/Paralyze, BLM to Stone/Water/etc.
+    // Bought by LevelGrind's existing AH buy phase (appended to BuyItems, cheapest essentials first) and
+    // learned in the Equip pass — the proven WhmBrain arc (club + Dia + Cure -> 18), now engine-provided
+    // so every advanced-job mage phase (SCH/GEO/SMN/RDM sub-arcs) gets it without brain-side lists.
+    static readonly (ushort scroll, Spell spell)[] ScrollKit =
+    {
+        (4609, Spell.Cure), (4631, Spell.Dia), (4636, Spell.Banish), (4666, Spell.Paralyze),
+        (4767, Spell.Stone), (4777, Spell.Water), (4762, Spell.Aero), (4862, Spell.Blind),
+    };
+
+    static (ushort scroll, Spell spell)[] EssentialScrolls(byte job) =>
+        ScrollKit.Where(s => SpellLevels.For((ushort)s.spell, job) is { } lvl && lvl <= 12).ToArray();
+
     /// Wire the generic kit into a grind config IF the brain left the defaults in place.
-    public static void Apply(LevelGrind.Config g, byte job, ICombat combat, IMagic? magic, IPerception p, string tag)
+    public static void Apply(LevelGrind.Config g, byte job, ICombat combat, IMagic? magic, IPerception p, string tag,
+                             IInventory? inv = null)
     {
         if (ReferenceEquals(g.UseAbilities, LevelGrind.Config.NoAbilities))
             g.UseAbilities = For(job, combat, magic, p, tag);
+        // Self-funding default: if the brain wired NO bag policy at all, sell junk drops when the bag
+        // fills (drops -> gil -> scrolls/gear is the whole broke-bot economy; a bag that silently fills
+        // just bounces loot). Brains with an explicit OnBagFull (party farms) are untouched.
+        if (!g.SellJunkWhenFull && g.OnBagFull is null) { g.SellJunkWhenFull = true; g.SellAtItems = Math.Min(g.SellAtItems, 22); }
+        // Essential scrolls for this phase's job: buy (via the standard buy phase) + learn (in the Equip
+        // pass). Applies to EVERY brain's mage phases — scroll learning is engine duty, not brain config.
+        if (magic is not null && inv is not null && EssentialScrolls(job) is { Length: > 0 } scrolls)
+        {
+            g.BuyItems = scrolls.Select(s => s.scroll).Where(s => !g.BuyItems.Contains(s)).Concat(g.BuyItems).ToArray();
+            foreach (var (scroll, _) in scrolls) g.Keep.Add(scroll);
+            var innerEquip = g.Equip;
+            g.Equip = async ct =>
+            {
+                await innerEquip(ct);
+                foreach (var (scroll, spell) in scrolls)
+                    if (!magic.Known(spell) && inv.Has(scroll)
+                        && SpellLevels.For((ushort)spell, p.World.MainJob) is { } lvl && p.World.MainJobLevel >= lvl)
+                        await MagicRoutines.LearnFromScroll(inv, magic, p, scroll, spell, ct, tag);
+            };
+        }
         // Any job that can Cure (WHM/RDM main, or a WHM/RDM sub once set) self-heals below 50% — the one
         // shared MagicRoutines.EmergencyCure (level-gated Cure line selector, never a hardcoded tier).
         if (magic is not null && ReferenceEquals(g.EmergencyHeal, LevelGrind.Config.NoHeal))
@@ -55,9 +90,11 @@ public static class JobKits
                         }
                     return;
 
-                // ---- WHM offense: Banish between cures (heal comes via EmergencyHeal).
+                // ---- WHM offense: Banish between cures (heal comes via EmergencyHeal); Dia when Banish
+                // isn't castable yet — a lv3-4 WHM's entire offense is Dia (user: mages use spells).
                 case Job.Whm:
-                    if (magic is not null && w.Mpp >= 25 && magic.CastLowest(SpellLine.Banish, mob))
+                    if (magic is not null && w.Mpp >= 25
+                        && (magic.CastLowest(SpellLine.Banish, mob) || magic.CastLowest(SpellLine.Dia, mob)))
                         await Task.Delay(3000, ct);
                     return;
 
