@@ -9,7 +9,7 @@ namespace XiHeadless.Brains;
 public sealed class PldBrain(
     IPerception p, INavigation nav, ICombat combat, IMagic magic, IZoning zoning, IGear gear, IAuctionHouse ah,
     IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs, IQuests quests, ITradeNpc trade, IEvents events,
-    ILifecycle lifecycle, IChat chat) : IBrain
+    ILifecycle lifecycle, IChat chat, IParty party) : IBrain
 {
     const byte SwordSkill = 3;
     const string AhZone = "Windurst Woods";   // home-nation AH (char is Windurst)
@@ -81,7 +81,7 @@ public sealed class PldBrain(
                 StealthUnlock = true,                       // the overland trek to San d'Oria crosses lv30-40 aggro
                 UnlockTrekZone = "Southern_San_dOria", UnlockTrekZoneId = 230,
                 GrindCfgFor = GrindCfg, Tag = "pld",
-            }, chat: chat, magic: magic).RunAsync(ct);
+            }, lifecycle: lifecycle, chat: chat, magic: magic, party: party).RunAsync(ct);
 
     LevelGrind.Config GrindCfg(byte job) => new()
     {

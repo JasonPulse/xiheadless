@@ -15,7 +15,7 @@ namespace XiHeadless.Brains;
 public sealed class BlmBrain(
     IPerception p, INavigation nav, ICombat combat, IMagic magic, IZoning zoning, IGear gear,
     IAuctionHouse ah, IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs, ILifecycle lifecycle,
-    IEvents events) : IBrain
+    IEvents events, IChat chat, IParty party) : IBrain
 {
     // Stealth consumables + seals are never junk (the bag clear SOLD the oils once and the crossings killed us).
     static readonly HashSet<ushort> BlmKeep = new() { 1126, 1127, StealthRoutines.SilentOil, StealthRoutines.PrismPowder };
@@ -33,7 +33,7 @@ public sealed class BlmBrain(
             {
                 MainJob = Job.Blm, SubJob = Job.Whm, Advanced = false, MainTarget = 0,
                 GrindCfgFor = _ => Cfg(), Tag = "blm",
-            }, lifecycle).RunAsync(ct);
+            }, lifecycle, chat: chat, magic: magic, party: party).RunAsync(ct);
 
     LevelGrind.Config Cfg() => new()
     {

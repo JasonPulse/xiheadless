@@ -12,7 +12,7 @@ namespace XiHeadless.Brains;
 /// Gear: network-gnomes PUP guide lv1-30 bracket (baghnakhs + light cloth), ids verified vs the server DB.
 public sealed class PupBrain(
     IPerception p, INavigation nav, ICombat combat, IMagic magic, IZoning zoning, IGear gear, IAuctionHouse ah,
-    IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs, IQuests quests, ITradeNpc trade, IEvents events) : IBrain
+    IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs, IQuests quests, ITradeNpc trade, IEvents events, IChat chat, ILifecycle lifecycle, IParty party) : IBrain
 {
     const byte H2HSkill = 1;
     const byte GreatAxeSkill = 6;             // WAR prereq/sub phases ride the proven Great Axe kit
@@ -54,7 +54,7 @@ public sealed class PupBrain(
                 UnlockSteps = QuestDefs.Unlock[Job.Pup],   // "No Strings Attached"
                 StealthUnlock = true, UnlockTrekZone = "Bastok_Markets", UnlockTrekZoneId = 235,
                 GrindCfgFor = GrindCfg, Tag = "pup",
-            }, magic: magic).RunAsync(ct);
+            }, lifecycle: lifecycle, chat: chat, magic: magic, party: party).RunAsync(ct);
 
     LevelGrind.Config GrindCfg(byte job) => new()
     {

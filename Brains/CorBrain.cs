@@ -12,7 +12,7 @@ namespace XiHeadless.Brains;
 /// Gear: network-gnomes COR guide lv1-30 bracket, ids verified vs the server DB (guns omitted — unusable).
 public sealed class CorBrain(
     IPerception p, INavigation nav, ICombat combat, IMagic magic, IZoning zoning, IGear gear, IAuctionHouse ah,
-    IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs, IQuests quests, ITradeNpc trade, IEvents events) : IBrain
+    IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs, IQuests quests, ITradeNpc trade, IEvents events, IChat chat, ILifecycle lifecycle, IParty party) : IBrain
 {
     const byte DaggerSkill = 2;
     const byte SwordSkill = 3;                // RDM prereq/sub phases
@@ -64,7 +64,7 @@ public sealed class CorBrain(
                 UnlockSteps = QuestDefs.Unlock[Job.Cor],   // "Luck of the Draw"
                 StealthUnlock = true, UnlockTrekZone = "Aht_Urhgan_Whitegate", UnlockTrekZoneId = 50,
                 GrindCfgFor = GrindCfg, Tag = "cor",
-            }, magic: magic).RunAsync(ct);
+            }, lifecycle: lifecycle, chat: chat, magic: magic, party: party).RunAsync(ct);
 
     LevelGrind.Config GrindCfg(byte job) => new()
     {

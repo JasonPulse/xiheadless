@@ -9,7 +9,7 @@ namespace XiHeadless.Brains;
 /// Gear: network-gnomes BRD guide lv1-38 bracket (dagger + light cloth), ids verified vs the server DB.
 public sealed class BrdBrain(
     IPerception p, INavigation nav, ICombat combat, IMagic magic, IZoning zoning, IGear gear, IAuctionHouse ah,
-    IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs, IQuests quests, ITradeNpc trade, IEvents events) : IBrain
+    IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs, IQuests quests, ITradeNpc trade, IEvents events, IChat chat, ILifecycle lifecycle, IParty party) : IBrain
 {
     const byte DaggerSkill = 2;
     const byte ClubSkill = 11;                // WHM prereq/sub phases swing a wand
@@ -56,7 +56,7 @@ public sealed class BrdBrain(
                 UnlockStockItems = new[] { (SheetOfParchment, 1) }, StealthUnlock = true,
                 UnlockTrekZone = "Lower_Jeuno", UnlockTrekZoneId = 245,
                 GrindCfgFor = GrindCfg, Tag = "brd",
-            }, magic: magic).RunAsync(ct);
+            }, lifecycle: lifecycle, chat: chat, magic: magic, party: party).RunAsync(ct);
 
     LevelGrind.Config GrindCfg(byte job) => new()
     {

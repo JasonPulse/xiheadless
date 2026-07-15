@@ -14,7 +14,7 @@ namespace XiHeadless.Brains;
 /// the Plate of Indi-Poison (6074) are the unlock rewards — kept, bell equipped on GEO.
 public sealed class GeoBrain(
     IPerception p, INavigation nav, ICombat combat, IMagic magic, IZoning zoning, IGear gear, IAuctionHouse ah,
-    IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs, IQuests quests, ITradeNpc trade, IEvents events) : IBrain
+    IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs, IQuests quests, ITradeNpc trade, IEvents events, IChat chat, ILifecycle lifecycle, IParty party) : IBrain
 {
     const byte ClubSkill = 11;                // wands are clubs; both GEO and the WHM phases swing them
     const ushort PetrifiedLog = 703;          // Sylvie trade item (AH-bought)
@@ -63,7 +63,7 @@ public sealed class GeoBrain(
                 UnlockStockItems = new[] { (PetrifiedLog, 1) }, StealthUnlock = true,
                 UnlockTrekZone = "Western_Adoulin", UnlockTrekZoneId = 256,
                 GrindCfgFor = GrindCfg, Tag = "geo",
-            }, magic: magic).RunAsync(ct);
+            }, lifecycle: lifecycle, chat: chat, magic: magic, party: party).RunAsync(ct);
 
     LevelGrind.Config GrindCfg(byte job) => new()
     {

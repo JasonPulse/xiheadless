@@ -9,7 +9,7 @@ namespace XiHeadless.Brains;
 /// Gear: network-gnomes DNC guide lv1-29 bracket (dagger + light DD), ids verified vs the server DB.
 public sealed class DncBrain(
     IPerception p, INavigation nav, ICombat combat, IMagic magic, IZoning zoning, IGear gear, IAuctionHouse ah,
-    IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs, IQuests quests, ITradeNpc trade, IEvents events) : IBrain
+    IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs, IQuests quests, ITradeNpc trade, IEvents events, IChat chat, ILifecycle lifecycle, IParty party) : IBrain
 {
     const byte DaggerSkill = 2;
     const byte GreatAxeSkill = 6;             // WAR prereq/sub phases ride the proven Great Axe kit
@@ -57,7 +57,7 @@ public sealed class DncBrain(
                 UnlockSteps = QuestDefs.Unlock[Job.Dnc],   // "Lakeside Minuet"
                 StealthUnlock = true, UnlockTrekZone = "Upper_Jeuno", UnlockTrekZoneId = 244,
                 GrindCfgFor = GrindCfg, Tag = "dnc",
-            }, magic: magic).RunAsync(ct);
+            }, lifecycle: lifecycle, chat: chat, magic: magic, party: party).RunAsync(ct);
 
     LevelGrind.Config GrindCfg(byte job) => new()
     {

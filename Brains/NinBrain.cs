@@ -9,7 +9,7 @@ namespace XiHeadless.Brains;
 /// will fail until that fight is handled (live work needed).
 public sealed class NinBrain(
     IPerception p, INavigation nav, ICombat combat, IMagic magic, IZoning zoning, IGear gear, IAuctionHouse ah,
-    IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs, IQuests quests, ITradeNpc trade, IEvents events) : IBrain
+    IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs, IQuests quests, ITradeNpc trade, IEvents events, IChat chat, ILifecycle lifecycle, IParty party) : IBrain
 {
     const byte KatanaSkill = 9;               // LSB skill enum (Katana=9 — verified vs the generated WS table)
     const byte GreatAxeSkill = 6;             // WAR prereq/sub phases ride the proven Great Axe kit
@@ -58,7 +58,7 @@ public sealed class NinBrain(
                 MainJob = Job.Nin, SubJob = Job.War, Advanced = true,
                 UnlockSteps = QuestDefs.Unlock[Job.Nin],   // "Ayame and Kaede"
                 GrindCfgFor = GrindCfg, Tag = "nin",
-            }, magic: magic).RunAsync(ct);
+            }, lifecycle: lifecycle, chat: chat, magic: magic, party: party).RunAsync(ct);
 
     LevelGrind.Config GrindCfg(byte job) => new()
     {

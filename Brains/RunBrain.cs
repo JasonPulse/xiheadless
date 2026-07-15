@@ -13,7 +13,7 @@ namespace XiHeadless.Brains;
 /// DB (the guide's Kampf set is WAR/PLD-only there, so the Beetle+1 line is the 21-29 body instead).
 public sealed class RunBrain(
     IPerception p, INavigation nav, ICombat combat, IMagic magic, IZoning zoning, IGear gear, IAuctionHouse ah,
-    IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs, IQuests quests, ITradeNpc trade, IEvents events) : IBrain
+    IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs, IQuests quests, ITradeNpc trade, IEvents events, IChat chat, ILifecycle lifecycle, IParty party) : IBrain
 {
     const byte GreatSwordSkill = 4;
     const byte GreatAxeSkill = 6;             // WAR prereq/sub phases ride the proven Great Axe kit
@@ -65,7 +65,7 @@ public sealed class RunBrain(
                 UnlockSteps = QuestDefs.Unlock[Job.Run],   // "Children of the Rune"
                 StealthUnlock = true, UnlockTrekZone = "Eastern_Adoulin", UnlockTrekZoneId = 257,
                 GrindCfgFor = GrindCfg, Tag = "run",
-            }, magic: magic).RunAsync(ct);
+            }, lifecycle: lifecycle, chat: chat, magic: magic, party: party).RunAsync(ct);
 
     LevelGrind.Config GrindCfg(byte job) => new()
     {

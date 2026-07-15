@@ -6,7 +6,7 @@ namespace XiHeadless.Brains;
 /// Subjob (MNK per user) comes later — it needs its own subjob-quest item run at 18+.
 public sealed class ThfBrain(
     IPerception p, INavigation nav, ICombat combat, IMagic magic, IZoning zoning, IGear gear,
-    IAuctionHouse ah, IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs) : IBrain
+    IAuctionHouse ah, IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs, IChat chat, ILifecycle lifecycle, IParty party) : IBrain
 {
     const byte DaggerSkill = 2;
     const byte SwordSkill = 3;
@@ -36,7 +36,7 @@ public sealed class ThfBrain(
             {
                 MainJob = Job.Thf, SubJob = Job.War, Advanced = false,   // user roster: THF/WAR
                 GrindCfgFor = GrindCfg, Tag = "thf",
-            }, magic: magic).RunAsync(ct);
+            }, lifecycle: lifecycle, chat: chat, magic: magic, party: party).RunAsync(ct);
 
     LevelGrind.Config GrindCfg(byte job)
     {

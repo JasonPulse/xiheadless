@@ -11,7 +11,7 @@ namespace XiHeadless.Brains;
 /// every piece is WHM+SCH wearable), ids verified vs the server DB.
 public sealed class SchBrain(
     IPerception p, INavigation nav, ICombat combat, IMagic magic, IZoning zoning, IGear gear, IAuctionHouse ah,
-    IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs, IQuests quests, ITradeNpc trade, IEvents events) : IBrain
+    IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs, IQuests quests, ITradeNpc trade, IEvents events, IChat chat, ILifecycle lifecycle, IParty party) : IBrain
 {
     const byte ClubSkill = 11;                // wands are clubs; both SCH and the WHM phases swing them
     const ushort Rolanberry = 4365;           // Tucker trade x12 (AH-bought)
@@ -57,7 +57,7 @@ public sealed class SchBrain(
                 UnlockStockItems = new[] { (Rolanberry, 12) }, StealthUnlock = true,
                 UnlockTrekZone = "The_Eldieme_Necropolis_[S]", UnlockTrekZoneId = 175,
                 GrindCfgFor = GrindCfg, Tag = "sch",
-            }, magic: magic).RunAsync(ct);
+            }, lifecycle: lifecycle, chat: chat, magic: magic, party: party).RunAsync(ct);
 
     LevelGrind.Config GrindCfg(byte job) => new()
     {

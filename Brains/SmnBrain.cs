@@ -12,7 +12,7 @@ namespace XiHeadless.Brains;
 ///     weather-watch roam loop, which QuestRunner cannot express yet.
 public sealed class SmnBrain(
     IPerception p, INavigation nav, ICombat combat, IMagic magic, IZoning zoning, IGear gear, IAuctionHouse ah,
-    IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs, IQuests quests, ITradeNpc trade, IEvents events) : IBrain
+    IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs, IQuests quests, ITradeNpc trade, IEvents events, IChat chat, ILifecycle lifecycle, IParty party) : IBrain
 {
     const byte ClubSkill = 11;                // LSB skill enum (Club=11 — same id WhmBrain/BlmBrain train)
     const byte DaggerSkill = 2;               // Ceremonial Dagger bracket (1-9)
@@ -51,7 +51,7 @@ public sealed class SmnBrain(
                 MainJob = Job.Smn, SubJob = Job.Whm, Advanced = true,
                 UnlockSteps = QuestDefs.Unlock[Job.Smn],   // "I Can Hear a Rainbow"
                 GrindCfgFor = GrindCfg, Tag = "smn",
-            }, magic: magic).RunAsync(ct);
+            }, lifecycle: lifecycle, chat: chat, magic: magic, party: party).RunAsync(ct);
 
     LevelGrind.Config GrindCfg(byte job) => new()
     {

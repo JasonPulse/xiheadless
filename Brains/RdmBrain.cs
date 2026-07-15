@@ -5,7 +5,7 @@ namespace XiHeadless.Brains;
 /// Config only: the network-gnomes RDM gear ladder (sword + mage cloth), sword WS, mage rest (MP too).
 public sealed class RdmBrain(
     IPerception p, INavigation nav, ICombat combat, IMagic magic, IZoning zoning, IGear gear,
-    IAuctionHouse ah, IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs) : IBrain
+    IAuctionHouse ah, IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs, IChat chat, ILifecycle lifecycle, IParty party) : IBrain
 {
     const byte SwordSkill = 3;
     const string AhZone = "Windurst Woods";   // home-nation AH (char is Windurst)
@@ -49,7 +49,7 @@ public sealed class RdmBrain(
             {
                 MainJob = Job.Rdm, SubJob = Job.Mnk, Advanced = false,
                 GrindCfgFor = GrindCfg, Tag = "rdm",
-            }, magic: magic).RunAsync(ct);
+            }, lifecycle: lifecycle, chat: chat, magic: magic, party: party).RunAsync(ct);
 
     LevelGrind.Config GrindCfg(byte job) => new()
     {

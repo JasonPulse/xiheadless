@@ -35,7 +35,7 @@ public sealed class JobLifecycle(
     IPerception p, INavigation nav, ICombat combat, IZoning zoning, IGear gear,
     IAuctionHouse ah, IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs,
     IQuests? quests, ITradeNpc? trade, IEvents? events, JobLifecycle.Config cfg, ILifecycle? lifecycle = null,
-    IChat? chat = null, IMagic? magic = null)
+    IChat? chat = null, IMagic? magic = null, IParty? party = null)
 {
     public sealed class Config
     {
@@ -252,6 +252,25 @@ public sealed class JobLifecycle(
                 g.Done = () => done() || cfg.HuntZonePlan(p.World.MainJobLevel)?.id != id;
             }
             else g.Done = done;   // nation path (HuntZones) selects zones itself
+            // PARTY DAYS (user rule 2026-07-14: bots try to PARTY above level 10). On a Party-plan day a
+            // capable bot runs the fleet day instead of the solo grind: travel to the hunt zone, form via
+            // zone shout (PartyFinder), play its ROLE at camp (PartyGrind — stations, puller doctrine, the
+            // one shared KillRoutine), group-safe logout (FleetSchedule). Solo/Upkeep days = the grind below.
+            if (party is not null && chat is not null && magic is not null && lifecycle is not null
+                && p.World.MainJobLevel > 10
+                && SessionPlan.ForToday(p.World.MyId).Mode == SessionPlan.DayMode.Party)
+            {
+                Log($"PARTY day (lvl {p.World.MainJobLevel}) — grouping up in the hunt zone");
+                var pg = new PartyGrind(p, combat, magic, nav, gear, chat, g, cfg.Tag);
+                await FleetDay.Run(p, combat, party, chat, magic, nav, lifecycle, new FleetDay.Hooks
+                {
+                    GoToHuntZone = async c => { if (plan is (string pz, ushort pid) && zoning.CurrentZone != pid) await zoning.GoTo(pz, c); },
+                    SoloGrind = c => new LevelGrind(p, nav, combat, zoning, gear, ah, delivery, inv, shop, g).RunAsync(c),
+                    PartyGrind = (pp, c) => pg.Beat(pp, c),
+                    Tag = cfg.Tag,
+                }, SessionPlan.ForToday(p.World.MyId), ct);
+                continue;   // the fleet day ends via session logout / cancellation
+            }
             await new LevelGrind(p, nav, combat, zoning, gear, ah, delivery, inv, shop, g).RunAsync(ct);
             if (plan is null) break;   // nation-path LevelGrind only returns when done() (or cancelled)
         }

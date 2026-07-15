@@ -6,7 +6,7 @@ namespace XiHeadless.Brains;
 /// the character owns (the leather/beetle sets are job-shared).
 public sealed class MnkBrain(
     IPerception p, INavigation nav, ICombat combat, IMagic magic, IZoning zoning, IGear gear,
-    IAuctionHouse ah, IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs, ILifecycle lifecycle) : IBrain
+    IAuctionHouse ah, IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs, ILifecycle lifecycle, IChat chat, IParty party) : IBrain
 {
     const byte TargetLevel = 20;   // MNK 20 = full WAR/MNK sub once WAR main reaches 40 (user goal)
     const byte H2HSkill = 1;
@@ -29,5 +29,5 @@ public sealed class MnkBrain(
                     Tag = "mnk",
                 },
                 Tag = "mnk",
-            }, lifecycle).RunAsync(ct);
+            }, lifecycle, chat: chat, magic: magic, party: party).RunAsync(ct);
 }

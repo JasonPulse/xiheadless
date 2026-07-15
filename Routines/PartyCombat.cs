@@ -83,6 +83,46 @@ public static class PartyCombat
         return new(tank ?? roster.Keys.OrderBy(k => k, StringComparer.OrdinalIgnoreCase).First(), PullStyle.TankRanged, tank, thief);
     }
 
+    // ---- role stations (user spec 2026-07-14) -----------------------------------------------------------
+    // The BARD (or whoever pulls) OWNS the camp geometry and ANNOUNCES it on party chat — ONE source of
+    // truth. Members never derive their own spot (six casters each "choosing" would ring the camp), and in
+    // an OPEN party real players read the same line to see where the bard wants them. Songs are self-AoE:
+    // melee songs are sung inside the melee cluster at the mob camp, Ballads at the caster camp.
+
+    public const float CasterCampYalms = 18f;
+    public const long StationAnnounceEveryMs = 240_000;
+
+    /// Announce both stations (puller/bard only) — parseable AND readable by human party members.
+    public static void AnnounceStations(IChat chat, (float x, float z) camp, (float x, float z) casters)
+        => chat.Party($"CAMP {camp.x:F0} {camp.z:F0} CASTERS {casters.x:F0} {casters.z:F0}");
+
+    /// The ANNOUNCER's caster-camp derivation: CasterCampYalms from camp, directly AWAY from the pull lane
+    /// (the direction the puller leaves toward the mobs) so casters never sit in an incoming mob's path.
+    public static (float x, float z) DeriveCasterStation((float x, float z) camp, (float x, float z) pullLane)
+    {
+        float dx = camp.x - pullLane.x, dz = camp.z - pullLane.z;
+        float len = MathF.Max(0.5f, Geometry.Dist2D(camp.x, camp.z, pullLane.x, pullLane.z));
+        return (camp.x + dx / len * CasterCampYalms, camp.z + dz / len * CasterCampYalms);
+    }
+
+    /// Latest stations announced on party chat (usually by the bard; includes our own). Null = none yet —
+    /// members then hold the plain camp.
+    public static ((float x, float z) camp, (float x, float z) casters)? Stations(IPerception p)
+    {
+        ((float, float), (float, float))? best = null; long bestMs = -1;
+        foreach (var (_, (msg, ms)) in p.World.PartyChat.ToArray())
+        {
+            var m = msg.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (m.Length >= 6 && m[0].Equals("CAMP", StringComparison.OrdinalIgnoreCase)
+                && m[3].Equals("CASTERS", StringComparison.OrdinalIgnoreCase)
+                && float.TryParse(m[1], out var cx) && float.TryParse(m[2], out var cz)
+                && float.TryParse(m[4], out var kx) && float.TryParse(m[5], out var kz)
+                && ms > bestMs)
+            { best = ((cx, cz), (kx, kz)); bestMs = ms; }
+        }
+        return best;
+    }
+
     // ---- pull execution ---------------------------------------------------------------------------------
 
     /// The RANGED pull (main-tank style): Provoke if the job has it, else Shoot (boomerang), then walk home.

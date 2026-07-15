@@ -11,7 +11,7 @@ namespace XiHeadless.Brains;
 /// Gear: network-gnomes BLU guide lv1-30 bracket (sword + light DD), ids verified vs the server DB.
 public sealed class BluBrain(
     IPerception p, INavigation nav, ICombat combat, IMagic magic, IZoning zoning, IGear gear, IAuctionHouse ah,
-    IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs, IQuests quests, ITradeNpc trade, IEvents events) : IBrain
+    IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs, IQuests quests, ITradeNpc trade, IEvents events, IChat chat, ILifecycle lifecycle, IParty party) : IBrain
 {
     const byte SwordSkill = 3;
     const byte GreatAxeSkill = 6;             // WAR prereq/sub phases ride the proven Great Axe kit
@@ -59,7 +59,7 @@ public sealed class BluBrain(
                 UnlockSteps = QuestDefs.Unlock[Job.Blu],   // "An Empty Vessel"
                 StealthUnlock = true, UnlockTrekZone = "Aht_Urhgan_Whitegate", UnlockTrekZoneId = 50,
                 GrindCfgFor = GrindCfg, Tag = "blu",
-            }, magic: magic).RunAsync(ct);
+            }, lifecycle: lifecycle, chat: chat, magic: magic, party: party).RunAsync(ct);
 
     LevelGrind.Config GrindCfg(byte job) => new()
     {

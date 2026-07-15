@@ -8,7 +8,7 @@ namespace XiHeadless.Brains;
 public sealed class WhmBrain(
     IPerception p, INavigation nav, ICombat combat, IMagic magic, IZoning zoning, IGear gear,
     IAuctionHouse ah, IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs,
-    IQuests quests, ITradeNpc trade, IEvents events) : IBrain
+    IQuests quests, ITradeNpc trade, IEvents events, IChat chat, ILifecycle lifecycle, IParty party) : IBrain
 {
     const Nation HomeNation = Nation.Windurst;
     const string AhZone = "Windurst Woods";
@@ -62,7 +62,7 @@ public sealed class WhmBrain(
             {
                 MainJob = Job.Whm, SubJob = 0, MainTarget = 0,
                 GrindCfgFor = _ => BuildCfg(), Tag = "whm",
-            }, magic: magic).RunAsync(ct);
+            }, lifecycle: lifecycle, chat: chat, magic: magic, party: party).RunAsync(ct);
     }
 
     LevelGrind.Config BuildCfg() => new()

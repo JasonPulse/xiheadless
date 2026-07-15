@@ -12,7 +12,7 @@ namespace XiHeadless.Brains;
 /// rebuy-when-low pass; validate on a live run).
 public sealed class RngBrain(
     IPerception p, INavigation nav, ICombat combat, IMagic magic, IZoning zoning, IGear gear, IAuctionHouse ah,
-    IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs, IQuests quests, ITradeNpc trade, IEvents events) : IBrain
+    IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs, IQuests quests, ITradeNpc trade, IEvents events, IChat chat, ILifecycle lifecycle, IParty party) : IBrain
 {
     const byte ArcherySkill = 25;             // LSB skill enum (Archery=25) — unused until ranged support lands
     const byte AxeSkill = 5;                  // melee carry 1-27
@@ -64,7 +64,7 @@ public sealed class RngBrain(
                 MainJob = Job.Rng, SubJob = Job.War, Advanced = true,
                 UnlockSteps = QuestDefs.Unlock[Job.Rng],   // "The Fanged One"
                 GrindCfgFor = GrindCfg, Tag = "rng",
-            }, magic: magic).RunAsync(ct);
+            }, lifecycle: lifecycle, chat: chat, magic: magic, party: party).RunAsync(ct);
 
     LevelGrind.Config GrindCfg(byte job) => new()
     {

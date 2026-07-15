@@ -13,7 +13,7 @@ namespace XiHeadless.Brains;
 ///     game-clock wait/retry loop.
 public sealed class BstBrain(
     IPerception p, INavigation nav, ICombat combat, IMagic magic, IZoning zoning, IGear gear, IAuctionHouse ah,
-    IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs, IQuests quests, ITradeNpc trade, IEvents events) : IBrain
+    IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs, IQuests quests, ITradeNpc trade, IEvents events, IChat chat, ILifecycle lifecycle, IParty party) : IBrain
 {
     const byte AxeSkill = 5;
     const byte ClubSkill = 11;                // WHM prereq/sub phases melee with club (WhmBrain's proven skill)
@@ -59,7 +59,7 @@ public sealed class BstBrain(
                 MainJob = Job.Bst, SubJob = Job.Whm, Advanced = true,
                 UnlockSteps = QuestDefs.Prereqs[Job.Bst].Concat(QuestDefs.Unlock[Job.Bst]).ToArray(),
                 GrindCfgFor = GrindCfg, Tag = "bst",
-            }, magic: magic).RunAsync(ct);
+            }, lifecycle: lifecycle, chat: chat, magic: magic, party: party).RunAsync(ct);
 
     LevelGrind.Config GrindCfg(byte job) => new()
     {
