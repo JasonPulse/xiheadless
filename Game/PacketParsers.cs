@@ -108,6 +108,10 @@ public static class PacketParsers
             case 0x028: Battle2(sub, w); break;    // GP_SERV_COMMAND_BATTLE2 (action packet: actor->targets, melee/WS/JA/spell)
             case 0x029: BattleMessage(sub, w); break; // error/result reason codes (engage rejections etc.)
             case 0x032: EventStart(sub, w, false); break; // GP_SERV_COMMAND_EVENT (npc menu/cutscene)
+            // 0x033 EVENTSTR: an event START with string params — SAME leading layout as 0x032
+            // (UniqueNo@4, ActIndex@8, EventNum@10, EventPara@12). Unhandled, it was another way to strand
+            // a char in-event with "no parsed id" (the packet-coverage thorn: every event start must land).
+            case 0x033: EventStart(sub, w, false); break; // GP_SERV_COMMAND_EVENTSTR (event with string params)
             case 0x034: EventStart(sub, w, true); break;  // GP_SERV_COMMAND_EVENTNUM (event with numeric params)
             case 0x062: Skills2(sub, w); break;           // GP_SERV_COMMAND_CLISTATUS2 (skill levels)
             case 0x01E: ItemNum(sub, w); break;           // GP_SERV_COMMAND_ITEM_NUM (quantity-only update; how gil grants arrive)
@@ -327,6 +331,21 @@ public static class PacketParsers
         // Zone id at offset 48. Reflect it as-is (including 0) — masking a 0 hid that a homepoint with no
         // home point set warps the char into zone-0 limbo. ZoneNo=0 here = unset home point / limbo.
         if (b.Length >= 52) w.ZoneId = (ushort)U32(b, 48);
+        // THE ZONE-IN EVENT ID RIDES THIS PACKET (server s2c 0x00A: EventPara@100 = currentEvent->eventId,
+        // set whenever onZoneIn returns a cutscene — the same branch that logs the char in at status=4/
+        // ANIMATION_EVENT). This is what the retail client reads; we blind-swept KnownBlockers for months
+        // while every stuck "no parsed id" login (Windurst 367, Bastok 22, ...) carried its own answer at
+        // offset 100. 0 = no pending event (the builder zero-fills when eventId == -1).
+        if (b.Length >= 104)
+        {
+            ushort evt = U16(b, 100);
+            if (evt is > 0 and < 0xFFFF)
+            {
+                w.EventId = evt;
+                w.EventActive = true;
+                Log.Info($"[zone-in] PENDING EVENT {evt} (0x00A EventPara@100) — finishable BY ID, no sweep");
+            }
+        }
         Log.Info($"[zone-in] len={b.Length} zone@48={w.ZoneId}");
         w.InZone = true;
     }
