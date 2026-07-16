@@ -39,6 +39,21 @@ public static class BotHost
         }
     }
 
+    /// Creation job (server allows 1-6) for a brain's char — the base job whose STARTING KIT the char
+    /// needs (server player.lua startingJobGear: WHM = Onion Rod + Scroll of Cure, BLM = Onion Staff +
+    /// Scroll of Stone, RDM = Onion Dagger + Scroll of Dia, THF = knife, MNK = belt, WAR = sword).
+    /// Mage-arc brains create as their caster base so the char can actually FIGHT at level 1 (user:
+    /// "every mage starts with a single spell"); sword-line brains create as WAR; COR as RDM (dagger+Dia).
+    static byte CreationJobFor(string brain) => brain switch
+    {
+        "Whm" or "Brd" or "Sch" or "Geo" or "Smn" or "Bst" => Job.Whm,   // WHM base: rod + Cure
+        "Blm" => Job.Blm,                                                 // staff + Stone
+        "Rdm" or "Cor" => Job.Rdm,                                        // dagger + Dia
+        "Thf" => Job.Thf,
+        "Mnk" or "Pup" => Job.Mnk,                                        // h2h natives
+        _ => Job.War,                                                     // sword-line default
+    };
+
     public static async Task<int> Run(string account, string password, string brainName, int? runSeconds)
     {
         XiClient client;
@@ -46,7 +61,7 @@ public static class BotHost
         try
         {
             client = await ConnectLobby(account, password);
-            justCreated = client.SelectOrCreate();     // select the account's char, or create one if empty
+            justCreated = client.SelectOrCreate(CreationJobFor(brainName));   // select, or create with the brain's base-job kit
             client.RequestZoneServer();                // 0xA2 zone handoff — throws on a stale/duplicate session
         }
         catch (Exception ex) when (ex.Message.Contains("0xA2") || ex.Message.Contains("stale/duplicate"))

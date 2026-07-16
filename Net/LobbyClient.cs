@@ -306,7 +306,7 @@ sealed class XiClient(string host, string clientVer)
     /// The char-list read is retry-hardened: a raced (empty/partial) read must NOT be mistaken for
     /// an empty account and create-over an existing char (names are globally unique). So we retry
     /// the read; only a genuinely empty account (no char after repeated solid reads) provisions one.
-    public bool SelectOrCreate()
+    public bool SelectOrCreate(byte creationJob = 1)
     {
         for (int i = 1; i <= 5; i++)
         {
@@ -314,8 +314,8 @@ sealed class XiClient(string host, string clientVer)
             Log.Info($"  no char in char-list (attempt {i}/5)");
             if (i < 5) Thread.Sleep(500);
         }
-        Log.Info("  account is empty -> provisioning a character");
-        return CreateChar();
+        Log.Info($"  account is empty -> provisioning a character (creation job {creationJob})");
+        return CreateChar(creationJob);
     }
 
     /// Provision a NEW character: generated fantasy name + randomized appearance, retrying on a name

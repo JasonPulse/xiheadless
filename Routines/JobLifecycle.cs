@@ -132,25 +132,27 @@ public sealed class JobLifecycle(
 
         if (cfg.Advanced)
         {
-            // PHASE 1 — level the SUBJOB to 30 (satisfies the char-level-30 unlock gate + full sub).
-            if (LevelOf(cfg.SubJob) < 30)
+            // UNLOCK VIA THE GM (user rule 2026-07-14: "you don't need the unlock quest — that's the point
+            // of the GM character"). The advanced job plays FROM LEVEL 1 (a lvl-1 BST has Charm; the seesaw
+            // levels the sub later like any other pairing). Probe by attempting the job change: it succeeds
+            // iff already unlocked; on refusal, ask the GM (retry-until-acked) and change again. If the GM
+            // never acks (offline), fall back to leveling the SUB this session — no wasted login, and the
+            // next session re-probes. (The old quest-chain phases — sub-to-30 gate + QuestRunner unlock —
+            // are superseded; UnlockSteps configs remain unused by this path.)
+            if (!await JobRoutines.ChangeJobViaMogHouse(jobs, zoning, cfg.MainJob, cfg.SubJob, cfg.HomeCity, ct))
             {
-                Log($"{JN(cfg.SubJob)} at {LevelOf(cfg.SubJob)} — leveling the prereq sub to 30 first");
-                await EnsureMain(cfg.SubJob, 0, ct);
-                await RunGrindStint(cfg.SubJob, () => LevelOf(cfg.SubJob) >= 30, ct);
+                bool granted = chat is not null
+                    && await GmGrant.RequestJob(p, chat, Game.PartyRoles.NameOf(cfg.MainJob), cfg.Tag, ct)
+                    && await JobRoutines.ChangeJobViaMogHouse(jobs, zoning, cfg.MainJob, cfg.SubJob, cfg.HomeCity, ct);
+                if (!granted)
+                {
+                    Log($"{JN(cfg.MainJob)} locked and no GM ack — leveling {JN(cfg.SubJob)} this session (re-probe next login)");
+                    await EnsureMain(cfg.SubJob, 0, ct);
+                    await RunGrindStint(cfg.SubJob, () => false, ct);
+                    return;
+                }
             }
-
-            // PHASE 2 — unlock the advanced job. Blocked/failed unlocks HOLD (no crash-loop): keep leveling
-            // the sub while online so the fleet doesn't churn logins; the user unblocks + restarts to resume.
-            if (!await TryUnlock(ct))
-            {
-                Log($"{JN(cfg.MainJob)} unlock did NOT complete (blocked or a step failed) — HOLDING: leveling " +
-                    $"{JN(cfg.SubJob)} open-ended (no crash-loop; unblock the quest + restart to resume)");
-                await EnsureMain(cfg.SubJob, 0, ct);
-                await RunGrindStint(cfg.SubJob, () => false, ct);
-                return;
-            }
-            Log($"{JN(cfg.MainJob)} unlocked — seesaw leveling begins ({JN(cfg.MainJob)} {LevelOf(cfg.MainJob)} / {JN(cfg.SubJob)} {LevelOf(cfg.SubJob)})");
+            Log($"{JN(cfg.MainJob)} unlocked — playing the MAIN from level {LevelOf(cfg.MainJob)} ({JN(cfg.SubJob)} sub at {LevelOf(cfg.SubJob)})");
         }
 
         // PHASE 3 — level the main. With a seesaw partner (SubJob != 0) JobLeveling owns the switching
