@@ -15,13 +15,17 @@ public static class JobKits
     // Bought by LevelGrind's existing AH buy phase (appended to BuyItems, cheapest essentials first) and
     // learned in the Equip pass — the proven WhmBrain arc (club + Dia + Cure -> 18), now engine-provided
     // so every advanced-job mage phase (SCH/GEO/SMN/RDM sub-arcs) gets it without brain-side lists.
-    static readonly (ushort scroll, Spell spell)[] ScrollKit =
+    // buyable=false = the EX STARTING scrolls (granted by charCreate to mage-created chars: Cure_EX 4608,
+    // Stone_EX 4607, Dia_EX 4606) — learn-only, never in the AH buy list (EX is unlistable) and listed
+    // FIRST so a char holding its free starting scroll learns from it before ever bidding on the shop copy.
+    static readonly (ushort scroll, Spell spell, bool buyable)[] ScrollKit =
     {
-        (4609, Spell.Cure), (4631, Spell.Dia), (4636, Spell.Banish), (4666, Spell.Paralyze),
-        (4767, Spell.Stone), (4777, Spell.Water), (4762, Spell.Aero), (4862, Spell.Blind),
+        (4608, Spell.Cure, false), (4606, Spell.Dia, false), (4607, Spell.Stone, false),
+        (4609, Spell.Cure, true), (4631, Spell.Dia, true), (4636, Spell.Banish, true), (4666, Spell.Paralyze, true),
+        (4767, Spell.Stone, true), (4777, Spell.Water, true), (4762, Spell.Aero, true), (4862, Spell.Blind, true),
     };
 
-    static (ushort scroll, Spell spell)[] EssentialScrolls(byte job) =>
+    static (ushort scroll, Spell spell, bool buyable)[] EssentialScrolls(byte job) =>
         ScrollKit.Where(s => SpellLevels.For((ushort)s.spell, job) is { } lvl && lvl <= 12).ToArray();
 
     /// Wire the generic kit into a grind config IF the brain left the defaults in place.
@@ -38,13 +42,13 @@ public static class JobKits
         // pass). Applies to EVERY brain's mage phases — scroll learning is engine duty, not brain config.
         if (magic is not null && inv is not null && EssentialScrolls(job) is { Length: > 0 } scrolls)
         {
-            g.BuyItems = scrolls.Select(s => s.scroll).Where(s => !g.BuyItems.Contains(s)).Concat(g.BuyItems).ToArray();
-            foreach (var (scroll, _) in scrolls) g.Keep.Add(scroll);
+            g.BuyItems = scrolls.Where(s => s.buyable).Select(s => s.scroll).Where(s => !g.BuyItems.Contains(s)).Concat(g.BuyItems).ToArray();
+            foreach (var (scroll, _, _) in scrolls) g.Keep.Add(scroll);
             var innerEquip = g.Equip;
             g.Equip = async ct =>
             {
                 await innerEquip(ct);
-                foreach (var (scroll, spell) in scrolls)
+                foreach (var (scroll, spell, _) in scrolls)
                     if (!magic.Known(spell) && inv.Has(scroll)
                         && SpellLevels.For((ushort)spell, p.World.MainJob) is { } lvl && p.World.MainJobLevel >= lvl)
                         await MagicRoutines.LearnFromScroll(inv, magic, p, scroll, spell, ct, tag);
