@@ -52,13 +52,34 @@ public static class FleetDay
                 }
                 var finder = new PartyFinder(p, party, chat, nav, hooks.Tag);
                 long jobAnnounceMs = 0;
+                // FORMATION BUDGET (user spec: SOLO BACKUP after 30 minutes). The whole form phase — seeking
+                // AND waiting on the minimum comp — shares one 30-min deadline. On expiry: a partial party
+                // plays with what it has (a duo beats a solo); an empty roster falls back to the brain's solo
+                // grind for the rest of the day (BotHost still auto-accepts a late invite).
+                long formDeadline = Environment.TickCount64 + 1_800_000;
                 // FORM: listen/answer/recruit until a party exists. While seeking, hold near the zone-in/camp
                 // (the brain's solo loop would wander us away from responders).
                 while (!ct.IsCancellationRequested && !finder.Step())
+                {
+                    if (Environment.TickCount64 > formDeadline)
+                    {
+                        Log.Always($"[{hooks.Tag}] no party after 30 min — SOLO fallback for the rest of the day");
+                        await hooks.SoloGrind(ct);
+                        return;
+                    }
                     await Task.Delay(3000, ct);
-                // Wait for the START gate: minimum Tank+Healer+DD (recruiter counts promised roles), then run.
+                }
+                // Wait for the START gate: minimum Tank+Healer+DD (recruiter counts promised roles), then run
+                // — or the budget expires and we play with whoever joined.
                 while (!ct.IsCancellationRequested && finder.Recruiting && !finder.MinimumMet())
                 {
+                    if (Environment.TickCount64 > formDeadline)
+                    {
+                        if (party.MemberCount > 0) { Log.Always($"[{hooks.Tag}] 30-min budget: starting with {party.MemberCount + 1} (below minimum comp)"); break; }
+                        Log.Always($"[{hooks.Tag}] no joiners after 30 min — SOLO fallback for the rest of the day");
+                        await hooks.SoloGrind(ct);
+                        return;
+                    }
                     PartyCombat.AnnounceJob(chat, p, ref jobAnnounceMs);
                     finder.TopUp();
                     await Task.Delay(3000, ct);
