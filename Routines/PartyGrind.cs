@@ -10,27 +10,35 @@ namespace XiHeadless.Routines;
 public sealed class PartyGrind(IPerception p, ICombat combat, IMagic? magic, INavigation nav, IGear gear,
                                IChat chat, LevelGrind.Config g, string tag)
 {
-    (float x, float z)? _camp;    // fixed on the first beat: the party converged here (the meet spot)
+    (float x, float z)? _camp;    // the announcer's own anchor (first-beat position = the meet spot)
+    ((float x, float z) camp, (float x, float z) casters)? _myStations;   // announcer's SELF-VIEW: a bot
+                                                                          // never receives its own party
+                                                                          // line, so it must remember what
+                                                                          // it announced (live: 6,081 CAMP
+                                                                          // re-announces in one session)
     long _annMs, _songMs;
 
     public async Task Beat(PartyCombat.PullPlan plan, CancellationToken ct)
     {
         if (combat.Dead) { await Task.Delay(2000, ct); return; }   // the core death rule owns recovery
         var w = p.World;
-        _camp ??= (w.X, w.Z);
-        var camp = _camp.Value;
         bool iAmPuller = plan.Puller.Equals(w.MyName, StringComparison.OrdinalIgnoreCase);
         var role = PartyRoles.PrimaryOf(w.MainJob);
 
-        // Stations: the PULLER owns + re-announces the geometry (bard doctrine — one source of truth).
-        var st = PartyCombat.Stations(p);
-        if (iAmPuller && (st is null || w.NowMs - _annMs > PartyCombat.StationAnnounceEveryMs))
+        // Stations: the PULLER owns the geometry and announces on a strict cadence; everyone (announcer
+        // included) reads back ONE source — the announced camp — falling back to the announcer's memory.
+        var st = PartyCombat.Stations(p) ?? _myStations;
+        if (iAmPuller && w.NowMs - _annMs > PartyCombat.StationAnnounceEveryMs)
         {
-            var casters = PartyCombat.DeriveCasterStation(camp, PullLaneProbe(camp));
-            PartyCombat.AnnounceStations(chat, camp, casters);
+            _camp ??= (w.X, w.Z);
+            var casters = PartyCombat.DeriveCasterStation(_camp.Value, PullLaneProbe(_camp.Value));
+            PartyCombat.AnnounceStations(chat, _camp.Value, casters);
             _annMs = w.NowMs;
-            st = (camp, casters);
+            st = _myStations = (_camp.Value, casters);
         }
+        // MEMBERS anchor on the ANNOUNCED camp — never their own first-beat position (live: members
+        // camped where THEY stood at formation, never saw the puller's camp mob, and scored 0 kills).
+        var camp = st?.camp ?? (_camp ??= (w.X, w.Z));
 
         // A mob at camp fighting the party -> play the role on it.
         if (CampMob(camp) is { } mob)
