@@ -27,3 +27,12 @@ create-on-empty). So a typo'd login = a new junk account — check this list bef
 - Char names are generated (NameGen, human-like, no fleet prefix) — the ACCOUNT is the stable identifier.
 - One char per account (`TrySelectBest` picks the highest char id — a junk char OUTRANKS the real one; see
   CLAUDE.md logout/relaunch rules for how junk chars happen and why only a GM can remove them).
+
+## Junk accounts (2026-07-16 shell-bug incident — chars deleted, empty rows remain)
+A zsh word-splitting bug in a batch loop auto-created 8 junk accounts (login includes a trailing
+" whm", password = login + "pass"). All 7 junk chars were deleted via the client path the same day;
+the empty account rows below have no client deletion path — remove via SQL or leave (they own nothing):
+`fleetbot03 whm`, `fleetbot09 whm`, `fleetbot10 whm`, `fleetbot15 whm`, `fleetbot20 whm`,
+`fleetbot21 whm`, `fleetbot25 whm`, `fleetbot31 whm` (accounts.id 1047-1054).
+NEVER log into these; never reuse the pattern. Account strings in scripts must be sourced from
+ACCOUNTS.md or the DB — never assembled in shell loops.
