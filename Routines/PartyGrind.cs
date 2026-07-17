@@ -11,6 +11,7 @@ public sealed class PartyGrind(IPerception p, ICombat combat, IMagic? magic, INa
                                IChat chat, LevelGrind.Config g, string tag)
 {
     (float x, float z)? _camp;    // the announcer's own anchor (first-beat position = the meet spot)
+    long _dryPullMs, _gateLogMs;  // dry-pull clock (no target in the ring -> relocate camp); gate log throttle
     ((float x, float z) camp, (float x, float z) casters)? _myStations;   // announcer's SELF-VIEW: a bot
                                                                           // never receives its own party
                                                                           // line, so it must remember what
@@ -105,7 +106,10 @@ public sealed class PartyGrind(IPerception p, ICombat combat, IMagic? magic, INa
         // NEVER pull until every in-zone member is good (user rule) — hold at camp while they recover.
         foreach (var (_, m) in p.World.PartyMembers.ToArray())
             if (m.Zone == 0 && m.Hpp is > 0 and < 70)
-            { await NavRoutines.WalkTo(nav, p, camp.x, camp.z, within: 3f, ct, legTimeoutMs: 15_000); await Task.Delay(2000, ct); return; }
+            {
+                if (p.World.NowMs - _gateLogMs > 60_000) { _gateLogMs = p.World.NowMs; Log.Info($"[{tag}] holding pulls — a member is at {m.Hpp}%"); }
+                await NavRoutines.WalkTo(nav, p, camp.x, camp.z, within: 3f, ct, legTimeoutMs: 15_000); await Task.Delay(2000, ct); return;
+            }
 
         if (p.World.MainJob == Job.Brd && magic is not null) await SongPass(camp, st, ct);
 
@@ -113,7 +117,28 @@ public sealed class PartyGrind(IPerception p, ICombat combat, IMagic? magic, INa
             && !CombatRoutines.SleepLockMobs.Any(n => e.Name.Contains(n, StringComparison.OrdinalIgnoreCase))
             && Geometry.Dist2D(e.X, e.Z, camp.x, camp.z) is > 16f and < 60f
             && nav.CanReach(e.X, e.Y, e.Z));
-        if (target is null) { await Task.Delay(2500, ct); return; }
+        if (target is null)
+        {
+            // DRY CAMP (live: a formed duo camped a mobless zone-in pocket and the puller idled SILENTLY
+            // for 5 hours — this path had no log and no recovery). After 2 dry minutes, RELOCATE the camp
+            // toward the nearest reachable mob (up to 40y per hop) and re-announce so the party follows.
+            if (_dryPullMs == 0) _dryPullMs = p.World.NowMs;
+            if (p.World.NowMs - _dryPullMs > 120_000
+                && p.Nearest(e => e.IsMob && e.Hpp > 0 && CombatRoutines.NotObject(e) && nav.CanReach(e.X, e.Y, e.Z)) is { } anyMob)
+            {
+                float dx = anyMob.X - camp.x, dz = anyMob.Z - camp.z;
+                float len = MathF.Max(1f, Geometry.Dist2D(anyMob.X, anyMob.Z, camp.x, camp.z));
+                float hop = MathF.Min(40f, len);
+                _camp = (camp.x + dx / len * hop, camp.z + dz / len * hop);
+                _annMs = 0;                                       // re-announce the moved camp next beat
+                _dryPullMs = 0;
+                Log.Info($"[{tag}] DRY CAMP (no pullable target in 16-60y for 2 min) — moving camp {hop:F0}y toward '{anyMob.Name}'");
+                await NavRoutines.WalkTo(nav, p, _camp.Value.x, _camp.Value.z, within: 3f, ct, legTimeoutMs: 30_000);
+                return;
+            }
+            await Task.Delay(2500, ct); return;
+        }
+        _dryPullMs = 0;
         int con = await combat.Consider(target.Id, ct);
         if (con < 1 || con > g.ConMax) { await Task.Delay(1000, ct); return; }   // con is the sole arbiter
 

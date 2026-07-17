@@ -54,6 +54,10 @@ public static class BotHost
         _ => Job.War,                                                     // sword-line default
     };
 
+    /// The clamped, authoritative end of THIS session (set at login; 2-6h band). Day-plan consumers
+    /// (FleetDay/FleetSchedule ENDAT) read this instead of the raw seeded plan end.
+    public static DateTime SessionEndUtc { get; private set; } = DateTime.MaxValue;
+
     public static async Task<int> Run(string account, string password, string brainName, int? runSeconds)
     {
         XiClient client;
@@ -106,6 +110,10 @@ public static class BotHost
         // (first live wave: the anchor alone produced 32-63 MINUTE sessions — mostly travel, zero grinding).
         if (remaining < TimeSpan.FromHours(2)) remaining = TimeSpan.FromHours(2);
         if (remaining > TimeSpan.FromHours(6)) remaining = TimeSpan.FromHours(6);
+        SessionEndUtc = DateTime.UtcNow + remaining;   // the EFFECTIVE end — FleetSchedule/ENDAT must use THIS
+                                                       // (live: the seeded plan said 'done in 15.2h' while the
+                                                       // cap ended the session at 6h; the group-end protocol
+                                                       // aimed at a time that never came)
         Log.Always($"session cap: ending the day in {remaining.TotalMinutes:F0} min (plan {plan.Mode}, end {plan.EndUtc:HH:mm}Z)");
         using var sessionCap = new Timer(_ =>
         {

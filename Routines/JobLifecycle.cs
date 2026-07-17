@@ -264,13 +264,18 @@ public sealed class JobLifecycle(
             {
                 Log($"PARTY day (lvl {p.World.MainJobLevel}) — grouping up in the hunt zone");
                 var pg = new PartyGrind(p, combat, magic, nav, gear, chat, g, cfg.Tag);
+                // The plan handed to FleetDay carries the EFFECTIVE session end (BotHost's 2-6h clamp), so
+                // the ENDAT group-convergence protocol aims at the real logout, not the raw seeded day-end.
+                var basePlan = SessionPlan.ForToday(p.World.MyId);
+                var effEnd = BotHost.SessionEndUtc < basePlan.EndUtc ? BotHost.SessionEndUtc : basePlan.EndUtc;
+                var effPlan = new SessionPlan.Plan(basePlan.Mode, basePlan.StartUtc, effEnd);
                 await FleetDay.Run(p, combat, party, chat, magic, nav, lifecycle, new FleetDay.Hooks
                 {
                     GoToHuntZone = async c => { if (plan is (string pz, ushort pid) && zoning.CurrentZone != pid) await zoning.GoTo(pz, c); },
                     SoloGrind = c => new LevelGrind(p, nav, combat, zoning, gear, ah, delivery, inv, shop, g).RunAsync(c),
                     PartyGrind = (pp, c) => pg.Beat(pp, c),
                     Tag = cfg.Tag,
-                }, SessionPlan.ForToday(p.World.MyId), ct);
+                }, effPlan, ct);
                 continue;   // the fleet day ends via session logout / cancellation
             }
             await new LevelGrind(p, nav, combat, zoning, gear, ah, delivery, inv, shop, g).RunAsync(ct);

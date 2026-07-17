@@ -28,6 +28,7 @@ public sealed class PartyFinder(IPerception p, IParty party, IChat chat, INaviga
     readonly Dictionary<string, long> _answered = new(StringComparer.OrdinalIgnoreCase);   // shouters we already told
     readonly Dictionary<string, (PartyRoles.Role role, int level, long firstMs, long lastTryMs)> _accepted = new(StringComparer.OrdinalIgnoreCase);
     long _lastShoutMs, _seenTellMs, _seenMeetMs;
+    int _membersAtInvite;
     bool _recruiting, _yielded;
 
     public bool Recruiting => _recruiting;
@@ -140,7 +141,11 @@ public sealed class PartyFinder(IPerception p, IParty party, IChat chat, INaviga
         foreach (var (name, (role, level, firstMs, lastTry)) in _accepted.ToArray())
         {
             if (w.NowMs - firstMs > 180_000) { _accepted.Remove(name); continue; }
+            // The roster packet has no names, but a member-count INCREASE after our invite is joined-enough:
+            // stop retrying (live: a joined THF was re-invited 11x over the retry window).
+            if (lastTry > 0 && party.MemberCount > _membersAtInvite) { _accepted.Remove(name); continue; }
             if (w.NowMs - lastTry < InviteRetryMs) continue;
+            _membersAtInvite = party.MemberCount;
             _accepted[name] = (role, level, firstMs, w.NowMs);
             if (PartyRoutines.InviteIfPresent(party, p, name)) Log.Info($"[{tag}] invited {name} ({role})");
             else
