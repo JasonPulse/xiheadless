@@ -108,7 +108,10 @@ PartyCombat/FleetSchedule):**
   (NEVER /yell — region-wide), lenient LFP parsing (parties are OPEN — real players may join).
 - Composition: full = Tank/Healer/Support/3DD; minimum start = Tank/Healer/DD (roles per bg-wiki
   Jobs_&_party_roles via Game/PartyRoles).
-- Camp vs roam: party >3 ANCHORS at camp, only the puller leaves; exactly 3 roams.
+- Camp vs roam: party >3 ANCHORS at camp, only the puller leaves; exactly 3 roams. The CAMP is
+  deliberately placed OUTSIDE spawn ground (nothing may pop on top of the party) and NEVER relocates
+  toward mobs; the PULLER roams out as far as needed (in-game pull runs are long — hundreds of yalms
+  is normal) and drags the catch home. Never "move the camp to the mobs" (user, 2026-07-17).
 - Puller: BRD ALWAYS pulls if present (pull-and-sleep the next mob — Foe Lullaby — for chain efficiency).
   Else THF(Trick Attack)+second tank-capable: SUB-TANK pulls, SATA line subtank-mob-TANK-thief (tank at the
   mob's back, thief behind the tank, SA+TA+WS plants hate on the tank). Else the MAIN TANK pulls AT RANGE
