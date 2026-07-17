@@ -11,7 +11,8 @@ public sealed class PartyGrind(IPerception p, ICombat combat, IMagic? magic, INa
                                IChat chat, LevelGrind.Config g, string tag)
 {
     (float x, float z)? _camp;    // the announcer's own anchor (first-beat position = the meet spot)
-    long _dryPullMs, _gateLogMs;  // dry-pull clock (no target in the ring -> relocate camp); gate log throttle
+    long _dryPullMs, _gateLogMs;  // dry-pull log throttle; gate log throttle
+    int _pullHeading;             // rotating roam-out heading (deg) for finding mobs beyond view range
     ((float x, float z) camp, (float x, float z) casters)? _myStations;   // announcer's SELF-VIEW: a bot
                                                                           // never receives its own party
                                                                           // line, so it must remember what
@@ -115,34 +116,37 @@ public sealed class PartyGrind(IPerception p, ICombat combat, IMagic? magic, INa
 
         var target = p.Nearest(e => e.IsMob && e.Hpp == 100 && CombatRoutines.NotObject(e)
             && !CombatRoutines.SleepLockMobs.Any(n => e.Name.Contains(n, StringComparison.OrdinalIgnoreCase))
-            && Geometry.Dist2D(e.X, e.Z, camp.x, camp.z) is > 16f and < 60f
-            && nav.CanReach(e.X, e.Y, e.Z));
+            && Geometry.Dist2D(e.X, e.Z, camp.x, camp.z) > 16f      // never the camp bubble; no outer cap —
+            && nav.CanReach(e.X, e.Y, e.Z));                          // the puller walks out and drags it home
         if (target is null)
         {
-            // DRY CAMP (live: a formed duo camped a mobless zone-in pocket and the puller idled SILENTLY
-            // for 5 hours — this path had no log and no recovery). After 2 dry minutes, RELOCATE the camp
-            // toward the nearest reachable mob (up to 40y per hop) and re-announce so the party follows.
-            if (_dryPullMs == 0) _dryPullMs = p.World.NowMs;
-            if (p.World.NowMs - _dryPullMs > 120_000
-                && p.Nearest(e => e.IsMob && e.Hpp > 0 && CombatRoutines.NotObject(e) && nav.CanReach(e.X, e.Y, e.Z)) is { } anyMob)
+            // THE CAMP NEVER MOVES (user: camps are deliberately placed OUTSIDE spawn ground so nothing
+            // pops on top of the party). Finding prey is the PULLER'S legs: perception only sees ~50y, so
+            // roam OUTWARD from camp in rotating headings — hop, scan, hop — as far as it takes (in-game
+            // pull runs are long; 40y is nothing), then drag the catch all the way home.
+            if (_dryPullMs == 0 || p.World.NowMs - _dryPullMs > 120_000)
+            { _dryPullMs = p.World.NowMs; Log.Info($"[{tag}] no prey in view — roaming out from camp to find a pull (heading {_pullHeading}°)"); }
+            float fromCamp = p.DistanceTo(camp.x, camp.z);
+            if (fromCamp > 250f)
             {
-                float dx = anyMob.X - camp.x, dz = anyMob.Z - camp.z;
-                float len = MathF.Max(1f, Geometry.Dist2D(anyMob.X, anyMob.Z, camp.x, camp.z));
-                float hop = MathF.Min(40f, len);
-                _camp = (camp.x + dx / len * hop, camp.z + dz / len * hop);
-                _annMs = 0;                                       // re-announce the moved camp next beat
-                _dryPullMs = 0;
-                Log.Info($"[{tag}] DRY CAMP (no pullable target in 16-60y for 2 min) — moving camp {hop:F0}y toward '{anyMob.Name}'");
-                await NavRoutines.WalkTo(nav, p, _camp.Value.x, _camp.Value.z, within: 3f, ct, legTimeoutMs: 30_000);
+                // This heading came up empty — walk home and fan to the next spoke.
+                _pullHeading = (_pullHeading + 60) % 360;
+                await NavRoutines.WalkTo(nav, p, camp.x, camp.z, within: 5f, ct, legTimeoutMs: 90_000);
                 return;
             }
-            await Task.Delay(2500, ct); return;
+            float rad = _pullHeading * MathF.PI / 180f;
+            float hx = camp.x + MathF.Sin(rad) * (fromCamp + 45f), hz = camp.z + MathF.Cos(rad) * (fromCamp + 45f);
+            if (!nav.CanReach(hx, p.World.Y, hz)) { _pullHeading = (_pullHeading + 60) % 360; return; }   // wall — next spoke
+            await NavRoutines.WalkTo(nav, p, hx, hz, within: 5f, ct, legTimeoutMs: 45_000);
+            return;
         }
         _dryPullMs = 0;
         int con = await combat.Consider(target.Id, ct);
         if (con < 1 || con > g.ConMax) { await Task.Delay(1000, ct); return; }   // con is the sole arbiter
 
-        Log.Info($"[{tag}] pulling '{target.Name}' (con {con}) to camp");
+        Log.Info($"[{tag}] pulling '{target.Name}' (con {con}) at {p.DistanceTo(target.X, target.Z):F0}y from me, {Geometry.Dist2D(target.X, target.Z, camp.x, camp.z):F0}y from camp");
+        if (p.DistanceTo(target.X, target.Z) > 14f)
+            await NavRoutines.WalkTo(nav, p, target.X, target.Z, within: 13f, ct, legTimeoutMs: 60_000);   // into Provoke/song range
         if (p.World.MainJob == Job.Brd && magic is not null)
             await PartyCombat.BardPull(magic, p, nav, target.Id, camp, ct);
         else
