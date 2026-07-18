@@ -12,12 +12,11 @@ public static class GearRoutines
     /// optional basePieces (a shared armor set) -> table entries with lvl <= character level -> optional
     /// phaseWeapon (a sub-job weapon swap applied last). Returns (equipped, requested) so the caller keeps
     /// its own bespoke log line.
-    // Char creation makes a WAR holding an Onion Sword — the ONLY weapon a broke fresh bot owns.
-    public const ushort StarterSword = 16534;
-    // Jobs that can wield a sword (fallback eligibility). Mage/club jobs are excluded — their KIT (nukes/
-    // cures) carries them; MNK/PUP fight h2h natively and don't need it.
-    static readonly HashSet<byte> SwordJobs = new()
-        { Job.War, Job.Thf, Job.Pld, Job.Drk, Job.Brd, Job.Rng, Job.Sam, Job.Nin, Job.Drg, Job.Rdm, Job.Blu, Job.Cor, Job.Run };
+    // The CREATION weapons (server startingJobGear) — charCreate only ADDS job gear to the bag (race
+    // armor gets equipped, the weapon does NOT): live, a recreated WHM punched hornets for a whole
+    // session with its Onion Rod in the bag (0 kills at a pace where a player makes 15 in 45 min).
+    public const ushort StarterSword = 16534;   // WAR creation (kept as the named Keep constant)
+    static readonly ushort[] StarterWeapons = { 16534 /*sword*/, 16482 /*dagger*/, 17068 /*rod*/, 17104 /*staff*/ };
 
     public static async Task<(int n, int total)> EquipByLevel(
         IGear gear, IPerception p,
@@ -40,10 +39,13 @@ public static class GearRoutines
         // never bought. n==0 = the whole set failed to land (the broke-fresh-bot signature) -> fall back.
         bool mainCovered = n > 0 && ((phaseWeapon?.slot == EquipSlot.Main)
                            || table.Any(g => g.lvl <= lvl && g.slot == EquipSlot.Main));
-        if (!mainCovered && SwordJobs.Contains(p.World.MainJob))
+        if (!mainCovered)
         {
-            await gear.EquipSet(new[] { ((byte)EquipSlot.Main, (uint)StarterSword) }, ct);
-            Log.Info("[gear] no main-hand from the gear table — starter Onion Sword fallback");
+            // Send EVERY owned starter as a Main candidate: the server rejects job-incompatible equips
+            // safely and keeps the last valid one, so this needs no per-job weapon table here.
+            var owned = StarterWeapons.Select(wpn => ((byte)EquipSlot.Main, (uint)wpn)).ToArray();
+            int f = await gear.EquipSet(owned, ct);
+            Log.Info($"[gear] no main-hand from the gear table — starter-weapon fallback ({f} candidate(s) accepted)");
         }
         return (n, set.Count);
     }
@@ -54,5 +56,5 @@ public static class GearRoutines
     /// Never-sell set = the gear items plus any extras (seals, stealth stock, quest items) — PLUS the
     /// starter sword, always: it's the fallback weapon for a broke bot; junk-selling it disarms the char.
     public static HashSet<ushort> KeepSet((ushort item, byte slot, byte lvl)[] table, params ushort[] extra) =>
-        new HashSet<ushort>(table.Select(g => g.item).Concat(extra).Append(StarterSword));
+        new HashSet<ushort>(table.Select(g => g.item).Concat(extra).Concat(StarterWeapons));
 }
