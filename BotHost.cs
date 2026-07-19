@@ -108,8 +108,14 @@ public static class BotHost
         // 2-6h HARD BAND (user rule: sessions are 2-6 hours, NEVER less). The seeded day-end still varies
         // end times across the fleet, but a wave login late in a char's seeded day plays a full >=2h session
         // (first live wave: the anchor alone produced 32-63 MINUTE sessions — mostly travel, zero grinding).
-        if (remaining < TimeSpan.FromHours(2)) remaining = TimeSpan.FromHours(2);
-        if (remaining > TimeSpan.FromHours(6)) remaining = TimeSpan.FromHours(6);
+        if (remaining < TimeSpan.FromHours(2) || remaining > TimeSpan.FromHours(6))
+        {
+            // RANDOMIZED 2-6h (user: "2 to 6 means randomized play sessions") — clamping to the BOUNDS made
+            // every misaligned day exactly 2h or 6h, the extremes and never the middle. Seeded by (charid,
+            // UTC date) so a same-day relaunch resumes the same session length.
+            var rng = new Random(unchecked((int)(client.CharId * 2654435761u) ^ (DateTime.UtcNow.Date.DayOfYear * 131)));
+            remaining = TimeSpan.FromMinutes(120 + rng.Next(241));
+        }
         SessionEndUtc = DateTime.UtcNow + remaining;   // the EFFECTIVE end — FleetSchedule/ENDAT must use THIS
                                                        // (live: the seeded plan said 'done in 15.2h' while the
                                                        // cap ended the session at 6h; the group-end protocol

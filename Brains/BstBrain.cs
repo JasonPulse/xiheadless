@@ -61,6 +61,23 @@ public sealed class BstBrain(
                 GrindCfgFor = GrindCfg, Tag = "bst",
             }, lifecycle: lifecycle, chat: chat, magic: magic, party: party).RunAsync(ct);
 
+    // CHARM IS BST'S COMBAT (user: "it should have charm already" — a rod-poking BST was the red flag).
+    // Each fight beat: if a second mob stands near, Charm it (Ability 52 self-gates on job/recast; a resist
+    // just retries next beat) and Fight (69) sics whatever pet we hold onto the target. No pet-state packet
+    // is parsed yet, so both fire blind and no-op harmlessly when petless/petful — the server arbitrates.
+    async Task BstRotation(uint mob, int con, CancellationToken ct)
+    {
+        if (con < 1) return;
+        var petCand = p.Nearest(e => e.IsMob && e.Hpp == 100 && e.Id != mob
+            && CombatRoutines.NotObject(e)
+            && !CombatRoutines.SleepLockMobs.Any(n => e.Name.Contains(n, StringComparison.OrdinalIgnoreCase))
+            && p.DistanceTo(e.X, e.Z) <= 12f);
+        if (petCand is not null && await combat.UseAbility(Ability.Charm, petCand.Id, ct))
+            Log.Info($"[bst] Charm -> '{petCand.Name}'");
+        if (await combat.UseAbility(Ability.Fight, mob, ct))
+            Log.Info("[bst] Fight! (pet on the target)");
+    }
+
     LevelGrind.Config GrindCfg(byte job) => new()
     {
         HomeNation = Nation.Windurst,
@@ -69,6 +86,7 @@ public sealed class BstBrain(
         Keep = GearRoutines.KeepSet(Gear, 1126, 1127, GausebitWildgrass),
         Equip = Equip,
         WepSkillForLevel = _ => job == Job.Whm ? ClubSkill : AxeSkill,
+        UseAbilities = job == Job.Bst ? BstRotation : LevelGrind.Config.NoAbilities,   // WHM stints keep the generic kit
         ConMin = 1, ConMax = 3,
         CleanPullNeighborCon = 3,
         RestHpTrigger = 70, RestHpTarget = 90,

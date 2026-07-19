@@ -23,6 +23,9 @@ public static class JobKits
         (4608, Spell.Cure, false), (4606, Spell.Dia, false), (4607, Spell.Stone, false),
         (4609, Spell.Cure, true), (4631, Spell.Dia, true), (4636, Spell.Banish, true), (4666, Spell.Paralyze, true),
         (4767, Spell.Stone, true), (4777, Spell.Water, true), (4762, Spell.Aero, true), (4862, Spell.Blind, true),
+        // BRD songs ARE its spells (user: lvl-1s with no songs were red flags) — SpellLevels filters to BRD.
+        (4976, Spell.FoeRequiem, true), (4986, Spell.ArmysPaeon, true),
+        (5002, Spell.ValorMinuet, true), (5007, Spell.SwordMadrigal, true),
     };
 
     static (ushort scroll, Spell spell, bool buyable)[] EssentialScrolls(byte job) =>
