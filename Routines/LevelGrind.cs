@@ -78,6 +78,7 @@ public sealed class LevelGrind(
     float _trackX, _trackZ; double _walkedSinceFight;   // distance-between-pulls metric (wandering waste, per user)
     long _lastKillMs;                                    // hunger clock: dry spells force a deep trek
     long _lastWeakLogMs;                                 // throttle for the post-revive weakness hold log line
+    long _lastSkillUpLogMs;                              // throttle for the skill-up-mode log line
     string? _lastSteerTarget;                            // last dropper-seek species — a fruitless repeat yields its turn
     int _dryTreks;                                       // consecutive hunger treks with no kill — escalates trek DISTANCE
     long _campUntilMs;                                   // camp window after a needed-dropper kill (wait out repops)
@@ -486,6 +487,18 @@ public sealed class LevelGrind(
             {
                 fightCon = await roam.ConsiderCached(mob.Id, ct);
                 int floor = preferred ? 0 : cfg.ConMin;   // droppers are worth killing below the exp band
+                // SKILL-UP MODE (root cause: a lvl-12 RDM with sword 0 — leveled bare-fisted in the broken-
+                // equip era — whiffed in-band mobs until adds killed it, 12 deaths/session). When the
+                // equipped weapon's skill lags far under level (cap ~= level*3; trigger at < level*2), take
+                // EASY PREY like a real player skilling up: accuracy is skill-driven, low cons still give
+                // skill-ups, and the mode self-clears as the skill catches the trigger line.
+                int wepSkillNow = gear.SkillLevel(cfg.WepSkillForLevel(p.World.MainJobLevel));
+                if (!preferred && wepSkillNow < p.World.MainJobLevel * 2 && p.World.MainJobLevel >= 5)
+                {
+                    floor = 0;
+                    if (p.World.NowMs - _lastSkillUpLogMs > 120_000)
+                    { _lastSkillUpLogMs = p.World.NowMs; Log($"SKILL-UP mode: weapon skill {wepSkillNow} << lvl {p.World.MainJobLevel}*2 — taking easy prey until the blade catches up"); }
+                }
                 // NOTE: no unarmed con cap — the band is the SAME for everyone (user rule). A con<=1 "prey"
                 // cap is an EMPTY band for a fresh char (no mob can be below level 1, so a lvl-1 sees
                 // everything at con>=3) — three mages stood targetless a whole session under it. Unhittable
