@@ -44,8 +44,10 @@ public static class GearRoutines
             // Send EVERY owned starter as a Main candidate: the server rejects job-incompatible equips
             // safely and keeps the last valid one, so this needs no per-job weapon table here.
             var owned = StarterWeapons.Select(wpn => ((byte)EquipSlot.Main, (uint)wpn)).ToArray();
-            int f = await gear.EquipSet(owned, ct);
-            Log.Info($"[gear] no main-hand from the gear table — starter-weapon fallback ({f} candidate(s) accepted)");
+            await gear.EquipSet(owned, ct);
+            await Task.Delay(1200, ct);   // let the 0x050 equip echo land — SERVER truth, not the sent-count
+            if (!p.World.MainHandEquipped)
+                Log.Always("[gear] MAIN HAND STILL EMPTY after the starter fallback — no owned weapon fits this job (fighting bare-fisted; needs a purchase or recreation)");
         }
         return (n, set.Count);
     }

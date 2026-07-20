@@ -44,14 +44,19 @@ public static class BotHost
     /// Scroll of Stone, RDM = Onion Dagger + Scroll of Dia, THF = knife, MNK = belt, WAR = sword).
     /// Mage-arc brains create as their caster base so the char can actually FIGHT at level 1 (user:
     /// "every mage starts with a single spell"); sword-line brains create as WAR; COR as RDM (dagger+Dia).
+    // The creation weapon must be wieldable by the ADVANCED MAIN (free unlocks mean it plays from lvl 1)
+    // AND the seesaw sub. Onion masks (item_equipment, decoded): rod = WHM/BLM/SMN/SCH/GEO only (NOT
+    // BRD/BST); dagger EXCLUDES COR; staff = WAR/MNK/WHM/BLM/RDM/BST/BRD/SMN/SCH/GEO; sword = 13 jobs
+    // incl. COR/RDM. Live: BRD/BST/COR mains couldn't equip their base weapon and punched for 0 kills.
     static byte CreationJobFor(string brain) => brain switch
     {
-        "Whm" or "Brd" or "Sch" or "Geo" or "Smn" or "Bst" => Job.Whm,   // WHM base: rod + Cure
-        "Blm" => Job.Blm,                                                 // staff + Stone
-        "Rdm" or "Cor" => Job.Rdm,                                        // dagger + Dia
+        "Whm" or "Sch" or "Geo" or "Smn" => Job.Whm,   // rod + Cure (rod fits main and WHM sub)
+        "Blm" or "Brd" or "Bst" => Job.Blm,             // STAFF fits BRD/BST mains AND their WHM sub
+        "Rdm" => Job.Rdm,                               // dagger + Dia
+        "Cor" => Job.War,                               // SWORD fits COR main and RDM sub (dagger excludes COR)
         "Thf" => Job.Thf,
-        "Mnk" or "Pup" => Job.Mnk,                                        // h2h natives
-        _ => Job.War,                                                     // sword-line default
+        "Mnk" or "Pup" => Job.Mnk,                      // h2h natives
+        _ => Job.War,                                   // sword-line default
     };
 
     /// The clamped, authoritative end of THIS session (set at login; 2-6h band). Day-plan consumers
