@@ -229,8 +229,23 @@ public sealed class JobLifecycle(
         await EnsureHomePointAtHomeCity(ct);
         while (!ct.IsCancellationRequested && !done())
         {
-            var plan = cfg.HuntZonePlan(p.World.MainJobLevel);
             var g = cfg.GrindCfgFor(job);
+            // SKILL-UP DROPBACK (user: easy prey must EXIST — con is relative, so an at-level zone may con
+            // nothing low and a skill-lagged bot would roam dry all session). The zone plan follows the
+            // EFFECTIVE level — what the lagging weapon supports (skill/2; trigger mirrors LevelGrind's
+            // skill-up mode at skill < level*2) — stepping back a tier or two to where easy prey is the
+            // local population, and advancing again automatically as the skill climbs.
+            byte EffectiveLevel()
+            {
+                byte lvl = p.World.MainJobLevel;
+                if (lvl < 5) return lvl;
+                int wep = gear.SkillLevel(g.WepSkillForLevel(lvl));
+                return wep < lvl * 2 ? (byte)Math.Clamp(wep / 2, 1, lvl) : lvl;
+            }
+            byte effLvl = EffectiveLevel();
+            if (effLvl < p.World.MainJobLevel)
+                Log($"skill-up dropback: hunting at effective lvl {effLvl} (weapon skill lags lvl {p.World.MainJobLevel})");
+            var plan = cfg.HuntZonePlan(effLvl);
             if (_detectedNation is { } dn)   // char born in a non-Windurst nation: overlay the brain's Windurst grind defaults
             {
                 g.HomeNation = dn;
@@ -251,7 +266,7 @@ public sealed class JobLifecycle(
                 g.RecoveryTravel = c => RecoverToHuntZone(job, c);
                 if (p.World.MainJobLevel < cfg.BabyUntil) { g.ConMin = 0; g.ConMax = 4; g.RoamHop = 25f; }
                 // Exit when the gated band should ADVANCE (level crossed into another zone) or `done` fires.
-                g.Done = () => done() || cfg.HuntZonePlan(p.World.MainJobLevel)?.id != id;
+                g.Done = () => done() || cfg.HuntZonePlan(EffectiveLevel())?.id != id;   // advance as skill catches up
             }
             else g.Done = done;   // nation path (HuntZones) selects zones itself
             // PARTY DAYS (user rule 2026-07-14: bots try to PARTY above level 10). On a Party-plan day a
