@@ -11,7 +11,7 @@ public sealed class PartyGrind(IPerception p, ICombat combat, IMagic? magic, INa
                                IChat chat, LevelGrind.Config g, string tag)
 {
     (float x, float z)? _camp;    // the announcer's own anchor (first-beat position = the meet spot)
-    long _dryPullMs, _gateLogMs;  // dry-pull log throttle; gate log throttle
+    long _dryPullMs, _gateLogMs, _scanLogMs;  // dry-pull log throttle; gate log throttle
     int _pullHeading;             // rotating roam-out heading (deg) for finding mobs beyond view range
     ((float x, float z) camp, (float x, float z) casters)? _myStations;   // announcer's SELF-VIEW: a bot
                                                                           // never receives its own party
@@ -122,6 +122,21 @@ public sealed class PartyGrind(IPerception p, ICombat combat, IMagic? magic, INa
             && nav.CanReach(e.X, e.Y, e.Z));                          // the puller walks out and drags it home
         if (target is null)
         {
+            // PULL TELEMETRY (the third party bottleneck was invisible: 1 pull in 5h with NO log naming
+            // the filter that ate every candidate). Every ~60s while dry, count the view through each
+            // rejection stage so the blocking filter names itself.
+            if (p.World.NowMs - _scanLogMs > 60_000)
+            {
+                _scanLogMs = p.World.NowMs;
+                var mobs = p.World.Entities.Values.Where(e => e.IsMob && e.Hpp > 0).ToArray();
+                int fullHp = mobs.Count(e => e.Hpp == 100);
+                int eligible = mobs.Count(e => e.Hpp == 100 && CombatRoutines.NotObject(e)
+                    && !CombatRoutines.SleepLockMobs.Any(n => e.Name.Contains(n, StringComparison.OrdinalIgnoreCase))
+                    && Geometry.Dist2D(e.X, e.Z, camp.x, camp.z) > 16f);
+                int reachable = mobs.Count(e => e.Hpp == 100 && Geometry.Dist2D(e.X, e.Z, camp.x, camp.z) > 16f
+                    && nav.CanReach(e.X, e.Y, e.Z));
+                Log.Info($"[{tag}] PULL-SCAN: view={mobs.Length} fullHP={fullHp} eligible={eligible} reachable={reachable} | roaming heading {_pullHeading}° at {p.DistanceTo(camp.x, camp.z):F0}y from camp");
+            }
             // THE CAMP NEVER MOVES (user: camps are deliberately placed OUTSIDE spawn ground so nothing
             // pops on top of the party). Finding prey is the PULLER'S legs: perception only sees ~50y, so
             // roam OUTWARD from camp in rotating headings — hop, scan, hop — as far as it takes (in-game
@@ -144,7 +159,11 @@ public sealed class PartyGrind(IPerception p, ICombat combat, IMagic? magic, INa
         }
         _dryPullMs = 0;
         int con = await combat.Consider(target.Id, ct);
-        if (con < 1 || con > g.ConMax) { await Task.Delay(1000, ct); return; }   // con is the sole arbiter
+        if (con < 1 || con > g.ConMax)
+        {
+            Log.Info($"[{tag}] pull candidate '{target.Name}' rejected: con={con} (want 1-{g.ConMax})");
+            await Task.Delay(1000, ct); return;   // con is the sole arbiter
+        }
 
         Log.Info($"[{tag}] pulling '{target.Name}' (con {con}) at {p.DistanceTo(target.X, target.Z):F0}y from me, {Geometry.Dist2D(target.X, target.Z, camp.x, camp.z):F0}y from camp");
         if (p.DistanceTo(target.X, target.Z) > 14f)
