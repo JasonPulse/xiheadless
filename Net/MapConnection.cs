@@ -251,6 +251,7 @@ public sealed class MapConnection : ISession
 
     void HandleInbound(byte[] pkt)
     {
+        State.LastInboundMs = Environment.TickCount64;   // server liveness (watchdog: silence = crash/restart)
         // server packet id from header[0:2] — echoed back as our ack (offset 2 outbound). ACK-AFTER-VALIDATE:
         // we must NOT advance the ack until the datagram passes md5, or a corrupt datagram gets acked and its
         // content is lost (the server, single-in-flight lockstep, thinks it was delivered and moves on). On an

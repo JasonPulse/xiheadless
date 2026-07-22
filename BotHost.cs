@@ -132,6 +132,22 @@ public static class BotHost
             stop.Set();
         }, null, remaining, Timeout.InfiniteTimeSpan);
 
+        // SERVER-SILENCE WATCHDOG (user restarted the server mid-wave: 7 bots played into the void as
+        // zombies until their caps fired — UDP gives NO disconnect signal, a dead server just goes quiet).
+        // 90s without ANY inbound datagram = crash/restart: end the session via the same stop path (the
+        // logout fires into the void harmlessly) and exit clean; the gate/catch-up brings the bot back
+        // once the server returns. In-process auto-relogin is the follow-up refinement.
+        conn.State.LastInboundMs = Environment.TickCount64;
+        using var silenceWatch = new Timer(_ =>
+        {
+            long quiet = Environment.TickCount64 - conn.State.LastInboundMs;
+            if (quiet > 90_000)
+            {
+                Log.Always($"SERVER SILENT {quiet / 1000}s (crash/restart?) -> ending the session");
+                stop.Set();
+            }
+        }, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+
         Log.Info("zoning in...");
         bool zoned = conn.ZoneInSync();
         Log.Info(zoned ? $"IN ZONE: {conn.State}" : "did not receive zone-in");

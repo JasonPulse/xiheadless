@@ -11,6 +11,8 @@ public sealed class WorldState
     public byte Rotation;       // 0-255 heading
     public bool Moving;         // set by the navigator; drives the 0x015 RunMode flag
     public long NowMs;          // monotonic clock (set by the runtime each update) for entity aging
+    public long LastInboundMs;  // stamped on EVERY inbound datagram — the server-silence watchdog reads this
+                                // (UDP has no disconnect: a server crash/restart just goes quiet)
     public long RevivedMs;      // last home-point revive — post-revive WEAKNESS guts stats for ~5 min (no new pulls)
     public long SelfGroupListMs; // last 0x0DD group_list entry about SELF — the server refreshes the roster on
                                  // leave/disband, so a self entry NOT followed by a member's re-listing means
