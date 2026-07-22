@@ -65,135 +65,152 @@ public static class BotHost
 
     public static async Task<int> Run(string account, string password, string brainName, int? runSeconds)
     {
-        XiClient client;
-        bool justCreated;
-        try
-        {
-            client = await ConnectLobby(account, password);
-            justCreated = client.SelectOrCreate(CreationJobFor(brainName));   // select, or create with the brain's base-job kit
-            client.RequestZoneServer();                // 0xA2 zone handoff — throws on a stale/duplicate session
-        }
-        catch (Exception ex) when (ex.Message.Contains("0xA2") || ex.Message.Contains("stale/duplicate"))
-        {
-            // CRITICAL PATH, now HANDLED (was an unhandled crash, exit 134): a stale/duplicate session means the
-            // server still holds this char online. Exit CLEANLY with a distinct code + one clear line so the
-            // operator/babysitter paces the dirty cooldown (>=5 min) — a rapid relaunch just re-hits the held
-            // session and 0xA2s again. (The babysitter's pgrep guard prevents the duplicate login up front.)
-            Log.Always($"[fatal] session declined (0xA2 stale/duplicate) — server still holds this char; needs a cooldown before relaunch, NOT a rapid retry. [{ex.Message.Split('\n')[0]}]");
-            return 75;
-        }
-        catch (Exception ex)
-        {
-            // ANY other lobby-phase failure (TLS reset, lobby refusing mid-handshake, char-list read error —
-            // a live fleet pod died on Send_0xA1/FetchCharList with an unhandled stack trace -> pod Error).
-            // The lobby phase is always retryable-next-window: one clear line, clean exit, same pacing code.
-            Log.Always($"[fatal] lobby login failed ({ex.GetType().Name}: {ex.Message.Split('\n')[0]}) — retry next window");
-            return 75;
-        }
-
-        var resDir = Path.Combine(AppContext.BaseDirectory, "res");
-        var sessionKey = new byte[20]; if (justCreated) sessionKey[16] = 6; // +6 byte16 for a fresh char
-        var conn = new MapConnection(client.MapServer, client.CharId, sessionKey, resDir);
-        conn.State.MyName = client.CharName;   // so brains know their own char (e.g. gil-grant target)
-
-        // Graceful stop signal. k8s SIGTERM (pod delete/scale-down) and Ctrl-C set it; we then cancel
-        // the brain and clean-logout. Cancel the default termination so the runtime lets us finish the
-        // ~40s logout (the pod's terminationGracePeriodSeconds must be >= ~45s for it to complete).
+        // Session-scoped state (survives reconnects). The RECONNECT LOOP below re-runs the whole
+        // login->play block after a server crash/restart (user directive: auto-relogin when the MAP
+        // server is back). Success is judged ONLY at the map 0x00A zone-in — the lobby is a separate
+        // process that stays up when the map dies, so a lobby answer proves nothing.
         using var stop = new ManualResetEventSlim(false);
         using var onTerm = PosixSignalRegistration.Create(PosixSignal.SIGTERM, c => { c.Cancel = true; stop.Set(); });
         using var onInt = PosixSignalRegistration.Create(PosixSignal.SIGINT, c => { c.Cancel = true; stop.Set(); });
+        Timer? sessionCap = null;
+        bool everConnected = false;
 
-        // SESSION CAP (user rule: max 6h play; bots END THEIR OWN sessions). The evening-wave bug: four bots
-        // sat online 12h+ because nothing in-process ever ended the day — the seeded SessionPlan existed but
-        // only fleet-day brains consulted it, and a bot stuck inside a fight/travel/rest loop never reaches a
-        // between-activities check. This timer fires the SAME stop signal SIGTERM uses, so the full graceful
-        // path (retreat from aggro, KO-revive, 40s logout) runs no matter what loop the brain is stuck in.
-        var plan = Routines.SessionPlan.ForToday(client.CharId);
-        var remaining = plan.EndUtc - DateTime.UtcNow;
-        // 2-6h HARD BAND (user rule: sessions are 2-6 hours, NEVER less). The seeded day-end still varies
-        // end times across the fleet, but a wave login late in a char's seeded day plays a full >=2h session
-        // (first live wave: the anchor alone produced 32-63 MINUTE sessions — mostly travel, zero grinding).
-        if (remaining < TimeSpan.FromHours(2) || remaining > TimeSpan.FromHours(6))
-        {
-            // RANDOMIZED 2-6h (user: "2 to 6 means randomized play sessions") — clamping to the BOUNDS made
-            // every misaligned day exactly 2h or 6h, the extremes and never the middle. Seeded by (charid,
-            // UTC date) so a same-day relaunch resumes the same session length.
-            var rng = new Random(unchecked((int)(client.CharId * 2654435761u) ^ (DateTime.UtcNow.Date.DayOfYear * 131)));
-            remaining = TimeSpan.FromMinutes(120 + rng.Next(241));
-        }
-        SessionEndUtc = DateTime.UtcNow + remaining;   // the EFFECTIVE end — FleetSchedule/ENDAT must use THIS
-                                                       // (live: the seeded plan said 'done in 15.2h' while the
-                                                       // cap ended the session at 6h; the group-end protocol
-                                                       // aimed at a time that never came)
-        Log.Always($"session cap: ending the day in {remaining.TotalMinutes:F0} min (plan {plan.Mode}, end {plan.EndUtc:HH:mm}Z)");
-        using var sessionCap = new Timer(_ =>
-        {
-            Log.Always("session cap reached -> ending the day (same graceful path as SIGTERM)");
-            stop.Set();
-        }, null, remaining, Timeout.InfiniteTimeSpan);
+        XiClient client = null!;
+        MapConnection conn = null!;
+        CapabilitySet caps = null!;
+        BotRunner runner = null!;
+        CancellationTokenSource autoCts = null!;
 
-        // SERVER-SILENCE WATCHDOG (user restarted the server mid-wave: 7 bots played into the void as
-        // zombies until their caps fired — UDP gives NO disconnect signal, a dead server just goes quiet).
-        // 90s without ANY inbound datagram = crash/restart: end the session via the same stop path (the
-        // logout fires into the void harmlessly) and exit clean; the gate/catch-up brings the bot back
-        // once the server returns. In-process auto-relogin is the follow-up refinement.
-        conn.State.LastInboundMs = Environment.TickCount64;
-        using var silenceWatch = new Timer(_ =>
+        while (true)
         {
-            long quiet = Environment.TickCount64 - conn.State.LastInboundMs;
-            if (quiet > 90_000)
+            bool justCreated;
+            try
             {
-                Log.Always($"SERVER SILENT {quiet / 1000}s (crash/restart?) -> ending the session");
-                stop.Set();
+                client = await ConnectLobby(account, password);
+                justCreated = client.SelectOrCreate(CreationJobFor(brainName));   // select, or create with the brain's base-job kit
+                client.RequestZoneServer();                // 0xA2 zone handoff — throws on a stale/duplicate session
             }
-        }, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+            catch (Exception ex) when (!everConnected && (ex.Message.Contains("0xA2") || ex.Message.Contains("stale/duplicate")))
+            {
+                // FIRST login declined: server still holds this char — needs the dirty cooldown, not a rapid retry.
+                Log.Always($"[fatal] session declined (0xA2 stale/duplicate) — server still holds this char; needs a cooldown before relaunch, NOT a rapid retry. [{ex.Message.Split('\n')[0]}]");
+                return 75;
+            }
+            catch (Exception ex) when (!everConnected)
+            {
+                // FIRST lobby-phase failure: retryable next wave window — one clear line, clean exit.
+                Log.Always($"[fatal] lobby login failed ({ex.GetType().Name}: {ex.Message.Split('\n')[0]}) — retry next window");
+                return 75;
+            }
+            catch (Exception ex)
+            {
+                // RECONNECT-phase failure (we HAD a session; the server crashed): anything short of a map
+                // zone-in means "not back yet" — incl. a live lobby whose 0xA2 points at a dead map port,
+                // or 0xA2 refusing because the map still holds our pre-crash session. Back off and retry
+                // until the session's own end time.
+                if (DateTime.UtcNow >= SessionEndUtc) { Log.Always("server still down at session end — giving up for the day"); return 0; }
+                Log.Always($"[relogin] lobby/handoff not ready ({ex.Message.Split('\n')[0]}) — retrying in ~75s");
+                if (stop.Wait(TimeSpan.FromSeconds(75))) return 0;
+                continue;
+            }
 
-        Log.Info("zoning in...");
-        bool zoned = conn.ZoneInSync();
-        Log.Info(zoned ? $"IN ZONE: {conn.State}" : "did not receive zone-in");
-        conn.Start();
+            var resDir = Path.Combine(AppContext.BaseDirectory, "res");
+            var sessionKey = new byte[20]; if (justCreated) sessionKey[16] = 6; // +6 byte16 for a fresh char
+            conn = new MapConnection(client.MapServer, client.CharId, sessionKey, resDir);
+            conn.State.MyName = client.CharName;   // so brains know their own char (e.g. gil-grant target)
 
-        // onLogout = the same stop signal SIGTERM uses, so a brain can end its own session (ILifecycle).
-        var caps = new CapabilitySet(conn, LoadZoneMesh(conn.State.ZoneId), stop.Set);
-        // On every zone change, hot-swap the navmesh so navigation works in the new zone.
-        conn.ZoneChanged += zid => caps.SwapMesh(LoadZoneMesh(zid));
+            Log.Info("zoning in...");
+            bool zoned = conn.ZoneInSync();
+            Log.Info(zoned ? $"IN ZONE: {conn.State}" : "did not receive zone-in");
+            if (!zoned)
+            {
+                // THE map-liveness judge (user: the lobby answering proves nothing). No zone-in = map not
+                // back yet. First-ever attempt keeps the old clean-exit pacing; reconnects back off + retry.
+                if (!everConnected) { Log.Always("[fatal] no map zone-in — retry next window"); return 75; }
+                if (DateTime.UtcNow >= SessionEndUtc) { Log.Always("map still down at session end — giving up for the day"); return 0; }
+                Log.Always("[relogin] map zone-in not answered — retrying in ~75s");
+                if (stop.Wait(TimeSpan.FromSeconds(75))) return 0;
+                continue;
+            }
+            conn.Start();
 
-        // Headless event auto-completer (CORE/system, runs the whole session): there is no human to
-        // dismiss cutscenes, so any server-pushed event left open freezes the bot "in event". This
-        // finishes anything that lingers — including the New Character Cutscene, which calls
-        // setHomePoint(). A fresh char's first login is at its starting city at level 1 (before the ROV
-        // mission cutscene exists at level 3), so the new-char CS fires and gets auto-finished here ->
-        // home point set with no special setup code. Setting up / navigating is brain activity, not
-        // system logic, and the bot takes no config beyond account/password/brain.
-        using var autoCts = new CancellationTokenSource();
-        var autoEvents = AutoCompleteEvents(caps, autoCts.Token);
-        var autoParty = AutoAcceptParty(caps, autoCts.Token);
-        var autoDeath = AutoHandleDeath(caps, autoCts.Token);   // CORE: any death -> Home Point (every brain)
-        var logToggle = LogToggle(caps, autoCts.Token);         // CORE: /tell "log on"/"log off" flips verbose logging live
+            if (!everConnected)
+            {
+                everConnected = true;
+                // SESSION CAP (user rules: bots end their own sessions; lengths are RANDOMIZED 2-6h).
+                // Armed ONCE — reconnects resume the SAME day and the same end time.
+                var plan = Routines.SessionPlan.ForToday(client.CharId);
+                var remaining = plan.EndUtc - DateTime.UtcNow;
+                if (remaining < TimeSpan.FromHours(2) || remaining > TimeSpan.FromHours(6))
+                {
+                    var rng = new Random(unchecked((int)(client.CharId * 2654435761u) ^ (DateTime.UtcNow.Date.DayOfYear * 131)));
+                    remaining = TimeSpan.FromMinutes(120 + rng.Next(241));
+                }
+                SessionEndUtc = DateTime.UtcNow + remaining;
+                Log.Always($"session cap: ending the day in {remaining.TotalMinutes:F0} min (plan {plan.Mode}, end {plan.EndUtc:HH:mm}Z)");
+                sessionCap = new Timer(_ =>
+                {
+                    Log.Always("session cap reached -> ending the day (same graceful path as SIGTERM)");
+                    stop.Set();
+                }, null, remaining, Timeout.InfiniteTimeSpan);
+            }
 
-        // New-char home point (CORE setup): a freshly-created char lands in its start city and that zone's
-        // onZoneIn starts an opening cutscene whose finish calls setHomePoint(). We can't SEE that event
-        // (0x32 recv gap), so the auto-completer never finishes it — the char sits frozen "in event" with NO
-        // home point (death -> zone-0 limbo). Blind-finish it by id (per start zone) to set the home point
-        // and unfreeze. Harmless no-op (event-id mismatch) once the char has already seen it.
-        if (Game.NewCharCutscene.EventFor(conn.State.ZoneId) is int csEv and >= 0)
-        {
-            await Task.Delay(2000);
-            Log.Info($"[newchar] blind-finishing start-city cutscene {csEv} in zone {conn.State.ZoneId} -> setHomePoint");
-            await caps.Events.Finish(conn.State.MyId, 0, (ushort)csEv, 0);
+            // SERVER-SILENCE WATCHDOG (per connection): UDP has no disconnect — a dead server just goes
+            // quiet. 90s of silence flags connLost; the loop tears down and RE-LOGS-IN when the map answers.
+            using var connLost = new ManualResetEventSlim(false);
+            conn.State.LastInboundMs = Environment.TickCount64;
+            using var silenceWatch = new Timer(_ =>
+            {
+                long quiet = Environment.TickCount64 - conn.State.LastInboundMs;
+                if (quiet > 90_000)
+                {
+                    Log.Always($"SERVER SILENT {quiet / 1000}s (crash/restart?) -> reconnect loop");
+                    connLost.Set();
+                }
+            }, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+
+            // onLogout = the same stop signal SIGTERM uses, so a brain can end its own session (ILifecycle).
+            caps = new CapabilitySet(conn, LoadZoneMesh(conn.State.ZoneId), stop.Set);
+            conn.ZoneChanged += zid => caps.SwapMesh(LoadZoneMesh(zid));
+
+            autoCts = new CancellationTokenSource();
+            var autoEvents = AutoCompleteEvents(caps, autoCts.Token);
+            var autoParty = AutoAcceptParty(caps, autoCts.Token);
+            var autoDeath = AutoHandleDeath(caps, autoCts.Token);   // CORE: any death -> Home Point (every brain)
+            var logToggle = LogToggle(caps, autoCts.Token);         // CORE: /tell "log on"/"log off" flips verbose logging live
+
+            // New-char home point (see NewCharCutscene) — harmless no-op after the first login.
+            if (Game.NewCharCutscene.EventFor(conn.State.ZoneId) is int csEv and >= 0)
+            {
+                await Task.Delay(2000);
+                Log.Info($"[newchar] blind-finishing start-city cutscene {csEv} in zone {conn.State.ZoneId} -> setHomePoint");
+                await caps.Events.Finish(conn.State.MyId, 0, (ushort)csEv, 0);
+            }
+
+            var brain = BrainRegistry.Create(brainName, caps);
+            Log.Info($"running brain: {brain.GetType().Name}");
+            runner = new BotRunner(brain);
+            runner.Start();
+
+            // Play until STOP (SIGTERM/cap/brain-logout) or CONNECTION LOST (silence watchdog).
+            if (runSeconds is int sec)
+                for (int i = 0; i < sec && !stop.Wait(1000) && !connLost.IsSet; i++) Log.Info($"  state: {conn.State}");
+            else
+                WaitHandle.WaitAny(new[] { stop.WaitHandle, connLost.WaitHandle });
+
+            if (stop.IsSet || runSeconds is not null) break;   // normal end -> the graceful shutdown below
+
+            // CONNECTION LOST: tear down quietly (the server is a void — no logout dance to run) and loop
+            // back to re-login. The brain restarts fresh; party bots re-form via FleetDay; the session cap
+            // keeps its original end time.
+            Log.Always("[relogin] tearing down the dead connection; will re-login when the map answers");
+            runner.Stop();
+            autoCts.Cancel();
+            autoCts.Dispose();
+            try { conn.Stop(); } catch { /* dead-server teardown — nothing to flush */ }
+            if (stop.Wait(TimeSpan.FromSeconds(60))) return 0;   // brief settle; a SIGTERM during it still wins
         }
-
-        var brain = BrainRegistry.Create(brainName, caps);
-        Log.Info($"running brain: {brain.GetType().Name}");
-        var runner = new BotRunner(brain);
-        runner.Start();
-
-        // Run until a stop signal — bounded by runSeconds for dev (logging state each tick), or
-        // indefinitely for the fleet. stop.Wait returns true the moment a signal arrives.
-        if (runSeconds is int sec)
-            for (int i = 0; i < sec && !stop.Wait(1000); i++) Log.Info($"  state: {conn.State}");
-        else
-            stop.Wait();
+        sessionCap?.Dispose();
 
         // Graceful shutdown: stop the brain first (so it isn't acting mid-logout), then clean-logout.
         Log.Always("stopping -> cancel brain + graceful logout");
