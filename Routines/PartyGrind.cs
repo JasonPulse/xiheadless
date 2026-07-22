@@ -61,8 +61,9 @@ public sealed class PartyGrind(IPerception p, ICombat combat, IMagic? magic, INa
         var mine = MyStation(role, camp, st);
         if (p.DistanceTo(mine.x, mine.z) > 5f)
             await NavRoutines.WalkTo(nav, p, mine.x, mine.z, within: 3f, ct, legTimeoutMs: 20_000);
-        else if (w.Hpp < g.RestHpTrigger || (g.RestMpPct > 0 && w.Mpp < g.RestMpPct))
-            await combat.Rest(g.RestHpTarget, g.RestMpPct, () => p.AttackersOn(w.MyId, 8000) > 0, ct);
+        else if (w.Hpp <= PartyCombat.ReadyHpp || w.Hpp < g.RestHpTrigger || (g.RestMpPct > 0 && w.Mpp < g.RestMpPct))
+            await combat.Rest(Math.Max(g.RestHpTarget, PartyCombat.ReadyHpp + 10), g.RestMpPct,
+                () => p.AttackersOn(w.MyId, 8000) > 0, ct);   // members rest ABOVE the ready line — never park under the puller's gate
         await Task.Delay(1500, ct);
     }
 
@@ -106,7 +107,8 @@ public sealed class PartyGrind(IPerception p, ICombat combat, IMagic? magic, INa
     {
         // NEVER pull until every in-zone member is good (user rule) — hold at camp while they recover.
         foreach (var (_, m) in p.World.PartyMembers.ToArray())
-            if (m.Zone == 0 && m.Hpp is > 0 and < 70)
+            if (m.Zone == 0 && p.World.NowMs - m.LastSeenMs < 30_000   // stale rows can't hold the party hostage
+                && m.Hpp > 0 && m.Hpp < PartyCombat.ReadyHpp)
             {
                 if (p.World.NowMs - _gateLogMs > 60_000) { _gateLogMs = p.World.NowMs; Log.Info($"[{tag}] holding pulls — a member is at {m.Hpp}%"); }
                 await NavRoutines.WalkTo(nav, p, camp.x, camp.z, within: 3f, ct, legTimeoutMs: 15_000); await Task.Delay(2000, ct); return;

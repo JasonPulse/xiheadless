@@ -23,6 +23,10 @@ namespace XiHeadless.Routines;
 public static class PartyCombat
 {
     public const int CampThreshold = 4;        // total members (incl. self) >= this -> camp mode; 3 -> roam
+    // THE party-ready line — the puller's all-members-good gate AND every member's between-fight rest use
+    // this ONE constant. (Live deadlock: puller required >=70 while a DRG's own rest trigger was 50 — a
+    // member at 68% never rested and never crossed 70, freezing the party for its entire session.)
+    public const byte ReadyHpp = 70;
     const int AnnounceEveryMs = 180_000;
 
     // ---- job roster over the party bus ----------------------------------------------------------------
