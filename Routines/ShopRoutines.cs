@@ -65,8 +65,18 @@ public static class ShopRoutines
                                            CancellationToken ct = default)
     {
         if (inv.Has(itemId)) return true;
+        bool soldForGil = false;
         foreach (var bid in BidLadder)
         {
+            // BROKE-PLAYER RULE: short on gil with junk in the bag = sell FIRST, then bid. Without this the
+            // funding loop deadlocks — junk-selling waited for a full bag while every bid read "out of
+            // budget" (Gibra: 10 gil + 156 failed bids + a bag of unsold drops = a songless BRD all session).
+            if (bid > p.World.Gil && !soldForGil && freeSpace != null)
+            {
+                soldForGil = true;   // one funding trip per purchase — junk is finite
+                Log.Info($"[ah] bid {bid} > gil {p.World.Gil} — selling junk to fund the buy");
+                await freeSpace(ct);
+            }
             if (bid > p.World.Gil) { Log.Info($"[ah] bid {bid} > gil {p.World.Gil} — out of budget"); break; }
             foreach (var single in new[] { true, false })
             {
@@ -101,12 +111,20 @@ public static class ShopRoutines
                                               CancellationToken ct = default)
     {
         int CountOf() => inv.CountOf(itemId);
+        bool soldForGil = false;
         while (CountOf() < count && !ct.IsCancellationRequested)
         {
             int before = CountOf();
             bool progressed = false;
             foreach (var bid in BidLadder)
             {
+                // Same broke-player funding rule as BuyItem: one junk-sale trip before giving up on gil.
+                if (bid > p.World.Gil && !soldForGil && freeSpace != null)
+                {
+                    soldForGil = true;
+                    Log.Info($"[ah] bid {bid} > gil {p.World.Gil} — selling junk to fund the buy");
+                    await freeSpace(ct);
+                }
                 if (bid > p.World.Gil) { Log.Info($"[ah] bid {bid} > gil {p.World.Gil} — stop ({CountOf()}/{count} of {itemId})"); return CountOf() >= count; }
                 foreach (var single in new[] { false, true })   // stack first (efficient), then single
                 {

@@ -13,7 +13,7 @@ public sealed class WorldState
     public long NowMs;          // monotonic clock (set by the runtime each update) for entity aging
     public long LastInboundMs;  // stamped on EVERY inbound datagram — the server-silence watchdog reads this
                                 // (UDP has no disconnect: a server crash/restart just goes quiet)
-    public long RevivedMs;      // last home-point revive — post-revive WEAKNESS guts stats for ~5 min (no new pulls)
+    public long RevivedMs;      // last home-point revive (NO weakness on this server — only a healer Raise weakens)
     public long SelfGroupListMs; // last 0x0DD group_list entry about SELF — the server refreshes the roster on
                                  // leave/disband, so a self entry NOT followed by a member's re-listing means
                                  // that member left the party (disband detection, event-driven)

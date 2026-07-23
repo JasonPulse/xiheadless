@@ -77,7 +77,6 @@ public sealed class LevelGrind(
     byte _lastHpp = 100;   // to detect "HP dropped while not engaged" = something aggroed us
     float _trackX, _trackZ; double _walkedSinceFight;   // distance-between-pulls metric (wandering waste, per user)
     long _lastKillMs;                                    // hunger clock: dry spells force a deep trek
-    long _lastWeakLogMs;                                 // throttle for the post-revive weakness hold log line
     long _lastSkillUpLogMs;                              // throttle for the skill-up-mode log line
     string? _lastSteerTarget;                            // last dropper-seek species — a fruitless repeat yields its turn
     int _dryTreks;                                       // consecutive hunger treks with no kill — escalates trek DISTANCE
@@ -408,18 +407,9 @@ public sealed class LevelGrind(
                 await RestSafely(ct);
                 continue;
             }
-            // POST-REVIVE WEAKNESS hold (~5 min of gutted stats): re-engaging right after a home-point revive
-            // lost a con-3 fight the same character wins healthy (mob at 27%). Sit it out; aggro still fights.
-            if (!underAttack && p.World.RevivedMs > 0 && now - p.World.RevivedMs < 300_000)
-            {
-                if (now - _lastWeakLogMs > 30_000) { _lastWeakLogMs = now; Log($"weakened after revive — holding {(300_000 - (now - p.World.RevivedMs)) / 1000}s more (no pulls)"); }
-                // Hold SOMEWHERE SAFE: a bare in-place wait left the weakened THF standing in a goblin's
-                // sight line — RestSafely steps away from wanderers and sits (regen while we wait it out).
-                // Only if there's something to regen: at full vitals it looped rest/wake ~10k times live.
-                if (p.World.Hpp < cfg.RestHpTarget || (cfg.RestMpPct > 0 && p.World.Mpp < cfg.RestMpPct)) await RestSafely(ct);
-                await Task.Delay(3000, ct);
-                continue;
-            }
+            // NO post-homepoint weakness on this server (user 2026-07-23): weakness only follows a healer
+            // Raise, and no Raise path exists yet. The old 5-min hold here cost Gibra ~50 min over 10 deaths.
+            // Low HP after a revive is already handled by the RestHpTrigger gate above.
 
             Entity? mob;
             bool preferred = false;

@@ -16,7 +16,7 @@ public static class GearRoutines
     // armor gets equipped, the weapon does NOT): live, a recreated WHM punched hornets for a whole
     // session with its Onion Rod in the bag (0 kills at a pace where a player makes 15 in 45 min).
     public const ushort StarterSword = 16534;   // WAR creation (kept as the named Keep constant)
-    static readonly ushort[] StarterWeapons = { 16534 /*sword*/, 16482 /*dagger*/, 17068 /*rod*/, 17104 /*staff*/ };
+    static readonly ushort[] StarterWeapons = { 16534 /*sword*/, 16482 /*dagger*/, 16483 /*knife (THF)*/, 17068 /*rod*/, 17104 /*staff*/ };
 
     public static async Task<(int n, int total)> EquipByLevel(
         IGear gear, IPerception p,

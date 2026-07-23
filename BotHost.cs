@@ -51,10 +51,14 @@ public static class BotHost
     static byte CreationJobFor(string brain) => brain switch
     {
         "Whm" or "Sch" or "Geo" or "Smn" => Job.Whm,   // rod + Cure (rod fits main and WHM sub)
-        "Blm" or "Brd" or "Bst" => Job.Blm,             // STAFF fits BRD/BST mains AND their WHM sub
+        "Blm" or "Bst" => Job.Blm,                      // STAFF fits BST main AND the WHM sub
         "Rdm" => Job.Rdm,                               // dagger + Dia
         "Cor" => Job.War,                               // SWORD fits COR main and RDM sub (dagger excludes COR)
-        "Thf" => Job.Thf,
+        // BRD creates as THF (user 2026-07-23): the Onion Knife's mask includes BRD (verified in
+        // item_equipment: RDM/THF/PLD/BST/BRD/RNG/SAM/NIN/BLU/COR/PUP), so the char skills DAGGER —
+        // BrdBrain's actual weapon line — from level 1 instead of a staff it abandons at the job change.
+        // WHM seesaw phases can't hold it, but they already swap to the bought Maple Wand.
+        "Thf" or "Brd" => Job.Thf,
         "Mnk" or "Pup" => Job.Mnk,                      // h2h natives
         _ => Job.War,                                   // sword-line default
     };
@@ -298,7 +302,7 @@ public static class BotHost
                     await caps.Combat.Homepoint(ct);
                     await Task.Delay(8000, ct);
                 }
-                caps.Perception.World.RevivedMs = caps.Perception.World.NowMs;   // starts the weakness hold (no new pulls)
+                caps.Perception.World.RevivedMs = caps.Perception.World.NowMs;   // homepoint revive = NO weakness on this server (only a healer Raise weakens)
                 Log.Always("[death] revived at home point");
             }
         }
