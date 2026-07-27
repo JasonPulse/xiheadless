@@ -281,8 +281,12 @@ public sealed class JobLifecycle(
                 var pg = new PartyGrind(p, combat, magic, nav, gear, chat, g, cfg.Tag);
                 // The plan handed to FleetDay carries the EFFECTIVE session end (BotHost's 2-6h clamp), so
                 // the ENDAT group-convergence protocol aims at the real logout, not the raw seeded day-end.
+                // Use SessionEndUtc DIRECTLY — it IS the authoritative clamped end. The old MIN() against
+                // basePlan.EndUtc was the bug: when the seed yields <2h, BotHost re-rolls SessionEndUtc
+                // LONGER, so MIN() picked the SHORT seeded end and FleetSchedule logged the bot out early
+                // (2026-07-26: RDM/BLM/BLU/PUP Party-day bots ran 53-77 min of 196-323-min caps).
                 var basePlan = SessionPlan.ForToday(p.World.MyId);
-                var effEnd = BotHost.SessionEndUtc < basePlan.EndUtc ? BotHost.SessionEndUtc : basePlan.EndUtc;
+                var effEnd = BotHost.SessionEndUtc == DateTime.MaxValue ? basePlan.EndUtc : BotHost.SessionEndUtc;
                 var effPlan = new SessionPlan.Plan(basePlan.Mode, basePlan.StartUtc, effEnd);
                 await FleetDay.Run(p, combat, party, chat, magic, nav, lifecycle, new FleetDay.Hooks
                 {
