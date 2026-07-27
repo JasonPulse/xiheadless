@@ -70,6 +70,17 @@ public static class JobKits
         return async (mob, con, ct) =>
         {
             var w = p.World;
+
+            // Signature melee JAs (each self-gates on job/level/recast). Shared by the melee default AND a
+            // SMN with no avatar granted yet (pre-grant fallback), so there's ONE copy.
+            async Task<bool> TryMeleeJa()
+            {
+                if (con < 2) return false;
+                foreach (var ab in MeleeJas)
+                    if (await combat.UseAbility(ab, mob, ct)) { Log.Info($"[{tag}] {ab}"); return true; }
+                return false;
+            }
+
             switch (job)
             {
                 // ---- BARD: songs ARE the kit. Foe Requiem (DoT, BEST castable tier) on the mob, re-sung on a
@@ -84,9 +95,32 @@ public static class JobKits
                     }
                     return;
 
+                // ---- SUMMONER: the avatar tanks + DPS; the fragile SMN never melees (it lost 1v1 to con-4
+                // Goblins, 2026-07-26). Keep the highest KNOWN avatar out (Cast on self), then Blood Pact:
+                // Rage for burst, else Assault to keep the pet on the mob. Avatars arrive via GM !addspell as
+                // the SMN levels (SmnBrain + Game.Avatars); EmergencyCure (WHM sub) still self-heals via its hook.
+                case Job.Smn:
+                {
+                    Spell? best = null;
+                    if (magic is not null)
+                        foreach (var (sp, _) in Game.Avatars.Progression) if (magic.Known(sp)) best = sp;
+                    if (best is null) { await TryMeleeJa(); return; }   // no avatar granted yet -> melee fallback
+                    bool avatarOut = p.Nearest(e => (e.NamePrefix & 0x08) != 0
+                                        && Game.Avatars.IsAvatarName(e.Name) && p.DistanceTo(e.X, e.Z) < 20f) is not null;
+                    if (!avatarOut)
+                    {
+                        // Summon needs MP for the cast + ongoing perpetuation — don't summon on fumes.
+                        if (magic is not null && w.Mpp >= 20) { magic.Cast(best.Value, w.MyId); Log.Info($"[{tag}] summoning {best}"); await Task.Delay(4000, ct); }
+                        return;
+                    }
+                    if (await combat.UseAbility(Ability.BloodPactRage, mob, ct)) { Log.Info($"[{tag}] Blood Pact: Rage"); await Task.Delay(2000, ct); return; }
+                    await combat.UseAbility(Ability.Assault, mob, ct);   // keep the avatar attacking the target
+                    return;
+                }
+
                 // ---- CASTERS: the cheapest known nuke each beat (the BLM pattern, generalized). CastLowest
                 // picks the lowest READY tier; the line list covers each caster's early book.
-                case Job.Blm or Job.Rdm or Job.Sch or Job.Geo or Job.Smn:
+                case Job.Blm or Job.Rdm or Job.Sch or Job.Geo:
                     if (magic is null || w.Mpp < 10) return;
                     // Dia LAST: it's a one-per-fight DoT, but it's also all a lvl-1-3 RDM has (Stone is RDM 4)
                     foreach (var line in new[] { SpellLine.Stone, SpellLine.Water, SpellLine.Aero, SpellLine.Bio, SpellLine.Banish, SpellLine.Dia })
@@ -105,14 +139,10 @@ public static class JobKits
                         await Task.Delay(3000, ct);
                     return;
 
-                // ---- MELEE/other: fire the job's signature low/mid JAs. UseAbility self-gates on
-                // job/level/recast, so the whole list is safe to try; long-recast buffs only on real fights.
+                // ---- MELEE/other: fire the job's signature low/mid JAs (the shared TryMeleeJa). UseAbility
+                // self-gates on job/level/recast, so the whole list is safe to try.
                 default:
-                    if (con >= 2)
-                    {
-                        foreach (var ab in MeleeJas)
-                            if (await combat.UseAbility(ab, mob, ct)) { Log.Info($"[{tag}] {ab}"); return; }
-                    }
+                    await TryMeleeJa();
                     return;
             }
         };

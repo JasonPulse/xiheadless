@@ -44,14 +44,41 @@ public sealed class SmnBrain(
     // Full arc (sub WHM->30, unlock, seesaw SMN/WHM) via the shared JobLifecycle — brain = config only.
     // CAVEAT (unchanged): "I Can Hear a Rainbow" needs Carbuncle's Ruby (1125, farmed live) and a
     // weather-gated 7-light roam QuestRunner can't express, so the unlock will fail gracefully (hold + level WHM).
-    public Task RunAsync(CancellationToken ct) =>
-        new JobLifecycle(p, nav, combat, zoning, gear, ah, delivery, inv, shop, jobs, quests, trade, events,
+    public Task RunAsync(CancellationToken ct)
+    {
+        _ = RequestAvatarsAsLevels(ct);   // non-blocking: GM-grant each avatar at its gate level (Game.Avatars)
+        return new JobLifecycle(p, nav, combat, zoning, gear, ah, delivery, inv, shop, jobs, quests, trade, events,
             new JobLifecycle.Config
             {
                 MainJob = Job.Smn, SubJob = Job.Whm, Advanced = true,
                 UnlockSteps = QuestDefs.Unlock[Job.Smn],   // "I Can Hear a Rainbow"
                 GrindCfgFor = GrindCfg, Tag = "smn",
             }, lifecycle: lifecycle, chat: chat, magic: magic, party: party).RunAsync(ct);
+    }
+
+    // Avatar unlocks (server: avatars ARE summon spells granted via GM !addspell — see Game.Avatars). Runs
+    // off the combat loop: when the SMN main reaches an avatar's gate level, request it ONCE (skip any it
+    // already knows, so a relog never re-asks and never blocks on an already-granted avatar). GmGrant retries
+    // until the GM bot acks, so this catches up any missed grants at login and trickles the rest as we level.
+    async Task RequestAvatarsAsLevels(CancellationToken ct)
+    {
+        var requested = new HashSet<Spell>();
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                await Task.Delay(30_000, ct);
+                if (p.World.MainJob != Job.Smn) continue;   // only the SMN main phase (not the WHM sub seesaw)
+                foreach (var (spell, gate) in Game.Avatars.Progression)
+                {
+                    if (gate > p.World.MainJobLevel || requested.Contains(spell) || magic.Known(spell)) continue;
+                    requested.Add(spell);
+                    await GmGrant.RequestSpell(p, chat, ((ushort)spell).ToString(), "smn", ct);
+                }
+            }
+        }
+        catch (OperationCanceledException) { }
+    }
 
     LevelGrind.Config GrindCfg(byte job) => new()
     {
