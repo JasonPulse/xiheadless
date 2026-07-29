@@ -263,7 +263,7 @@ public sealed class JobLifecycle(
             {
                 g.FixedZone = zone; g.FixedZoneId = id;
                 g.TravelVia = id == cfg.SafeGateZoneId ? cfg.SafeGateVia : (ushort)0;
-                g.RecoveryTravel = c => RecoverToHuntZone(job, c);
+                g.RecoveryTravel = c => RecoverToHuntZone(job, zone, id, c);   // deliver to THIS stint's FixedZone (see below)
                 if (p.World.MainJobLevel < cfg.BabyUntil) { g.ConMin = 0; g.ConMax = 4; g.RoamHop = 25f; }
                 // Exit when the gated band should ADVANCE (level crossed into another zone) or `done` fires.
                 g.Done = () => done() || cfg.HuntZonePlan(EffectiveLevel())?.id != id;   // advance as skill catches up
@@ -417,9 +417,13 @@ public sealed class JobLifecycle(
     // LevelGrind loops "delegating return"). Travel AS A STRONG JOB when one exists (the 30 sub), switch back
     // at the Mog House, and re-enter via the safe gate. With no strong job yet (initial sub baby), a plain
     // walk from the revive town suffices. Wired to LevelGrind.RecoveryTravel — MUST leave us IN that zone.
-    async Task RecoverToHuntZone(byte job, CancellationToken ct)
+    async Task RecoverToHuntZone(byte job, string zone, ushort id, CancellationToken ct)
     {
-        if (cfg.HuntZonePlan(p.World.MainJobLevel) is not (string zone, ushort id)) return;   // plan now says nation path
+        // Deliver to the GRIND'S active FixedZone (passed in from RunGrindStint), NOT a fresh
+        // HuntZonePlan(MainJobLevel) lookup. When the skill-up dropback puts the grind on the EFFECTIVE-level
+        // zone (e.g. West Sarutabaruta) while MainJobLevel maps to the next zone (East Sarutabaruta),
+        // re-deriving here targeted the WRONG zone: LevelGrind saw "out of <FixedZone>" and looped recovery
+        // forever while recovery thought it was already home (BRD Gibra: 5.4h, 0 kills, 2026-07-28).
         if (zoning.CurrentZone == id) return;
         byte safe = SafeTravelJobFor(job);
         byte sub = SubFor(job);
