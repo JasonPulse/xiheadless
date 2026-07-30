@@ -402,7 +402,12 @@ public sealed class LevelGrind(
 
             // NEVER choose a new fight below the rest line. Rest was post-kill only, so an interrupted or
             // skipped rest let the loop chain pulls at 37% HP — a lv4 THF picked a con-2 at 37% and died.
-            if (!underAttack && !combat.Dead && p.World.Hpp > 0 && p.World.Hpp < cfg.RestHpTrigger)
+            // Gate on !Engaged && no attackers too: `underAttack` is false while ENGAGED (its ServerStatus!=1
+            // guard means "jumped while idle"), so an engaged+hit+low-HP bot fell through here, called
+            // RestSafely, which bails instantly ("aggro caught us"), and the loop spun with NO await — 38k
+            // times/sec (MNK, 2026-07-29). If we're fighting or being hit, drop to the combat path, not rest.
+            if (!underAttack && !combat.Engaged && p.AttackersOn(p.World.MyId) == 0
+                && !combat.Dead && p.World.Hpp > 0 && p.World.Hpp < cfg.RestHpTrigger)
             {
                 await RestSafely(ct);
                 continue;
