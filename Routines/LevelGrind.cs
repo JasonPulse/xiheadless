@@ -30,6 +30,8 @@ public sealed class LevelGrind(
         public int RestHpTarget = 75;             // ...up to this HP%
         public int RestMpPct = 0;                 // also recover MP to this % (mages); 0 = HP-only (melee)
         public bool SkipMeleeSkillup = false;     // casters (>lv10) level by CASTING — melee weapon skill never gates their prey (set by JobKits.Apply)
+        public bool Ranged = false;               // RNG/COR fight by SHOOTING — the fight loop fires Shoot on cadence (set by JobKits.Apply)
+        public ushort StockAmmo = 0;              // ranged jobs: bulk-buy this ammo id in the AH buy phase (arrows/bolts/bullets)
         public bool SellJunkWhenFull = false;     // vendor round-trip when the bag fills (off: trips cost grind time)
         public int SellAtItems = 25;
         // In-place bag clearing (inv.SellAllJunk) for farms where drops must keep landing but a vendor trip
@@ -132,6 +134,10 @@ public sealed class LevelGrind(
                 if (ct.IsCancellationRequested) return;
                 await ShopRoutines.BuyItem(ah, p, inv, item, cfg.Keep, SellJunk, ct);
             }
+            // Ranged jobs need a bulk AMMO stock (BuyItem stops at one stack). Reuses the "buy N stackable"
+            // path used for stealth powders. Depletes over a session -> the fight loop falls back to melee.
+            if (cfg.StockAmmo != 0)
+                await ShopRoutines.BuyAtLeast(ah, p, inv, cfg.StockAmmo, 300, cfg.Keep, SellJunk, ct);
         }
 
         // 2) Reach the hunt zone. Path mode travels solo; fixed-zone mode with a Reunion defers entry to the
@@ -164,6 +170,7 @@ public sealed class LevelGrind(
             EmergencyHeal = cfg.EmergencyHeal,
             WepSkillForLevel = cfg.WepSkillForLevel,
             LedgePull = cfg.LedgePull,
+            Ranged = cfg.Ranged,
             Tag = cfg.Tag,
         };
 

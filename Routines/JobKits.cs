@@ -47,6 +47,8 @@ public static class JobKits
         // Casters past lv10 don't skill melee — keep the skill-up dropback off them so they hunt the normal
         // con band and cast, instead of stalling on con-0 melee prey forever (GEO: 299 kills, 3 levels).
         if (CastsPrimary(job) && p.World.MainJobLevel >= 10) g.SkipMeleeSkillup = true;
+        // RNG/COR do their real damage by SHOOTING — the fight loop fires Shoot on cadence (user 2026-07-31).
+        if (job is Job.Rng or Job.Cor) g.Ranged = true;
         // Self-funding default: if the brain wired NO bag policy at all, sell junk drops when the bag
         // fills (drops -> gil -> scrolls/gear is the whole broke-bot economy; a bag that silently fills
         // just bounces loot). Brains with an explicit OnBagFull (party farms) are untouched.

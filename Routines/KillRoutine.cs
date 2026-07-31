@@ -24,6 +24,7 @@ public static class KillRoutine
         public Func<byte, byte> WepSkillForLevel = _ => (byte)1;                                           // level -> equipped weapon's skill id
         public Func<uint, CancellationToken, Task<bool>>? LedgePull;                                       // ranged hate yank for 2D-close/3D-far mobs
         public bool NoWeaponSkills;                                                                         // suppress WS use — the killing blow must be plain melee (RNG/DRK unlock quests)
+        public bool Ranged;                                                                                 // RNG/COR: Shoot (0x10) every cadence — ranged is their real damage, not melee (user 2026-07-31)
         public string Tag = "kill";
     }
 
@@ -44,6 +45,8 @@ public static class KillRoutine
         byte bestHpp = mob.Hpp;               // lowest mob HP we've driven it to
         long lastProgressMs = p.World.NowMs;  // last time the mob actually took damage
         int ft = 0, kites = 0, zeroDamageStays = 0;
+        long lastShotMs = 0;                  // ranged (Shoot) cadence
+        int lastAtk = 1;                      // attacker count last beat — detect an ADD joining mid-fight
         while (!ct.IsCancellationRequested && mob.Hpp > 0 && p.World.Hpp > 0
                && (breakOffHpp == 0 || p.World.Hpp > breakOffHpp)
                && (p.World.NowMs - mob.LastSeenMs) < 20000)
@@ -63,6 +66,10 @@ public static class KillRoutine
             // Re-sending Attack while already engaged is a server no-op, so re-issuing can't flap.
             if (p.World.ServerStatus != 1 && d2 <= 3.5f) { nav.Face(mob.Id); await combat.Engage(mob.Id, ct); }
             if (p.World.ServerStatus == 1) await h.UseAbilities(mob.Id, fightCon, ct);
+            // RANGED jobs (RNG/COR) do their real damage by SHOOTING, not swinging (user 2026-07-31). Fire on
+            // the Shoot cadence (server rejects while on recast / out of ammo — a no-op that falls back to the
+            // melee auto-attack below, so it degrades gracefully when arrows run dry).
+            if (h.Ranged && p.World.NowMs - lastShotMs > 3000) { combat.RangedAttack(mob.Id); lastShotMs = p.World.NowMs; }
             await h.EmergencyHeal(ct);
             byte wep = h.WepSkillForLevel(p.World.MainJobLevel);
             var ws = h.NoWeaponSkills ? null : CombatRoutines.BestWeaponSkill(wep, gear.SkillLevel(wep));
@@ -72,7 +79,25 @@ public static class KillRoutine
                 await combat.WeaponSkill(ws.Value, mob.Id, ct);
             }
             await Task.Delay(600, ct);
-            if (++ft % 4 == 0) Log($"fighting hp%={p.World.Hpp} mp%={p.World.Mpp} tp={combat.Tp} | mob '{mob.Name}' hpp={mob.Hpp} d2={d2:F0} d3={d3:F0} attackers={p.AttackersOn(p.World.MyId)}");
+            int atk = p.AttackersOn(p.World.MyId);
+            if (++ft % 4 == 0) Log($"fighting hp%={p.World.Hpp} mp%={p.World.Mpp} tp={combat.Tp} | mob '{mob.Name}' hpp={mob.Hpp} d2={d2:F0} d3={d3:F0} attackers={atk}");
+            // ADD AWARENESS (user 2026-07-31: the RNG kept swinging at one mob while a second killed it). A new
+            // attacker joined mid-fight — react instead of tunneling. EmergencyHeal/UseAbilities already fire
+            // per beat above; the survival lever here is: when SWARMED (2+) and dying in a SOLO fight, a real
+            // player runs rather than stand and eat both. Disengage + step to reachable ground (hate may
+            // follow, but motion + a rest/heal chance beats tunnel-until-dead; if it dies, homepoint recovers).
+            // A SURVIVAL exception to hate-lock, which forbids abandoning for EFFICIENCY — not for not-dying.
+            if (atk > lastAtk && atk >= 2) Log($"ADD — now {atk} attackers on us");
+            lastAtk = atk;
+            if (atk >= 2 && breakOffHpp == 0 && p.World.Hpp < 25)
+            {
+                Log($"swarmed ({atk}) at {p.World.Hpp}% HP — disengaging to survive");
+                if (combat.Engaged) combat.Disengage();
+                var (rx, rz) = KiteStep(p, nav, mob);
+                nav.MoveTo(rx, rz);
+                for (int t = 0; t < 8 && nav.IsMoving && !ct.IsCancellationRequested; t++) await Task.Delay(400, ct);
+                return false;
+            }
 
             if (mob.Hpp < bestHpp) { bestHpp = mob.Hpp; lastProgressMs = p.World.NowMs; continue; }
             // 25s window: a Great Axe swings every ~8-9s, so two ordinary MISSES are ~18s of "no progress" —

@@ -6,10 +6,10 @@ namespace XiHeadless.Brains;
 ///   3. Seesaw: level RNG main / WAR sub (JobLeveling switches whenever WAR < ceil(RNG/2)).
 /// Unlock TODO: Old Sabertooth must die UNTOUCHED from its own poison — the KillWith(0,1) row in
 /// QuestDefs is a PLACEHOLDER; the real action is "spawn it, then do NOT attack" (live work needed).
-/// Combat note: the engine has no ranged auto-attack/ranged-WS support yet, so fights are MELEE (axe,
-/// then Archer's Knife at 28); the bow/arrows are equipped for stats + future ranged support.
-/// TODO: ammo restock policy (Wooden Arrow 17318 is consumable — needs several 99-stacks and a
-/// rebuy-when-low pass; validate on a live run).
+/// Combat: RNG now SHOOTS (KillRoutine fires 0x10 Shoot on cadence when cfg.Ranged — set for RNG/COR by
+/// JobKits) with the equipped bow, carrying an axe/dagger for the melee auto-attack. StockAmmo bulk-buys
+/// Wooden Arrows (17318) in the AH phase; when they run dry the fight degrades to melee.
+/// TODO: rebuy-when-low mid-session (the buy-phase 300-stock covers a chunk of a session, not all of it).
 public sealed class RngBrain(
     IPerception p, INavigation nav, ICombat combat, IMagic magic, IZoning zoning, IGear gear, IAuctionHouse ah,
     IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs, IQuests quests, ITradeNpc trade, IEvents events, IChat chat, ILifecycle lifecycle, IParty party) : IBrain
@@ -72,6 +72,8 @@ public sealed class RngBrain(
         AhZone = AhZone,
         BuyItems = GearRoutines.BuyList(Gear).ToArray(),
         Keep = GearRoutines.KeepSet(Gear, 1126, 1127),
+        StockAmmo = 17318,   // Wooden Arrow — bulk-bought so the RNG has arrows to Shoot
+
         Equip = Equip,
         // Melee WS off the actually-equipped main: axe until the Archer's Knife bracket flips it to dagger.
         WepSkillForLevel = lvl => job == Job.War ? GreatAxeSkill : lvl >= 28 ? DaggerSkill : AxeSkill,
