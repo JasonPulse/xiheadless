@@ -7,14 +7,16 @@ namespace XiHeadless.Brains;
 /// Unlock TODO: Old Sabertooth must die UNTOUCHED from its own poison — the KillWith(0,1) row in
 /// QuestDefs is a PLACEHOLDER; the real action is "spawn it, then do NOT attack" (live work needed).
 /// Combat: RNG now SHOOTS (KillRoutine fires 0x10 Shoot on cadence when cfg.Ranged — set for RNG/COR by
-/// JobKits) with the equipped bow, carrying an axe/dagger for the melee auto-attack. StockAmmo bulk-buys
-/// Wooden Arrows (17318) in the AH phase; when they run dry the fight degrades to melee.
-/// TODO: rebuy-when-low mid-session (the buy-phase 300-stock covers a chunk of a session, not all of it).
+/// JobKits) with the equipped bow, carrying an axe/dagger for the melee auto-attack. Ammo = a 12-stack of
+/// Bone Quivers (4220) bought in the AH phase; AmmoRoutines opens one (→99 Bone Arrows 17319) whenever the
+/// equipped stack runs low — ~1,188 arrows a session from ~2 bag slots. Out of quivers -> melee fallback.
 public sealed class RngBrain(
     IPerception p, INavigation nav, ICombat combat, IMagic magic, IZoning zoning, IGear gear, IAuctionHouse ah,
     IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs, IQuests quests, ITradeNpc trade, IEvents events, IChat chat, ILifecycle lifecycle, IParty party) : IBrain
 {
-    const byte ArcherySkill = 25;             // LSB skill enum (Archery=25) — unused until ranged support lands
+    const ushort BoneQuiver = 4220;           // opens to 99 Bone Arrows (stacks to 12 — one buy = a session)
+    const ushort BoneArrow = 17319;           // the equipped ammo the RNG Shoots
+    const byte ArcherySkill = 25;             // LSB skill enum (Archery=25)
     const byte AxeSkill = 5;                  // melee carry 1-27
     const byte DaggerSkill = 2;               // Archer's Knife bracket (28+)
     const byte GreatAxeSkill = 6;             // WAR prereq/sub phases ride the proven Great Axe kit
@@ -25,7 +27,7 @@ public sealed class RngBrain(
     {
         (16640, EquipSlot.Main, 1),    // Bronze Axe
         (17175, EquipSlot.Ranged, 1),  // Shortbow +1
-        (17318, EquipSlot.Ammo, 1),    // Wooden Arrow (consumable — see restock TODO above)
+        (17319, EquipSlot.Ammo, 1),    // Bone Arrow (opened from Bone Quivers by AmmoRoutines)
         (12472, EquipSlot.Head, 1),    // Circlet
         (12600, EquipSlot.Body, 1),    // Robe
         (12728, EquipSlot.Hands, 1),   // Cuffs
@@ -71,8 +73,8 @@ public sealed class RngBrain(
         HomeNation = Nation.Windurst,
         AhZone = AhZone,
         BuyItems = GearRoutines.BuyList(Gear).ToArray(),
-        Keep = GearRoutines.KeepSet(Gear, 1126, 1127),
-        StockAmmo = 17318,   // Wooden Arrow — bulk-bought so the RNG has arrows to Shoot
+        Keep = GearRoutines.KeepSet(Gear, 1126, 1127, BoneQuiver, BoneArrow),   // never sell ammo/quivers
+        AmmoQuiver = BoneQuiver, AmmoArrow = BoneArrow,   // buy 12 quivers, open on demand -> Bone Arrows
 
         Equip = Equip,
         // Melee WS off the actually-equipped main: axe until the Archer's Knife bracket flips it to dagger.
