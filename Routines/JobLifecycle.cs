@@ -238,7 +238,10 @@ public sealed class JobLifecycle(
             byte EffectiveLevel()
             {
                 byte lvl = p.World.MainJobLevel;
-                if (lvl < 5) return lvl;
+                // Casters past lv10 level by casting — melee skill never drops their hunt zone (else a mage
+                // with club skill 0 is pinned in the lowest nursery on zero-XP mobs all game). Same rule as
+                // the con-floor skip in JobKits (user 2026-07-31).
+                if (lvl < 5 || (JobKits.CastsPrimary(job) && lvl >= 10)) return lvl;
                 int wep = gear.SkillLevel(g.WepSkillForLevel(lvl));
                 return wep < lvl * 2 ? (byte)Math.Clamp(wep / 2, 1, lvl) : lvl;
             }

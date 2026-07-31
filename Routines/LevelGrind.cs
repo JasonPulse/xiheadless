@@ -29,6 +29,7 @@ public sealed class LevelGrind(
         public int RestHpTrigger = 50;            // rest after a kill if HP% below this...
         public int RestHpTarget = 75;             // ...up to this HP%
         public int RestMpPct = 0;                 // also recover MP to this % (mages); 0 = HP-only (melee)
+        public bool SkipMeleeSkillup = false;     // casters (>lv10) level by CASTING — melee weapon skill never gates their prey (set by JobKits.Apply)
         public bool SellJunkWhenFull = false;     // vendor round-trip when the bag fills (off: trips cost grind time)
         public int SellAtItems = 25;
         // In-place bag clearing (inv.SellAllJunk) for farms where drops must keep landing but a vendor trip
@@ -488,9 +489,9 @@ public sealed class LevelGrind(
                 // EASY PREY like a real player skilling up: accuracy is skill-driven, low cons still give
                 // skill-ups, and the mode self-clears as the skill catches the trigger line.
                 int wepSkillNow = gear.SkillLevel(cfg.WepSkillForLevel(p.World.MainJobLevel));
-                if (!preferred && wepSkillNow < p.World.MainJobLevel * 2 && p.World.MainJobLevel >= 5)
+                if (!preferred && !cfg.SkipMeleeSkillup && wepSkillNow < p.World.MainJobLevel * 2 && p.World.MainJobLevel >= 5)
                 {
-                    floor = 0;
+                    floor = 1;   // Easy Prey, NOT con-0: skill-ups AND a trickle of XP (con-0 = Too Weak = zero XP)
                     if (p.World.NowMs - _lastSkillUpLogMs > 120_000)
                     { _lastSkillUpLogMs = p.World.NowMs; Log($"SKILL-UP mode: weapon skill {wepSkillNow} << lvl {p.World.MainJobLevel}*2 — taking easy prey until the blade catches up"); }
                 }

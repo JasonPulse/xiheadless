@@ -28,6 +28,13 @@ public static class JobKits
         (5002, Spell.ValorMinuet, true), (5007, Spell.SwordMadrigal, true),
     };
 
+    // Spell-primary jobs: they level by CASTING, so their melee weapon skill is irrelevant and permanently
+    // lags (they never swing to skill it). The skill-up dropback must NOT gate them onto con-0 melee prey —
+    // past lv10 they fight the normal con band and cast (user 2026-07-31). Same set the For() switch treats as
+    // casters. (BRD is NOT here — it melees with a dagger it does skill; its songs ride on top.)
+    public static bool CastsPrimary(byte job) =>
+        job is Job.Whm or Job.Blm or Job.Rdm or Job.Sch or Job.Geo or Job.Smn;
+
     static (ushort scroll, Spell spell, bool buyable)[] EssentialScrolls(byte job) =>
         ScrollKit.Where(s => SpellLevels.For((ushort)s.spell, job) is { } lvl && lvl <= 12).ToArray();
 
@@ -37,6 +44,9 @@ public static class JobKits
     {
         if (ReferenceEquals(g.UseAbilities, LevelGrind.Config.NoAbilities))
             g.UseAbilities = For(job, combat, magic, p, tag);
+        // Casters past lv10 don't skill melee — keep the skill-up dropback off them so they hunt the normal
+        // con band and cast, instead of stalling on con-0 melee prey forever (GEO: 299 kills, 3 levels).
+        if (CastsPrimary(job) && p.World.MainJobLevel >= 10) g.SkipMeleeSkillup = true;
         // Self-funding default: if the brain wired NO bag policy at all, sell junk drops when the bag
         // fills (drops -> gil -> scrolls/gear is the whole broke-bot economy; a bag that silently fills
         // just bounces loot). Brains with an explicit OnBagFull (party farms) are untouched.
