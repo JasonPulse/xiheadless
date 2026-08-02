@@ -24,6 +24,27 @@ public sealed class BstBrain(
     static readonly (ushort item, byte slot, byte lvl)[] Gear =
     {
         (16640, EquipSlot.Main, 1),    // Bronze Axe
+        // BODY/LEGS/FEET 1-24 (was EMPTY until the lv25 Shade set — a torso/leg/foot-naked BST died 22x,
+        // user: BST is a solo job, deaths = equipment). All verified BST-wearable vs item_equipment.sql;
+        // cheap Bronze base (affordable even broke) -> Scale -> Bone -> Beetle -> Chain. Shade (25) overrides.
+        (12576, EquipSlot.Body, 1),    // Bronze Harness
+        (12568, EquipSlot.Body, 7),    // Leather Vest
+        (12560, EquipSlot.Body, 10),   // Scale Mail
+        (12582, EquipSlot.Body, 16),   // Bone Harness
+        (12583, EquipSlot.Body, 21),   // Beetle Harness
+        (12552, EquipSlot.Body, 24),   // Chainmail
+        (12832, EquipSlot.Legs, 1),    // Bronze Subligar
+        (12824, EquipSlot.Legs, 7),    // Leather Trousers
+        (12816, EquipSlot.Legs, 10),   // Scale Cuisses
+        (12834, EquipSlot.Legs, 16),   // Bone Subligar
+        (12835, EquipSlot.Legs, 21),   // Beetle Subligar
+        (12808, EquipSlot.Legs, 24),   // Chain Hose
+        (12960, EquipSlot.Feet, 1),    // Bronze Leggings
+        (12952, EquipSlot.Feet, 7),    // Leather Highboots
+        (12944, EquipSlot.Feet, 10),   // Scale Greaves
+        (12966, EquipSlot.Feet, 16),   // Bone Leggings
+        (12967, EquipSlot.Feet, 21),   // Beetle Leggings
+        (12936, EquipSlot.Feet, 24),   // Greaves
         (16279, EquipSlot.Neck, 3),    // Pile Chain
         (12290, EquipSlot.Sub, 8),     // Maple Shield
         (14803, EquipSlot.Ear1, 10),   // Optical Earring
