@@ -79,9 +79,12 @@ public static class JobKits
     static Func<uint, int, CancellationToken, Task> For(byte job, ICombat combat, IMagic? magic, IPerception p, string tag)
     {
         long lastSongMs = 0;
+        uint lastMob = 0;
+        bool diaDone = false, banishDone = false;   // WHM: Dia/Banish are ONE-per-fight (recasting a DoT wastes MP)
         return async (mob, con, ct) =>
         {
             var w = p.World;
+            if (mob != lastMob) { lastMob = mob; diaDone = false; banishDone = false; }   // new fight — reset one-shot casts
 
             // Signature melee JAs (each self-gates on job/level/recast). Shared by the melee default AND a
             // SMN with no avatar granted yet (pre-grant fallback), so there's ONE copy.
@@ -133,22 +136,32 @@ public static class JobKits
                 // ---- CASTERS: the cheapest known nuke each beat (the BLM pattern, generalized). CastLowest
                 // picks the lowest READY tier; the line list covers each caster's early book.
                 case Job.Blm or Job.Rdm or Job.Sch or Job.Geo:
-                    if (magic is null || w.Mpp < 10) return;
-                    // Dia LAST: it's a one-per-fight DoT, but it's also all a lvl-1-3 RDM has (Stone is RDM 4)
+                    if (magic is null || w.Mpp < 10) { await TryMeleeJa(); return; }   // OOM -> auto-attack carries it
+                    // Nukes repeat; the DoTs (Dia/Bio) are ONE per fight — recasting them wastes MP (user
+                    // 2026-07-31). Dia LAST: it's also all a lvl-1-3 RDM has (Stone is RDM 4), so a baby RDM
+                    // lands one Dia then melees instead of spamming it dry.
                     foreach (var line in new[] { SpellLine.Stone, SpellLine.Water, SpellLine.Aero, SpellLine.Bio, SpellLine.Banish, SpellLine.Dia })
+                    {
+                        if (line is SpellLine.Dia or SpellLine.Bio && diaDone) continue;
                         if (magic.CastLowest(line, mob))   // tier selector: cheapest ready tier of the line
                         {
+                            if (line is SpellLine.Dia or SpellLine.Bio) diaDone = true;
                             await Task.Delay(3000, ct);
                             return;
                         }
+                    }
                     return;
 
-                // ---- WHM offense: Banish between cures (heal comes via EmergencyHeal); Dia when Banish
-                // isn't castable yet — a lv3-4 WHM's entire offense is Dia (user: mages use spells).
+                // ---- WHM: Dia + Banish ONCE each, then MELEE (user 2026-07-31). A healer's mana is for staying
+                // alive — one cheap DoT (Dia doesn't stack; recasting it is wasted MP) + one Banish + the melee
+                // auto-attack beats spamming Banish every beat into OOM-death (WHM: 36 deaths, 16 at MP<=6%).
+                // Banish keeps an MP floor so there's mana left for EmergencyCure; melee carries the rest.
                 case Job.Whm:
-                    if (magic is not null && w.Mpp >= 25
-                        && (magic.CastLowest(SpellLine.Banish, mob) || magic.CastLowest(SpellLine.Dia, mob)))
-                        await Task.Delay(3000, ct);
+                    if (magic is null) { await TryMeleeJa(); return; }
+                    if (!diaDone && magic.CastLowest(SpellLine.Dia, mob)) { diaDone = true; await Task.Delay(3000, ct); return; }
+                    if (!banishDone && w.Mpp >= 40 && magic.CastLowest(SpellLine.Banish, mob)) { banishDone = true; await Task.Delay(3000, ct); return; }
+                    banishDone = true;          // don't re-probe Banish every beat once we've cast it or MP is low
+                    await TryMeleeJa();
                     return;
 
                 // ---- MELEE/other: fire the job's signature low/mid JAs (the shared TryMeleeJa). UseAbility
