@@ -76,6 +76,10 @@ public sealed class PartyGrind(IPerception p, ICombat combat, IMagic? magic, INa
     // attacking a party member (never a random full-HP wanderer nobody has hate on).
     Entity? CampMob((float x, float z) camp) =>
         p.Nearest(e => e.IsMob && e.Hpp > 0 && CombatRoutines.NotObject(e)
+            // FRESH only: a mob damaged to <100% that then goes STALE (moved/despawned, entity not
+            // updated) otherwise stays a valid CampMob forever, and KillRoutine.Fight bails on it instantly
+            // (its own 20s stale guard) -> a party DD re-engaged one dead hare 23,664x, 0 kills (2026-08-03).
+            && p.World.NowMs - e.LastSeenMs < 15_000
             && Geometry.Dist2D(e.X, e.Z, camp.x, camp.z) < 15f
             && (e.Hpp < 100 || (p.World.Attackers.TryGetValue(e.Id, out var a)
                 && p.World.NowMs - a.ms < 15_000
