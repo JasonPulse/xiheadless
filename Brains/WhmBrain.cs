@@ -60,7 +60,7 @@ public sealed class WhmBrain(
         await new JobLifecycle(p, nav, combat, zoning, gear, ah, delivery, inv, shop, jobs, quests, trade, events,
             new JobLifecycle.Config
             {
-                MainJob = Job.Whm, SubJob = 0, MainTarget = 0,
+                MainJob = Job.Whm, SubJob = Job.Blm, MainTarget = 0,   // /BLM: the solo-WHM sub (Stone nukes, Drain sustain, Sleep) — was subless (user 2026-08-04)
                 GrindCfgFor = _ => BuildCfg(), Tag = "whm",
             }, lifecycle: lifecycle, chat: chat, magic: magic, party: party).RunAsync(ct);
     }

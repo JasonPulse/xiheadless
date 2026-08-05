@@ -47,7 +47,7 @@ public sealed class RdmBrain(
         new JobLifecycle(p, nav, combat, zoning, gear, ah, delivery, inv, shop, jobs, null, null, null,
             new JobLifecycle.Config
             {
-                MainJob = Job.Rdm, SubJob = Job.Mnk, Advanced = false,
+                MainJob = Job.Rdm, SubJob = Job.Blm, Advanced = false,   // /BLM (Sleep/Bind/nukes) — was /MNK, useless for a sword-caster (user 2026-08-04)
                 GrindCfgFor = GrindCfg, Tag = "rdm",
             }, lifecycle: lifecycle, chat: chat, magic: magic, party: party).RunAsync(ct);
 
