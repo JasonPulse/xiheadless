@@ -56,6 +56,7 @@ public sealed class RdmBrain(
         HomeNation = Nation.Windurst,
         AhZone = AhZone,
         BuyItems = GearRoutines.BuyList(Gear).ToArray(),   // cheap-first: the array is ascending by level
+        GearTable = Gear,
         Keep = GearRoutines.KeepSet(Gear, 1126, 1127),
         Equip = Equip,
         WepSkillForLevel = _ => job == Job.Mnk ? (byte)1 : SwordSkill,   // MNK sub melees hand-to-hand

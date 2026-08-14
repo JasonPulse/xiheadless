@@ -59,4 +59,22 @@ public static class GearRoutines
     /// starter sword, always: it's the fallback weapon for a broke bot; junk-selling it disarms the char.
     public static HashSet<ushort> KeepSet((ushort item, byte slot, byte lvl)[] table, params ushort[] extra) =>
         new HashSet<ushort>(table.Select(g => g.item).Concat(extra).Concat(StarterWeapons));
+
+    /// LEVEL-AWARE never-sell set: keep only the gear that's still USEFUL at charLvl — the best CURRENTLY
+    /// wearable piece per slot (highest lvl <= charLvl) plus every FUTURE piece (lvl > charLvl). SUPERSEDED
+    /// pieces (a lower tier for a slot that now has a wearable higher tier) are NOT kept, so the sell path
+    /// finally offloads old gear on upgrade — the intent the static KeepSet-everything was blocking (the bag
+    /// clogged with 22 Keep items -> the stuck-MNK loop, 2026-08-14). Extras/starters are always kept.
+    public static HashSet<ushort> KeepForLevel((ushort item, byte slot, byte lvl)[] table, int charLvl, IEnumerable<ushort> extra)
+    {
+        var keep = new HashSet<ushort>(extra);
+        keep.UnionWith(StarterWeapons);
+        foreach (var slotGroup in table.GroupBy(g => g.slot))
+        {
+            var wearable = slotGroup.Where(g => g.lvl <= charLvl).ToList();
+            if (wearable.Count > 0) keep.Add(wearable.MaxBy(g => g.lvl).item);   // current best for this slot
+            foreach (var g in slotGroup.Where(g => g.lvl > charLvl)) keep.Add(g.item);   // future pieces
+        }
+        return keep;
+    }
 }

@@ -90,6 +90,7 @@ public sealed class PldBrain(
         BuyItems = GearRoutines.BuyList(Gear).ToArray(),
         // Keep the Revival Tree Root (940, Squire I trade item) and the stealth stock (else the junk-sell
         // dumps the oils and the AH re-buys them — a bag-pinning churn loop).
+        GearTable = Gear,
         Keep = GearRoutines.KeepSet(Gear, 1126, 1127, 940, StealthRoutines.SilentOil, StealthRoutines.PrismPowder),
         Equip = Equip,
         WepSkillForLevel = _ => SwordSkill,   // PLD rides swords; the WAR sub phase keeps its Great Axe (Equip)

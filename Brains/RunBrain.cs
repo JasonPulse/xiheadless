@@ -72,6 +72,7 @@ public sealed class RunBrain(
         HomeNation = Nation.Windurst,
         AhZone = AhZone,
         BuyItems = GearRoutines.BuyList(Gear).Where(i => i != SowiloClaymore).ToArray(),   // reward GS isn't on the AH
+        GearTable = Gear,
         Keep = GearRoutines.KeepSet(Gear, 1126, 1127),
         Equip = Equip,
         WepSkillForLevel = _ => job == Job.War ? GreatAxeSkill : GreatSwordSkill,

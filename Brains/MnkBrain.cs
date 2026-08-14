@@ -126,6 +126,7 @@ public sealed class MnkBrain(
         HomeNation = Nation.Windurst,
         AhZone = AhZone,
         BuyItems = GearRoutines.BuyList(Gear.Where(g => g.lvl <= BuyMaxLevel).ToArray()).ToArray(),
+        GearTable = Gear,
         Keep = GearRoutines.KeepSet(Gear, 1126, 1127),   // seals are never junk (full table kept — never sell an owned AF/drop)
         Equip = Equip,
         WepSkillForLevel = _ => H2HSkill,   // both MNK main and WAR sub swing hand-to-hand here

@@ -85,6 +85,7 @@ public sealed class SmnBrain(
         HomeNation = Nation.Windurst,
         AhZone = AhZone,
         BuyItems = GearRoutines.BuyList(Gear).ToArray(),
+        GearTable = Gear,
         Keep = GearRoutines.KeepSet(Gear, 1126, 1127, CarbunclesRuby),
         Equip = Equip,
         // WS follows the equipped main bracket: dagger 1-9, club 10-29 (both phases), staff at 30+.

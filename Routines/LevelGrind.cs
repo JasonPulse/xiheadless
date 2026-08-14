@@ -18,6 +18,7 @@ public sealed class LevelGrind(
         public string AhZone = "";                // MISC_AH zone to buy gear in (only used if BuyItems set)
         public ushort[] BuyItems = Array.Empty<ushort>();   // gear to buy from the AH (empty = skip the buy phase)
         public HashSet<ushort> Keep = new();      // items we never sell when freeing bag space
+        public (ushort item, byte slot, byte lvl)[]? GearTable;   // set to the brain's leveling gear table -> the sell-keep is level-aware (superseded tiers become sellable on upgrade)
         public Func<CancellationToken, Task> Equip = _ => Task.CompletedTask;  // re-run on level-up
         public Func<byte, byte> WepSkillForLevel = _ => 1;  // skill id of the weapon equipped at this level
         public int ConMin = 2, ConMax = 2;        // con band to engage
@@ -121,7 +122,13 @@ public sealed class LevelGrind(
 
         await cfg.OnSetup(ct);
 
-        Task<int> SellJunk(CancellationToken c) => ShopRoutines.SellNearby(shop, nav, zoning, inv, p, cfg.Keep, c);
+        // Level-aware sell-keep: with a GearTable, superseded gear tiers become sellable so old gear is
+        // offloaded on upgrade (else the bag pins every tier -> the stuck-MNK clog). keepExtras = the non-gear
+        // keepables (seals/quest items) so those always survive. No table -> the static cfg.Keep as before.
+        var keepExtras = cfg.GearTable is { } gt ? cfg.Keep.Except(gt.Select(g => g.item)).ToArray() : Array.Empty<ushort>();
+        System.Collections.Generic.IReadOnlySet<ushort> SellKeep() => cfg.GearTable is { } t
+            ? GearRoutines.KeepForLevel(t, p.World.MainJobLevel, keepExtras) : cfg.Keep;
+        Task<int> SellJunk(CancellationToken c) => ShopRoutines.SellNearby(shop, nav, zoning, inv, p, SellKeep(), c);
 
         // 1) Optional: gear up from the AH, then carry it to the hunt zone.
         if (cfg.BuyItems.Length > 0)

@@ -54,6 +54,7 @@ public sealed class DrkBrain(
         HomeNation = Nation.Windurst,
         AhZone = AhZone,
         BuyItems = GearRoutines.BuyList(Gear).ToArray(),
+        GearTable = Gear,
         Keep = GearRoutines.KeepSet(Gear, 1126, 1127, Chaosbringer),
         Equip = Equip,
         WepSkillForLevel = _ => job == Job.War ? GreatAxeSkill : ScytheSkill,

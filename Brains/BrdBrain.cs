@@ -63,6 +63,7 @@ public sealed class BrdBrain(
         HomeNation = Nation.Windurst,
         AhZone = AhZone,
         BuyItems = GearRoutines.BuyList(Gear).Append(MapleWand).ToArray(),
+        GearTable = Gear,
         Keep = GearRoutines.KeepSet(Gear, 1126, 1127, MapleWand, SheetOfParchment, PoeticParchment),
         Equip = Equip,
         WepSkillForLevel = _ => job == Job.Whm ? ClubSkill : DaggerSkill,

@@ -61,6 +61,7 @@ public sealed class PupBrain(
         HomeNation = Nation.Windurst,
         AhZone = AhZone,
         BuyItems = GearRoutines.BuyList(Gear).ToArray(),
+        GearTable = Gear,
         Keep = GearRoutines.KeepSet(Gear, 1126, 1127, Animator),
         Equip = Equip,
         WepSkillForLevel = _ => job == Job.War ? GreatAxeSkill : H2HSkill,

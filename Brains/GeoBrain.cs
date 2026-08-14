@@ -70,6 +70,7 @@ public sealed class GeoBrain(
         HomeNation = Nation.Windurst,
         AhZone = AhZone,
         BuyItems = GearRoutines.BuyList(Gear).ToArray(),
+        GearTable = Gear,
         Keep = GearRoutines.KeepSet(Gear, 1126, 1127, PetrifiedLog, MatreBell, PlateOfIndiPoison),
         Equip = Equip,
         WepSkillForLevel = _ => ClubSkill,        // every phase (GEO and WHM) swings a wand

@@ -104,6 +104,7 @@ public sealed class BstBrain(
         HomeNation = Nation.Windurst,
         AhZone = AhZone,
         BuyItems = GearRoutines.BuyList(Gear).ToArray(),
+        GearTable = Gear,
         Keep = GearRoutines.KeepSet(Gear, 1126, 1127, GausebitWildgrass),
         Equip = Equip,
         WepSkillForLevel = _ => job == Job.Whm ? ClubSkill : AxeSkill,

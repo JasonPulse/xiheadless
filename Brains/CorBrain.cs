@@ -71,6 +71,7 @@ public sealed class CorBrain(
         HomeNation = Nation.Windurst,
         AhZone = AhZone,
         BuyItems = GearRoutines.BuyList(Gear).Concat(new ushort[] { WaxSword, BeeSpatha, FlameSword }).ToArray(),
+        GearTable = Gear,
         Keep = GearRoutines.KeepSet(Gear, 1126, 1127, WaxSword, BeeSpatha, FlameSword),
         Equip = Equip,
         WepSkillForLevel = _ => job == Job.Rdm ? SwordSkill : DaggerSkill,

@@ -73,6 +73,7 @@ public sealed class RngBrain(
         HomeNation = Nation.Windurst,
         AhZone = AhZone,
         BuyItems = GearRoutines.BuyList(Gear).ToArray(),
+        GearTable = Gear,
         Keep = GearRoutines.KeepSet(Gear, 1126, 1127, BoneQuiver, BoneArrow),   // never sell ammo/quivers
         AmmoQuiver = BoneQuiver, AmmoArrow = BoneArrow,   // buy 12 quivers, open on demand -> Bone Arrows
 

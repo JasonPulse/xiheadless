@@ -64,6 +64,7 @@ public sealed class SchBrain(
         HomeNation = Nation.Windurst,
         AhZone = AhZone,
         BuyItems = GearRoutines.BuyList(Gear).ToArray(),
+        GearTable = Gear,
         Keep = GearRoutines.KeepSet(Gear, 1126, 1127, Rolanberry, SheetOfVellum),
         Equip = Equip,
         WepSkillForLevel = _ => ClubSkill,        // every phase (SCH and WHM) swings a wand

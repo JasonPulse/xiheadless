@@ -66,6 +66,7 @@ public sealed class BluBrain(
         HomeNation = Nation.Windurst,
         AhZone = AhZone,
         BuyItems = GearRoutines.BuyList(Gear).ToArray(),
+        GearTable = Gear,
         Keep = GearRoutines.KeepSet(Gear, new ushort[] { 1126, 1127 }.Concat(VesselItems).ToArray()),
         Equip = Equip,
         WepSkillForLevel = _ => job == Job.War ? GreatAxeSkill : SwordSkill,
