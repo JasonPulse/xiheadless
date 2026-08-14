@@ -27,6 +27,9 @@ public static class Vendors
         new(17780859,  -45.568f,  5.149f, -118.03f, "Creepstix"),     // Lower Jeuno (245)
         new(17793041,  -58.953f, -2.558f, -28.606f, "Dohdjuma"),      // Selbina (248) — 1 hop from Valkurm Dunes,
         new(17793133,    6.300f, -6.558f,   4.582f, "Falgima"),       // so a Valkurm grinder sells here, not the home city (user 2026-08-14)
+        new(17735795,   94.199f,  0.624f, -77.382f, "Proud_Beard"),   // Bastok Mines (234) — the ENTIRE Bastok path
+                                                                      //   (S.Gustaberg/Konschtat/Pashhow) had NO nearby vendor.
+        new(17797138,  -47.161f, -4.096f,  35.298f, "Pikini-Mikini"), // Mhaura (249) — 1 hop from Buburimu Peninsula.
     };
 
     /// The vendor reachable in the FEWEST zone-hops from currentZone. A vendor in the current zone wins
