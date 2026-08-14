@@ -8,7 +8,7 @@ using System.Text.Json;
 
 namespace XiHeadless.Net;
 
-sealed class XiClient(string host, string clientVer)
+public sealed class XiClient(string host, string clientVer)
 {
     const int PH = 28; // FFXI_HEADER_SIZE (0x1C)
 
@@ -306,6 +306,37 @@ sealed class XiClient(string host, string clientVer)
     /// The char-list read is retry-hardened: a raced (empty/partial) read must NOT be mistaken for
     /// an empty account and create-over an existing char (names are globally unique). So we retry
     /// the read; only a genuinely empty account (no char after repeated solid reads) provisions one.
+    /// Select the account's EXISTING character (TrySelectBest = highest char id) and return true;
+    /// return false if the account has NO char. NEVER creates — for read-only/observer clients
+    /// (e.g. the Vellichor renderer) that must not provision a junk char. Do NOT use SelectOrCreate
+    /// there: it falls through to CreateChar on an empty account.
+    public bool SelectExisting() => TrySelectBest(FetchCharList());
+
+    /// One character slot on the account (for a UI char-select). Id 0 = empty slot.
+    public readonly record struct CharSlot(uint Id, string Name);
+
+    /// The account's EXISTING characters (named slots only — no create). Same parse as
+    /// <see cref="TrySelectBest"/>; lets a UI list them instead of auto-picking the highest id.
+    public IReadOnlyList<CharSlot> GetCharacters()
+    {
+        var view = FetchCharList();
+        var list = new List<CharSlot>();
+        for (int slot = 0; slot < 16; slot++)
+        {
+            int b = 36 + slot * 140;
+            if (b + 140 > view.Length) break;
+            uint cid = RU32(view, b);
+            if (cid == 0) continue;
+            string nm = Encoding.ASCII.GetString(view, b + 8, 16).Split('\0')[0].Trim();
+            if (nm.Length == 0) continue; // unnamed/junk slot
+            list.Add(new CharSlot(cid, nm));
+        }
+        return list;
+    }
+
+    /// Select a specific existing character (for a UI pick). NEVER creates.
+    public void SelectCharacter(uint charId, string name) => WriteSelect(charId, name);
+
     public bool SelectOrCreate(byte creationJob = 1)
     {
         for (int i = 1; i <= 5; i++)

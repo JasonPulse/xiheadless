@@ -6,6 +6,7 @@ public sealed class WorldState
     public uint MyId;
     public ushort MyIndex;      // our own targid (ActIndex from the 0x00A zone-in) — to target self-buff job abilities
     public string MyName = "";
+    public EntityLook MyLook;   // self appearance (race/face/equipment) from the 0x0A zone-in GrapIDTbl — for rendering the local PC
     public ushort ZoneId;
     public float X, Y, Z;       // X/Z horizontal plane, Y vertical (height)
     public byte Rotation;       // 0-255 heading
@@ -62,6 +63,27 @@ public sealed class WorldState
     // Tells (Kind 3) — the PARTYLESS coordination channel: a relogged tank with no party can't party-chat,
     // so the REFORM handshake (stale-roster recovery) rides tells. Keyed by sender, latest message wins.
     public readonly Dictionary<string, (string msg, long ms)> Tells = new(StringComparer.OrdinalIgnoreCase);
+
+    // Full chat log (ALL kinds) for a graphical client's chat window. Bounded ring. The receive
+    // thread appends; UI readers should snapshot defensively (it can race like Entities).
+    public readonly List<ChatLine> ChatLog = new();
+    public void AddChat(byte kind, string sender, string msg, long ms)
+    {
+        ChatLog.Add(new ChatLine(kind, sender, msg, ms));
+        if (ChatLog.Count > 256) ChatLog.RemoveRange(0, ChatLog.Count - 256);
+    }
+
+    // Combat feedback stream for a graphical client: floating damage/heal/miss numbers over the target.
+    // Kind: 0=damage, 1=heal, 2=miss. Monotonic Seq lets a renderer spawn only NEW events. Additive —
+    // bots ignore this; the receive thread appends (snapshot defensively). Bounded ring.
+    public readonly record struct CombatFxEvent(uint Target, int Amount, byte Kind, long Ms, long Seq);
+    public readonly List<CombatFxEvent> CombatFx = new();
+    private long _combatFxSeq;
+    public void AddCombatFx(uint target, int amount, byte kind, long ms)
+    {
+        CombatFx.Add(new CombatFxEvent(target, amount, kind, ms, ++_combatFxSeq));
+        if (CombatFx.Count > 128) CombatFx.RemoveRange(0, CombatFx.Count - 128);
+    }
 
     // Active NPC event/cutscene/menu (from 0x32/0x34). Needed to respond (0x5B EVENTEND).
     public bool EventActive;
@@ -192,4 +214,23 @@ public sealed class Entity
 
     /// An attackable wild monster: allegiance MOB, not a PC-owned pet/trust.
     public bool IsMob => TypeKnown && Allegiance == 0 && (NamePrefix & 0x08) == 0;
+
+    /// Visual "look" (model), from UPDATE_LOOK @0x30. For a graphical client to pick the 3D model.
+    public EntityLook Look;
 }
+
+/// The FFXI entity "look" (look_t @ body 0x30). Type 0 (STANDARD) = a single <see cref="ModelId"/>
+/// (mobs/simple NPCs). Type 1 (EQUIPPED) / 7 (CHOCOBO) = race+face + 8 equipment model ids (PCs,
+/// town NPCs). Other types (2 door, 3 elevator, 4 ship) have no renderable creature model.
+public struct EntityLook
+{
+    public ushort Type;      // MODELTYPE: 0 standard,1 equipped,2 door,3 elevator,4 ship,6 automaton,7 chocobo
+    public ushort ModelId;   // STANDARD only: the mob/NPC model id
+    public byte Face, Race;  // EQUIPPED
+    public ushort Head, Body, Hands, Legs, Feet, Main, Sub, Ranged; // EQUIPPED slot model ids
+    public bool Known;
+}
+
+/// One line of chat for a client chat window. Kind (FFXI channel): 1=Shout, 3=Tell, 4/15=Party,
+/// 5=Linkshell, 6=Say(area), 26=Emote, 0=Say, others=system/misc. Sender empty for system lines.
+public readonly record struct ChatLine(byte Kind, string Sender, string Message, long Ms);

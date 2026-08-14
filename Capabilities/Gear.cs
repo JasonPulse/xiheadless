@@ -30,13 +30,8 @@ public sealed class Gear(ISession s, IInventory inv) : IGear
     public async Task<bool> EquipItem(uint itemId, byte equipSlot, CancellationToken ct = default)
     {
         ushort slot = inv.SlotOf((ushort)itemId);   // container 0 (main inventory) only — that's what EQUIP_SET reads
-        if (slot == 0)
-        {
-            Log.Info($"[gear] item {itemId} not in inventory");
-            return false;
-        }
-        Log.Info($"[gear] equip item {itemId} (container 0 slot {slot}) -> equip slot {equipSlot}");
-        s.Enqueue(EquipPacket.Build((byte)slot, equipSlot, 0));
+        if (slot == 0) return false;                 // (per-item "not in inventory"/"equip item" spam culled —
+        s.Enqueue(EquipPacket.Build((byte)slot, equipSlot, 0));   // the brain's "equipped N/M" summary is the signal, 2026-08-14)
         await Task.Delay(800, ct);
         return true;
     }

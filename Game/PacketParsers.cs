@@ -70,6 +70,11 @@ public static class PacketParsers
                     w.LastHeal = (actor, tgt, value, w.NowMs);
                     if (actor == w.MyId || w.PartyMembers.ContainsKey(actor) || tgt == w.MyId || w.PartyMembers.ContainsKey(tgt))
                         Log.Info($"[land] heal 0x{actor:X} -> 0x{tgt:X} +{value}HP");
+                    w.AddCombatFx(tgt, value, 1, w.NowMs);          // floating heal (green) — client feedback
+                }
+                else if (value > 0)
+                {
+                    w.AddCombatFx(tgt, value, 0, w.NowMs);          // floating damage (white/red) — client feedback
                 }
                 if (BitsBE(b, ref bit, 1) != 0) BitsBE(b, ref bit, 6 + 4 + 17 + 10);   // proc block
                 if (BitsBE(b, ref bit, 1) != 0) BitsBE(b, ref bit, 6 + 4 + 14 + 10);   // reaction block
@@ -188,22 +193,33 @@ public static class PacketParsers
     // 0x017 chat_std (server layout: Kind@body0, Attr@1, Data@2-3, sName@4 (15 bytes), Mes@19 (null-terminated)).
     // We only record PARTY chat (Kind 4/15) — it's relayed cross-zone to all members, so the fleet uses it as a
     // tiny coordination bus (Reunion RALLY handshake). Say/shout/system lines are noise for a headless bot.
+    /// Set by a graphical client to log EVERY incoming 0x017 raw (hex + parsed fields) — diagnoses chat
+    /// reception + byte-offset layout without touching the bots (they leave it false).
+    public static bool DebugChat;
+
     static void ChatStd(ReadOnlySpan<byte> b, WorldState w)
     {
         if (b.Length < 24) return;
         byte kind = b[4];
-        // Party (4/15) = fleet coordination bus. Tell (3) = the PARTYLESS channel: a relogged tank that
-        // finds itself without a party can't party-chat the healer, whose roster went stale (phantom
-        // party=1 idled both bots ~15 min, three times) — the REFORM handshake rides tells instead.
-        // Shout (1) = the zone-wide party-recruitment channel (PartyFinder LFM/LFP).
-        if (kind != 4 && kind != 15 && kind != 3 && kind != 1) return;
         string name = Str(b, 8, 15);
         string msg = Str(b, 23, System.Math.Min(150, b.Length - 23));
-        if (name.Length == 0 || msg.Length == 0) return;
+        if (DebugChat)
+        {
+            int hn = System.Math.Min(b.Length, 48);
+            var hex = new System.Text.StringBuilder();
+            for (int i = 0; i < hn; i++) hex.Append(b[i].ToString("X2")).Append(' ');
+            Log.Info($"[chatdbg] len={b.Length} kind={kind} name='{name}' msg='{msg}' raw={hex}");
+        }
+        if (msg.Length == 0) return;
+        // A graphical client wants EVERY channel — append all kinds to the chat log.
+        w.AddChat(kind, name, msg, w.NowMs);
+        // The bot coordination bus still keys the specific channels it uses.
+        if (name.Length == 0) return;
         if (kind == 3) w.Tells[name] = (msg, w.NowMs);
         else if (kind == 1) w.Shouts[name] = (msg, w.NowMs);
-        else w.PartyChat[name] = (msg, w.NowMs);
-        Log.Info($"[chat] {(kind == 3 ? "(tell) " : kind == 1 ? "(shout) " : "")}<{name}> {msg}");
+        else if (kind is 4 or 15) w.PartyChat[name] = (msg, w.NowMs);
+        if (kind is 4 or 15 or 3 or 1)
+            Log.Info($"[chat] {(kind == 3 ? "(tell) " : kind == 1 ? "(shout) " : "")}<{name}> {msg}");
     }
 
     // Null-terminated ASCII string at [off, off+max).
@@ -262,6 +278,18 @@ public static class PacketParsers
                 e.Allegiance = b[0x29];
                 e.TypeKnown = true;
             }
+        }
+        if ((mask & 0x10) != 0 && b.Length >= 0x34)        // UPDATE_LOOK -> model (look_t @0x30)
+        {
+            var lk = new EntityLook { Type = U16(b, 0x30), Known = true };
+            if (lk.Type == 0) { lk.ModelId = U16(b, 0x32); }
+            else if (b.Length >= 0x44)                     // EQUIPPED / CHOCOBO: race+face + 8 gear ids
+            {
+                lk.Face = b[0x32]; lk.Race = b[0x33];
+                lk.Head = U16(b, 0x34); lk.Body = U16(b, 0x36); lk.Hands = U16(b, 0x38); lk.Legs = U16(b, 0x3A);
+                lk.Feet = U16(b, 0x3C); lk.Main = U16(b, 0x3E); lk.Sub = U16(b, 0x40); lk.Ranged = U16(b, 0x42);
+            }
+            e.Look = lk;
         }
         // UPDATE_NAME: the ascii name offset DIFFERS by packet. NPC (0x00E): @0x34. PC (GP_SERV_CHAR_PC
         // 0x00D): @0x5A — after CostumeId/Flags4-6/GrapIDTbl[9] (server char_update.cpp struct). Reading PCs
@@ -345,6 +373,28 @@ public static class PacketParsers
                 w.EventActive = true;
                 Log.Info($"[zone-in] PENDING EVENT {evt} (0x00A EventPara@100) — finishable BY ID, no sweep");
             }
+        }
+        // Self appearance: the 0x0A carries GrapIDTbl[9] where [0]=(race<<8)|face and [1..8]=equipment tagged
+        // head+0x1000 .. ranged+0x8000. Locate it by that tag signature (robust to layout drift), then decode
+        // race/face + masked equipment into MyLook so the client can render the local PC (renderer-only; bots
+        // ignore MyLook). Only accept a valid race (1..8).
+        for (int o = 24; o + 18 <= b.Length; o += 2)
+        {
+            if ((U16(b, o + 2) >> 12) != 1 || (U16(b, o + 4) >> 12) != 2 || (U16(b, o + 6) >> 12) != 3
+                || (U16(b, o + 8) >> 12) != 4 || (U16(b, o + 10) >> 12) != 5) continue;
+            ushort g0 = U16(b, o);
+            byte race = (byte)(g0 >> 8);
+            if (race is < 1 or > 8) continue;
+            w.MyLook = new EntityLook
+            {
+                Known = true, Type = 1, Race = race, Face = (byte)(g0 & 0xFF),
+                Head = (ushort)(U16(b, o + 2) & 0x0FFF), Body = (ushort)(U16(b, o + 4) & 0x0FFF),
+                Hands = (ushort)(U16(b, o + 6) & 0x0FFF), Legs = (ushort)(U16(b, o + 8) & 0x0FFF),
+                Feet = (ushort)(U16(b, o + 10) & 0x0FFF), Main = (ushort)(U16(b, o + 12) & 0x0FFF),
+                Sub = (ushort)(U16(b, o + 14) & 0x0FFF), Ranged = (ushort)(U16(b, o + 16) & 0x0FFF),
+            };
+            Log.Info($"[zone-in] self look: race={race} face={w.MyLook.Face} body={w.MyLook.Body}");
+            break;
         }
         Log.Info($"[zone-in] len={b.Length} zone@48={w.ZoneId}");
         w.InZone = true;
@@ -516,7 +566,8 @@ public static class PacketParsers
             Log.Info($"[con] mob 0x{tar:X} level={w.ConMobLevel} difficulty={w.ConDifficulty}");
             return;
         }
-        Log.Info($"[battle-msg] num={msg} cas=0x{U32(b, 4):X} tar=0x{tar:X} data={data} data2={data2}");
+        // (dropped the raw [battle-msg] dump — hundreds of un-actionable packet codes a session; the con
+        // capture above is the only field we use here. 2026-08-14 noise cull.)
     }
 
     // 0x056 GP_SERV_COMMAND_MISSION::OTHER (s2c/0x056_mission_other.h): PacketData{ uint32 Data[8]@4 (256-bit
@@ -538,10 +589,14 @@ public static class PacketParsers
         ushort port = U16(b, 36);
         if (!_questLogName.TryGetValue(port, out var name)) return; // a mission-log variant (not a quest port)
         var bits = b.Slice(4, 32).ToArray();
+        // Log ONLY when this area's flags actually CHANGED and are non-empty — the 0x056 arrives every zone-in,
+        // so the old "always dump every area (mostly 'none')" was ~42k spam lines a session (2026-08-14).
+        bool changed = !(w.QuestLog.TryGetValue(port, out var prev) && prev.AsSpan().SequenceEqual(bits));
         w.QuestLog[port] = bits;
+        if (!changed) return;
         var set = new List<int>();
         for (int n = 0; n < 256; n++) if ((bits[n >> 3] & (1 << (n & 7))) != 0) set.Add(n);
-        Log.Info($"[quest-log] {name} 0x{port:X}: {(set.Count == 0 ? "none" : string.Join(",", set))}");
+        if (set.Count > 0) Log.Info($"[quest-log] {name} 0x{port:X}: {string.Join(",", set)}");
     }
 
     // 0x061 GP_SERV_COMMAND_CLISTATUS — CLISTATUS{ hpmax@4(i32), mpmax@8(i32), mjob_no@12(u8), mjob_lv@13(u8),
