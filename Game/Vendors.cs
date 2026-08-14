@@ -25,6 +25,8 @@ public static class Vendors
         new(17719389,   68.426f,  0.001f, 38.173f,  "Victoire"),      // Southern San d'Oria (230)
         new(17780861,  -35.938f, -6.1f,  -119.684f, "Adelflete"),     // Lower Jeuno (245)
         new(17780859,  -45.568f,  5.149f, -118.03f, "Creepstix"),     // Lower Jeuno (245)
+        new(17793041,  -58.953f, -2.558f, -28.606f, "Dohdjuma"),      // Selbina (248) — 1 hop from Valkurm Dunes,
+        new(17793133,    6.300f, -6.558f,   4.582f, "Falgima"),       // so a Valkurm grinder sells here, not the home city (user 2026-08-14)
     };
 
     /// The vendor reachable in the FEWEST zone-hops from currentZone. A vendor in the current zone wins
