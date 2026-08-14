@@ -78,6 +78,7 @@ public sealed class LevelGrind(
     readonly HashSet<uint> _skip = new();
     int _kills, _tooWeak;
     long _lastBagClearMs, _lastSkipClearMs;
+    int _noSellFloor = -1;   // bag-fill level proven all-unsellable (Keep gear): don't re-trek to a vendor until drops grow past it — a broke MNK with a 22-Keep bag looped 59x selling 0, never hunting (2026-08-14)
     byte _lastHpp = 100;   // to detect "HP dropped while not engaged" = something aggroed us
     float _trackX, _trackZ; double _walkedSinceFight;   // distance-between-pulls metric (wandering waste, per user)
     long _lastKillMs;                                    // hunger clock: dry spells force a deep trek
@@ -319,19 +320,27 @@ public sealed class LevelGrind(
 
             // Bag filling with drops: clear IN PLACE when the brain provides a way (party farms mustn't leave
             // the zone), else optionally bank them at a vendor.
-            if (cfg.OnBagFull is { } bagFull && CountItems() >= cfg.SellAtItems && p.World.NowMs - _lastBagClearMs > 60_000)
+            // Only trek/clear when the bag has grown BEYOND a known-unsellable floor — a bag full of Keep gear
+            // (nothing sellable) otherwise re-triggers forever, selling 0 each time (the stuck-MNK loop). If a
+            // clear frees nothing, record this fill as the floor; new drops (slot count rises past it) re-arm it.
+            bool bagFull = CountItems() >= cfg.SellAtItems && CountItems() > _noSellFloor;
+            if (cfg.OnBagFull is { } clearInPlace && bagFull && p.World.NowMs - _lastBagClearMs > 60_000)
             {
-                Log($"bag at {CountItems()} items — clearing junk in place to keep room for drops");
+                int before = CountItems();
+                Log($"bag at {before} items — clearing junk in place to keep room for drops");
                 _lastBagClearMs = p.World.NowMs;
-                await bagFull(ct);
+                await clearInPlace(ct);
+                if (CountItems() >= before) _noSellFloor = before;   // nothing freed -> all Keep, back off
                 continue;
             }
-            if (cfg.SellJunkWhenFull && CountItems() >= cfg.SellAtItems)
+            if (cfg.SellJunkWhenFull && bagFull)
             {
-                Log($"bag at {CountItems()} items — selling drops at nearest vendor for gil");
+                int before = CountItems();
+                Log($"bag at {before} items — selling drops at nearest vendor for gil");
                 nav.Stop();
-                await SellJunk(ct);
+                int sold = await SellJunk(ct);
                 await cfg.OnRestock(ct);
+                if (sold <= 0) _noSellFloor = before;   // sold nothing -> don't re-trek until real drops arrive
                 continue;
             }
 
