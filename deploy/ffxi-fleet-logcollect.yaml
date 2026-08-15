@@ -1,0 +1,109 @@
+# FFXI fleet log collector — captures a week of raw (already noise-culled) per-character session logs in
+# Redis so a stuck/underperforming bot can be diagnosed after its pod is gone. The fleet CronJobs keep only
+# successfulJobsHistoryLimit=1, so a wave's pod logs vanish the next day when the job is recycled; this pulls
+# them into Redis first, keyed by CHARACTER, with a 7-day TTL.
+#
+# Key layout:  fleet:log:{charname}:{YYYY-MM-DD}:{wave}   (value = the pod's full stdout; EXPIRE 604800)
+#   e.g.  fleet:log:Gralou:2026-08-15:evening   —  lookup a character's day:  KEYS fleet:log:Gralou:*
+#
+# Schedule: 05:00 PT daily. By then both waves (afternoon 14:00 -> done ~22:00, evening 19:30 -> done ~03:30)
+# have finished normal 3-8h sessions, and their Completed pods still exist (each fleet CronJob recycles its
+# job only at its OWN next run — afternoon 14:00, evening 19:30 — both later than 05:00). A bot still running
+# at 05:00 (rare — near the 20h deadline) is captured partially; that's an accepted edge.
+#
+# Reaches Redis via `kubectl exec` into the redis pod's own redis-cli, so the collector image needs no
+# redis client — just kubectl. Paste this whole block into the fleet-jobs manifest (ArgoCD).
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ffxi-logcollect
+  namespace: homelab
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ffxi-logcollect
+  namespace: homelab
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]     # to run redis-cli inside the redis pod (no redis client in the collector image)
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ffxi-logcollect
+  namespace: homelab
+subjects:
+  - kind: ServiceAccount
+    name: ffxi-logcollect
+    namespace: homelab
+roleRef:
+  kind: Role
+  name: ffxi-logcollect
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: ffxi-fleet-logcollect
+  namespace: homelab
+  annotations:
+    argocd.argoproj.io/tracking-id: homelab:batch/CronJob:homelab/ffxi-fleet-logcollect
+spec:
+  schedule: "0 5 * * *"
+  timeZone: America/Los_Angeles
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 900
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            app: ffxi-fleet-logcollect
+        spec:
+          serviceAccountName: ffxi-logcollect
+          restartPolicy: Never
+          containers:
+            - name: collect
+              image: bitnami/kubectl:latest
+              command: ["/bin/bash", "-c"]
+              args:
+                - |
+                  set -u
+                  NS=homelab
+                  TTL=604800
+                  DATE=$(date +%F)
+                  REDIS=$(kubectl -n "$NS" get pod -l app=redis -o jsonpath='{.items[0].metadata.name}')
+                  if [ -z "$REDIS" ]; then echo "no redis pod found"; exit 1; fi
+                  stored=0
+                  for pod in $(kubectl -n "$NS" get pods -l app=ffxi-fleet -o jsonpath='{.items[*].metadata.name}'); do
+                    LOG=$(kubectl -n "$NS" logs "$pod" -c fleetbot 2>/dev/null)
+                    [ -z "$LOG" ] && continue
+                    case "$LOG" in *"skipped by gate"*) continue ;; esac   # gated pods never played
+                    # character name from the session log (every brain logs char='NAME'; login logs "selected char id=NN 'NAME'")
+                    CHAR=$(printf '%s\n' "$LOG" | grep -oE "char='[A-Za-z]+'" | head -1 | sed -E "s/.*'([A-Za-z]+)'.*/\1/")
+                    [ -z "$CHAR" ] && CHAR=$(printf '%s\n' "$LOG" | grep -oE "selected char id=[0-9]+ '[A-Za-z]+'" | head -1 | sed -E "s/.*'([A-Za-z]+)'.*/\1/")
+                    [ -z "$CHAR" ] && CHAR=$(kubectl -n "$NS" logs "$pod" -c gate 2>/dev/null | grep -oE 'fleetbot[0-9]+' | head -1)
+                    [ -z "$CHAR" ] && CHAR="$pod"
+                    case "$pod" in *afternoon*) WAVE=afternoon ;; *evening*) WAVE=evening ;; *) WAVE=other ;; esac
+                    KEY="fleet:log:${CHAR}:${DATE}:${WAVE}"
+                    printf '%s' "$LOG" | kubectl -n "$NS" exec -i "$REDIS" -- redis-cli -x SET "$KEY" >/dev/null 2>&1
+                    kubectl -n "$NS" exec "$REDIS" -- redis-cli EXPIRE "$KEY" "$TTL" >/dev/null 2>&1
+                    echo "stored $KEY ($(printf '%s\n' "$LOG" | wc -l) lines)"
+                    stored=$((stored + 1))
+                  done
+                  echo "log collector done — $stored character log(s) written to redis (7-day TTL)"
+              resources:
+                requests: { cpu: "20m", memory: "64Mi" }
+                limits: { cpu: "200m", memory: "256Mi" }
