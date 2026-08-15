@@ -27,6 +27,10 @@ public static class ShopRoutines
     public static async Task<int> SellNearby(IShop shop, INavigation nav, IZoning zoning, IInventory inv,
                                              IPerception p, IReadOnlySet<ushort> keep, CancellationToken ct = default)
     {
+        // Don't trek to a vendor to sell NOTHING. A broke, low-level bot's bag is often all keep-set gear +
+        // equipped (stuck) pieces — zero freely-sellable items. Without this the grind burned whole sessions
+        // looping walk-to-vendor -> "sold 0" -> walk again (Drk/Brd, 2026-08-14). Check locally FIRST.
+        if (!inv.HasSellable(keep)) return 0;
         if (Game.Vendors.Nearest(p.World.ZoneId) is not { } v)
         {
             Log.Info($"[sell] no known vendor reachable from zone {p.World.ZoneId} — keeping items");

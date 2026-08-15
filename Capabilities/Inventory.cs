@@ -161,6 +161,14 @@ public sealed class Inventory(ISession s) : IInventory
         return false;
     }
 
+    public bool HasSellable(IReadOnlySet<ushort> keep)
+    {
+        foreach (var ((c, slot), id) in s.State.Inventory.ToArray())
+            if (c == 0 && slot != 0 && id != 0 && !keep.Contains(id) && !_stuck.Contains((c, slot)))
+                return true;
+        return false;
+    }
+
     public async Task<int> SellAllJunk(IReadOnlySet<ushort> keep, CancellationToken ct = default)
     {
         // Sort first: AH deliveries arrive as SINGLES and pin slots (10 loose oils = 10 slots that stack

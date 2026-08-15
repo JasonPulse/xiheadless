@@ -43,6 +43,12 @@ public interface IInventory
     /// items actually sold.
     Task<int> SellAllJunk(IReadOnlySet<ushort> keep, CancellationToken ct = default);
 
+    /// True if the main bag holds at least ONE item SellAllJunk would actually try to move (not in `keep`,
+    /// not already known-stuck/equipped-locked). Lets a caller SKIP a pointless vendor trek when the bag is
+    /// only keep-set gear + equipped pieces — mirrors SellAllJunk's own per-slot skip logic exactly, so it
+    /// never claims "nothing to sell" where SellAllJunk would in fact sell something.
+    bool HasSellable(IReadOnlySet<ushort> keep);
+
     /// Move `qty` from main-inventory `fromSlot` into another container (0x029 ITEM_MOVE; server picks the
     /// destination slot). Mog Case (7) is movable-to from ANYWHERE and accepts EX items — the pressure valve
     /// for non-stacking keepers (Beastmen's Seals pinned the 30-slot bag and pool drops bounced). Waits for
