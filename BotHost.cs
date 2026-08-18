@@ -97,14 +97,18 @@ public static class BotHost
             catch (Exception ex) when (!everConnected && (ex.Message.Contains("0xA2") || ex.Message.Contains("stale/duplicate")))
             {
                 // FIRST login declined: server still holds this char — needs the dirty cooldown, not a rapid retry.
-                Log.Always($"[fatal] session declined (0xA2 stale/duplicate) — server still holds this char; needs a cooldown before relaunch, NOT a rapid retry. [{ex.Message.Split('\n')[0]}]");
-                return 75;
+                // CLEAN SKIP (exit 0), not a failure: this is "conditions aren't right to play this window" (same
+                // class as a gate skip), and the next daily wave is the real retry — exit 75 only left alarming
+                // Error pods (user 2026-08-18). The loud log stays; the Redis collector captures it for review.
+                Log.Always($"[skip] session declined (0xA2 stale/duplicate) — server still holds this char; needs a cooldown before relaunch, NOT a rapid retry. [{ex.Message.Split('\n')[0]}]");
+                return 0;
             }
             catch (Exception ex) when (!everConnected)
             {
-                // FIRST lobby-phase failure: retryable next wave window — one clear line, clean exit.
-                Log.Always($"[fatal] lobby login failed ({ex.GetType().Name}: {ex.Message.Split('\n')[0]}) — retry next window");
-                return 75;
+                // FIRST lobby-phase failure (server not ready at our start): CLEAN SKIP (exit 0), not a failure —
+                // the next daily wave is the retry, and exit 75 only produced lingering Error pods (user 2026-08-18).
+                Log.Always($"[skip] lobby login failed ({ex.GetType().Name}: {ex.Message.Split('\n')[0]}) — server not ready, skipping this window");
+                return 0;
             }
             catch (Exception ex)
             {
@@ -130,7 +134,9 @@ public static class BotHost
             {
                 // THE map-liveness judge (user: the lobby answering proves nothing). No zone-in = map not
                 // back yet. First-ever attempt keeps the old clean-exit pacing; reconnects back off + retry.
-                if (!everConnected) { Log.Always("[fatal] no map zone-in — retry next window"); return 75; }
+                // Map not back yet on our FIRST attempt: CLEAN SKIP (exit 0) — a server-down-at-startup is not a
+                // bot fault; the next daily wave retries. Was exit 75, which left alarming Error pods (user 2026-08-18).
+                if (!everConnected) { Log.Always("[skip] no map zone-in — server not ready, skipping this window"); return 0; }
                 if (DateTime.UtcNow >= SessionEndUtc) { Log.Always("map still down at session end — giving up for the day"); return 0; }
                 Log.Always("[relogin] map zone-in not answered — retrying in ~75s");
                 if (stop.Wait(TimeSpan.FromSeconds(75))) return 0;
