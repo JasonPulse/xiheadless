@@ -451,6 +451,12 @@ public sealed class LevelGrind(
             bool BaseOk(Entity e) => e.IsMob && e.Hpp > 0 && e.Y < 100 && NotObject(e)
                 && !cfg.SkipMobNames.Any(n => e.Name.Contains(n, StringComparison.OrdinalIgnoreCase))
                 && !_skip.Contains(e.Id)
+                // con=-1 is INVALID (no /check reply — an object, or a mob out of check range/LoS): never a
+                // valid target, so drop it from selection and let the loop keep roaming/looking (user rule).
+                // Uses the durable con cache (survives the 120s _skip.Clear, clears only on level-up), so a bot
+                // among invalid entities enters roam instead of spinning pick->con=-1->skip forever (Laedo/Vosou
+                // burned whole 0-kill sessions on this, 2026-08-26).
+                && roam.KnownCon(e.Id) != -1
                 && (now - e.LastSeenMs) < 20000;
             if (underAttack)
             {
