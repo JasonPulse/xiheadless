@@ -164,6 +164,37 @@ public static class JobKits
                     await TryMeleeJa();
                     return;
 
+                // ---- PALADIN (tank): Provoke to hold hate (via the /WAR sub). PLD-ONLY on purpose — Provoke
+                // is NOT in the shared MeleeJas because a DD /WAR sub firing it would steal hate off the tank
+                // in a party. Self-gates on the /WAR sub level (Provoke = WAR 5); sword+shield melee mitigates.
+                case Job.Pld:
+                    if (await combat.UseAbility(Ability.Provoke, mob, ct)) { Log.Info($"[{tag}] Provoke"); return; }
+                    await TryMeleeJa();
+                    return;
+
+                // ---- CORSAIR: Phantom Roll IS the kit — a self/party buff on a 60s recast (UseAbility
+                // self-resolves the target). Roll when ready; the equipped gun/dagger + WS carry damage.
+                case Job.Cor:
+                    if (await combat.UseAbility(Ability.PhantomRoll, mob, ct)) { Log.Info($"[{tag}] Phantom Roll"); return; }
+                    await TryMeleeJa();
+                    return;
+
+                // ---- DANCER: Curing Waltz to self-heal when hurt (TP-gated server-side), else Drain Samba as
+                // the maintained melee self-buff; the dagger melee + WS (KillRoutine) is the real damage.
+                case Job.Dnc:
+                    if (p.World.Hpp < 55 && await combat.UseAbility(Ability.CuringWaltz, mob, ct)) { Log.Info($"[{tag}] Curing Waltz"); return; }
+                    if (await combat.UseAbility(Ability.DrainSamba, mob, ct)) { Log.Info($"[{tag}] Drain Samba"); return; }
+                    await TryMeleeJa();
+                    return;
+
+                // ---- RUNE FENCER: keep an elemental rune up (stacks to 3; recast is instant, so THROTTLE to
+                // ~30s or it fires every beat instead of meleeing). Great-sword melee + WS carry the damage.
+                case Job.Run:
+                    if (w.NowMs - lastSongMs > 30_000 && await combat.UseAbility(Ability.RuneEnchantment, mob, ct))
+                    { lastSongMs = w.NowMs; Log.Info($"[{tag}] Rune Enchantment"); return; }
+                    await TryMeleeJa();
+                    return;
+
                 // ---- MELEE/other: fire the job's signature low/mid JAs (the shared TryMeleeJa). UseAbility
                 // self-gates on job/level/recast, so the whole list is safe to try.
                 default:
