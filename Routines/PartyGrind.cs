@@ -11,6 +11,10 @@ public sealed class PartyGrind(IPerception p, ICombat combat, IMagic? magic, INa
                                IChat chat, LevelGrind.Config g, string tag)
 {
     (float x, float z)? _camp;    // the announcer's own anchor (first-beat position = the meet spot)
+    readonly HashSet<uint> _pullInvalid = new();   // targets that con'd -1 (no /check reply — object or out of
+                                                   // range): INVALID, never re-pick. Without this the puller
+                                                   // fixated on one -1 mob and re-con'd it thousands of times
+                                                   // (Grabu/Kougrou party days = 0 kills, user 2026-08-30).
     long _dryPullMs, _gateLogMs, _scanLogMs;  // dry-pull log throttle; gate log throttle
     int _pullHeading;             // rotating roam-out heading (deg) for finding mobs beyond view range
     ((float x, float z) camp, (float x, float z) casters)? _myStations;   // announcer's SELF-VIEW: a bot
@@ -121,6 +125,7 @@ public sealed class PartyGrind(IPerception p, ICombat combat, IMagic? magic, INa
         if (p.World.MainJob == Job.Brd && magic is not null) await SongPass(camp, st, ct);
 
         var target = p.Nearest(e => e.IsMob && e.Hpp == 100 && CombatRoutines.NotObject(e)
+            && !_pullInvalid.Contains(e.Id)                           // con=-1 invalid targets never re-picked
             && !CombatRoutines.SleepLockMobs.Any(n => e.Name.Contains(n, StringComparison.OrdinalIgnoreCase))
             && Geometry.Dist2D(e.X, e.Z, camp.x, camp.z) > 16f      // never the camp bubble; no outer cap —
             && nav.CanReach(e.X, e.Y, e.Z));                          // the puller walks out and drags it home
@@ -166,6 +171,11 @@ public sealed class PartyGrind(IPerception p, ICombat combat, IMagic? magic, INa
         if (con < 1 || con > g.ConMax)
         {
             Log.Info($"[{tag}] pull candidate '{target.Name}' rejected: con={con} (want 1-{g.ConMax})");
+            // con=-1 = no /check reply (object like 'HomePoint#1'/'Signpost', or out of range): INVALID, drop it
+            // permanently so the puller stops re-picking the same one thousands of times (the party-day 0-kill
+            // storm — Daevou 'Valkeng' 4584x, Gedru '' 3785x, Laegru 'HomePoint#1' 1219x). Out-of-band cons
+            // (0/too-tough) are NOT cached — they re-judge as the party levels.
+            if (con == -1) _pullInvalid.Add(target.Id);
             await Task.Delay(1000, ct); return;   // con is the sole arbiter
         }
 
