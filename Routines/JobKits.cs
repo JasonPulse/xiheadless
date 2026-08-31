@@ -164,6 +164,19 @@ public static class JobKits
                     await TryMeleeJa();
                     return;
 
+                // ---- BLUE MAGE: blue magic IS the damage (GM-granted + set by BluBrain's grant loop). Cast the
+                // strongest READY set spell at the mob (magic.Ready gates known+level+MP); Pollen to self-heal
+                // when hurt; the equipped sword melee carries the rest. Set spells that aren't learned yet just
+                // fail Ready and fall through.
+                case Job.Blu:
+                    if (magic is null) { await TryMeleeJa(); return; }
+                    if (p.World.Hpp < 55 && magic.Ready(Spell.Pollen)) { magic.Cast(Spell.Pollen, w.MyId); Log.Info($"[{tag}] Pollen (self-heal)"); await Task.Delay(2500, ct); return; }
+                    if (w.Mpp >= 10)
+                        foreach (var sp in Game.BlueSpells.DamageByStrength)
+                            if (magic.Ready(sp)) { magic.Cast(sp, mob); Log.Info($"[{tag}] {sp}"); await Task.Delay(3000, ct); return; }
+                    await TryMeleeJa();
+                    return;
+
                 // ---- PALADIN (tank): Provoke to hold hate (via the /WAR sub). PLD-ONLY on purpose — Provoke
                 // is NOT in the shared MeleeJas because a DD /WAR sub firing it would steal hate off the tank
                 // in a party. Self-gates on the /WAR sub level (Provoke = WAR 5); sword+shield melee mitigates.

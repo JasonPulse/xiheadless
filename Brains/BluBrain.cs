@@ -51,8 +51,10 @@ public sealed class BluBrain(
     // edge in the zone graph — the stealth-trek attempt fails there, so the unlock will fail gracefully
     // (hold + level WAR) until ship routing / teleport support exists. The quest also ends with a per-player
     // RANDOM item trade the step model can't branch on.
-    public Task RunAsync(CancellationToken ct) =>
-        new JobLifecycle(p, nav, combat, zoning, gear, ah, delivery, inv, shop, jobs, quests, trade, events,
+    public Task RunAsync(CancellationToken ct)
+    {
+        _ = RequestBlueSpellsAsLevels(ct);   // non-blocking: GM-grant + set each blue spell at its learn level
+        return new JobLifecycle(p, nav, combat, zoning, gear, ah, delivery, inv, shop, jobs, quests, trade, events,
             new JobLifecycle.Config
             {
                 MainJob = Job.Blu, SubJob = Job.War, Advanced = true,
@@ -60,6 +62,39 @@ public sealed class BluBrain(
                 StealthUnlock = true, UnlockTrekZone = "Aht_Urhgan_Whitegate", UnlockTrekZoneId = 50,
                 GrindCfgFor = GrindCfg, Tag = "blu",
             }, lifecycle: lifecycle, chat: chat, magic: magic, party: party).RunAsync(ct);
+    }
+
+    // Blue magic = GM-granted (like SMN avatars) then SET before it's castable. Mirrors SmnBrain's avatar loop:
+    // off the combat thread, when the BLU main reaches a spell's NATURAL learn level (SpellLevels, not an
+    // arbitrary cadence — never hold a spell before you'd fight the mobs that teach it), request it ONCE via
+    // the GM, then SetBlueSpell it into its slot. GmGrant retries until the GM acks; re-assert the sets on
+    // level-up so any that didn't fit the set-point budget earlier get another try as points grow.
+    async Task RequestBlueSpellsAsLevels(CancellationToken ct)
+    {
+        var requested = new HashSet<Spell>();
+        var setDone = new HashSet<Spell>();
+        byte lastLvl = 0;
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                await Task.Delay(30_000, ct);
+                if (p.World.MainJob != Job.Blu) continue;   // only the BLU main phase (not the WAR sub/prereq)
+                if (p.World.MainJobLevel != lastLvl) { lastLvl = p.World.MainJobLevel; setDone.Clear(); }
+                foreach (var (spell, slot) in Game.BlueSpells.LevelingSet)
+                {
+                    if (Game.SpellLevels.For((ushort)spell, Job.Blu) is not { } lvl || lvl > p.World.MainJobLevel) continue;
+                    if (!magic.Known(spell))
+                    {
+                        if (requested.Add(spell)) await GmGrant.RequestSpell(p, chat, ((ushort)spell).ToString(), "blu", ct);
+                        continue;   // can't set until the grant lands — re-check next pass
+                    }
+                    if (setDone.Add(spell)) magic.SetBlueSpell((ushort)spell, slot);
+                }
+            }
+        }
+        catch (OperationCanceledException) { }
+    }
 
     LevelGrind.Config GrindCfg(byte job) => new()
     {
