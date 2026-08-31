@@ -294,6 +294,10 @@ public sealed class JobLifecycle(
                 await FleetDay.Run(p, combat, party, chat, magic, nav, lifecycle, new FleetDay.Hooks
                 {
                     GoToHuntZone = async c => { if (plan is (string pz, ushort pid) && zoning.CurrentZone != pid) await zoning.GoTo(pz, c); },
+                    // Anchor formation on the leg's CURATED camp (dense spawn ground), NOT the zone-in edge.
+                    // Without this the party camped where the traveler landed (~700y off the mobs in Konschtat)
+                    // and roamed empty all session (user 2026-08-27). Null leg-camp -> old behavior (form where we stand).
+                    MeetSpot = plan is (string mz, ushort _) ? Game.HuntZones.CampFor(g.HomeNation, mz) : null,
                     SoloGrind = c => new LevelGrind(p, nav, combat, zoning, gear, ah, delivery, inv, shop, g).RunAsync(c),
                     PartyGrind = (pp, c) => pg.Beat(pp, c),
                     Tag = cfg.Tag,
