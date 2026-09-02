@@ -243,7 +243,14 @@ public sealed class JobLifecycle(
                 // the con-floor skip in JobKits (user 2026-07-31).
                 if (lvl < 5 || (JobKits.CastsPrimary(job) && lvl >= 10)) return lvl;
                 int wep = gear.SkillLevel(g.WepSkillForLevel(lvl));
-                return wep < lvl * 2 ? (byte)Math.Clamp(wep / 2, 1, lvl) : lvl;
+                if (wep >= lvl * 2) return lvl;
+                // Skill lags: drop back to easier prey — but NOT below lvl-5. skill/2 alone overshot HARD (a
+                // lvl-18 DRK with lagging scythe dropped to EffectiveLevel 10 -> West_Ronfaure, a lvl-1 nursery
+                // where every mob cons 0: it killed nothing, roamed 2254 hops + 45 zone-ins chasing a valid
+                // target, and racked up 1M+ yalms — more travel than a real lvl-75 player, user 2026-09-01).
+                // A ~5-level dropback keeps mobs at con 1-3 (still Easy/Decent = hittable AND skill-worthy),
+                // never con-0. As the skill climbs the clamp relaxes back to the real level.
+                return (byte)Math.Clamp(Math.Max(wep / 2, lvl - 5), 1, lvl);
             }
             byte effLvl = EffectiveLevel();
             if (effLvl < p.World.MainJobLevel)
