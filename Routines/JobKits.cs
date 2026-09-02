@@ -177,6 +177,16 @@ public static class JobKits
                     await TryMeleeJa();
                     return;
 
+                // ---- NINJA: keep Utsusemi shadows up (its survivability layer) on a ~25s cadence. Gated on
+                // Known, NOT magic.Ready — ninjutsu's generated Mp field carries the Shihei TOOL id (1179), not
+                // real MP, so Ready never passes for a ~0-MP NIN. NinBrain supplies Shihei + learns the scroll;
+                // with no tool the cast just no-ops server-side and the katana melee + WS carries.
+                case Job.Nin:
+                    if (magic is not null && w.NowMs - lastSongMs > 25_000 && magic.Known(Spell.UtsusemiIchi))
+                    { magic.Cast(Spell.UtsusemiIchi, w.MyId); lastSongMs = w.NowMs; Log.Info($"[{tag}] Utsusemi: Ichi (shadows)"); await Task.Delay(2000, ct); return; }
+                    await TryMeleeJa();
+                    return;
+
                 // ---- PALADIN (tank): Provoke to hold hate (via the /WAR sub). PLD-ONLY on purpose — Provoke
                 // is NOT in the shared MeleeJas because a DD /WAR sub firing it would steal hate off the tank
                 // in a party. Self-gates on the /WAR sub level (Provoke = WAR 5); sword+shield melee mitigates.
