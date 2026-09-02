@@ -177,6 +177,22 @@ public static class JobKits
                     await TryMeleeJa();
                     return;
 
+                // ---- PUPPETMASTER: the automaton IS the kit (like a SMN avatar). Activate it if it's not out,
+                // else Deploy it onto the target so it fights; H2H melee carries alongside. Maneuvers/Overdrive
+                // are left out of this first cut (overload risk); the pet + melee is the baseline that beats the
+                // bare-H2H it did before. "Pet out" = any PC-owned entity in range (a fleet PUP runs no trusts).
+                case Job.Pup:
+                {
+                    bool petOut = p.Nearest(e => (e.NamePrefix & 0x08) != 0 && p.DistanceTo(e.X, e.Z) < 20f) is not null;
+                    if (!petOut)
+                    {
+                        if (await combat.UseAbility(Ability.Activate, mob, ct)) { Log.Info($"[{tag}] Activate automaton"); await Task.Delay(3000, ct); return; }
+                    }
+                    else if (await combat.UseAbility(Ability.Deploy, mob, ct)) { Log.Info($"[{tag}] Deploy automaton"); await Task.Delay(1500, ct); return; }
+                    await TryMeleeJa();
+                    return;
+                }
+
                 // ---- NINJA: keep Utsusemi shadows up (its survivability layer) on a ~25s cadence. Gated on
                 // Known, NOT magic.Ready — ninjutsu's generated Mp field carries the Shihei TOOL id (1179), not
                 // real MP, so Ready never passes for a ~0-MP NIN. NinBrain supplies Shihei + learns the scroll;
