@@ -102,12 +102,20 @@ public sealed class Delivery(ISession s, IZoning zoning) : IDelivery
     }
 
     /// Wait up to timeoutMs for the delivery-box reply for (command, slot): DboxAck == (command<<8)|slot.
+    /// A REFUSAL for the same action returns false immediately rather than burning the whole timeout: the
+    /// server answers a failed action too, with a nonzero Result, which the parser now keeps separately.
     async Task<bool> WaitAck(byte command, sbyte slot, int timeoutMs, CancellationToken ct)
     {
         int want = (command << 8) | (slot & 0xFF);
         for (int t = 0; t < timeoutMs && !ct.IsCancellationRequested; t += 100)
         {
             if (s.State.DboxAck == want) return true;
+            int res = s.State.DboxResult;
+            if (res >= 0 && (res >> 8) == want && (res & 0xFF) != 0x01)
+            {
+                Log.Info($"[delivery] server REFUSED command {command} slot {slot} (result 0x{res & 0xFF:X2})");
+                return false;
+            }
             await Task.Delay(100, ct);
         }
         return false;

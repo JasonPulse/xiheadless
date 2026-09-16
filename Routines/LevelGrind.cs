@@ -524,7 +524,13 @@ public sealed class LevelGrind(
                 int wepSkillNow = gear.SkillLevel(cfg.WepSkillForLevel(p.World.MainJobLevel));
                 if (!preferred && !cfg.SkipMeleeSkillup && wepSkillNow < p.World.MainJobLevel * 2 && p.World.MainJobLevel >= 5)
                 {
-                    floor = 1;   // Easy Prey, NOT con-0: skill-ups AND a trickle of XP (con-0 = Too Weak = zero XP)
+                    // Mild lag keeps the con-1 floor (Easy Prey = skill-ups AND a trickle of XP). But SEVERE lag,
+                    // skill below the character level (a DRK leveled on its WAR sub sits at scythe 4 at lvl 18),
+                    // out-cons every mob it could skill on, so con-1 leaves it with nothing to hit: it must take
+                    // Too Weak (con-0) to swing at all and grind the skill up. Zero XP, but the skill climbs to
+                    // level*2, the mode clears, and normal leveling resumes with a usable weapon (Laedo, DRK 18,
+                    // scythe 4: 2560 con-0 skips, 0 kills, 1.2M yalms of roaming, user 2026-09-16).
+                    floor = wepSkillNow < p.World.MainJobLevel ? 0 : 1;
                     if (p.World.NowMs - _lastSkillUpLogMs > 120_000)
                     { _lastSkillUpLogMs = p.World.NowMs; Log($"SKILL-UP mode: weapon skill {wepSkillNow} << lvl {p.World.MainJobLevel}*2 — taking easy prey until the blade catches up"); }
                 }

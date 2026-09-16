@@ -32,7 +32,11 @@ public sealed class WorldState
     public byte Hpp, Mpp;       // HP%/MP% (0x037 / 0x0DF)
     public byte ServerStatus;   // animation/status (idle, engaged, dead, ...) from 0x037
     public byte VisibleGmLevel; // flags0 bits 29-31 of 0x037 — nonzero once !togglegm applied (GM icon shown)
-    public byte[] StatusIcons = new byte[32]; // active status-effect icon ids from 0x037
+    // Active status-effect ids from 0x037. USHORT, not byte: the packet splits an id across two places,
+    // the low byte in BufStatus[32] and two high bits per slot in BufStatusBits, so ids of 256 and above
+    // (every Corsair roll, every Puppetmaster maneuver, Aftermath, the en-spell II line) only come out
+    // right when both halves are recombined. 0 = none, 255 = empty slot, as the server writes EFFECT_NONE.
+    public ushort[] StatusIcons = new ushort[32];
     public byte[] KnownSpellBits = System.Array.Empty<byte>(); // 0x0AA bitmap; bit N = spell N known
     public uint CurrentTargetId; // last target we engaged/acted on (for disengage etc.)
     public bool InZone;         // true once 0x00A zone-in parsed
@@ -115,6 +119,11 @@ public sealed class WorldState
     // so Delivery uses this to confirm a send and find a free outgoing slot. -1 = none since reset.
     public volatile int DboxAck = -1;
 
+    // The last delivery-box reply as (command << 8 | slot) << 8 | Result, so the waiter can see a REFUSAL
+    // for the action it asked about rather than only a success. Result 0x01 is success; anything else is
+    // an error message id.
+    public volatile int DboxResult = -1;
+
     // Skill levels (0x062 skill_base[64]); skill id -> level. Masks the capped (0x8000) bit.
     // Encoding differs by type: combat/magic (1-45) are raw skill points; CRAFT skills (48-57) are
     // packed as (level<<5 | rank), so we shift them down to whole craft levels. SkillLevel returns the
@@ -161,6 +170,23 @@ public sealed class WorldState
     /// actions/spells (0x01a_action.cpp: PAI->Engage(ActIndex)), NOT UniqueNo. Passing targid 0 makes the
     /// action a SILENT NO-OP (the historic Cast/Engage bug). Ourself -> MyIndex; a tracked entity with a
     /// nonzero Index -> that Index; else fall back to (id & 0xFFF) (targid = id & 0xFFF for FFXI entities).
+    /// Server heading byte from (ax,az) to (bx,bz), matching worldAngle() in common/utils.cpp exactly.
+    /// The server's melee check (charentity.cpp: !facing(loc.p, PTarget->loc.p, 64)) answers
+    /// "Unable to see <target>." and refuses the attack unless loc.p.rotation points at the target, so this
+    /// has to be the server's formula and not a plain atan2, which comes out about 30 degrees off.
+    public static byte HeadingTo(float ax, float az, float bx, float bz)
+    {
+        if (ax == bx && az == bz) return 0;
+        byte angle = (byte)(int)(System.MathF.Atan((bz - az) / (bx - ax)) * -(128f / System.MathF.PI));
+        return (byte)(ax > bx ? angle + 128 : angle);
+    }
+
+    /// Turn to face an entity we know about, so the next action passes the server's facing check.
+    public void FaceEntity(uint entityId)
+    {
+        if (Entities.TryGetValue(entityId, out var e)) Rotation = HeadingTo(X, Z, e.X, e.Z);
+    }
+
     public ushort TargidOf(uint id) =>
         id == MyId ? MyIndex :
         Entities.TryGetValue(id, out var e) && e.Index != 0 ? e.Index :

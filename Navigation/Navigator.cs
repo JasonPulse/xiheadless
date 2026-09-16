@@ -87,14 +87,9 @@ public sealed class Navigator : INavigation
         st.Rotation = Heading(st.X, st.Z, e.X, e.Z);
     }
 
-    /// Server heading byte from (ax,az) to (bx,bz), matching worldAngle() in common/utils.cpp
-    /// exactly so the melee facing() check passes. (Earlier atan2-based formula was ~30deg off.)
-    static byte Heading(float ax, float az, float bx, float bz)
-    {
-        if (ax == bx && az == bz) return 0;
-        byte angle = (byte)(int)(MathF.Atan((bz - az) / (bx - ax)) * -(128f / MathF.PI));
-        return (byte)(ax > bx ? angle + 128 : angle);
-    }
+    /// Server heading byte, from the one copy of worldAngle() on WorldState. Vellichor needs the same
+    /// formula for its own movement and engage, so it lives beside the state both clients share.
+    static byte Heading(float ax, float az, float bx, float bz) => Game.WorldState.HeadingTo(ax, az, bx, bz);
 
     public void Stop()
     {

@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Linq;
 using System.Net;
 using System.Net.Security;
 using System.Net.Sockets;
@@ -42,11 +43,50 @@ public sealed class XiClient(string host, string clientVer)
         try { return s.Read(buf, 0, buf.Length); } catch (IOException) { return 0; }
     }
 
+    /// The local address every socket to the server must come from, or null to let the OS choose.
+    ///
+    /// This matters more than it looks. The map server finds our session by the SOURCE IP of our UDP
+    /// datagrams, matched against the client_addr the LOGIN server recorded from our TCP connection
+    /// (map_session_container.cpp: "SELECT charid FROM accounts_sessions WHERE client_addr = ?"). If the
+    /// lobby goes out one interface and the map goes out another, the two addresses disagree and the map
+    /// server drops every packet as an invalid login attempt, in silence. So all four sockets bind here.
+    internal static IPEndPoint? LocalBind()
+        => Environment.GetEnvironmentVariable("XI_BIND_LOCAL") is { Length: > 0 } ip
+           && IPAddress.TryParse(ip, out var a) ? new IPEndPoint(a, 0) : null;
+
+    /// Pin a socket to a named interface with macOS IP_BOUND_IF, which overrides the routing table.
+    ///
+    /// Binding a source address does NOT do this: the route lookup still picks whatever the table says,
+    /// so the packet goes down that interface carrying a source that does not belong to it, which is worse
+    /// than doing nothing. IP_BOUND_IF is the option that actually moves the traffic. Needed when a
+    /// Tailscale subnet route for the server's /24 outranks the LAN that already reaches it.
+    internal const int IPPROTO_IP = 0, IP_BOUND_IF = 25;
+
+    internal static void PinInterface(Socket sock)
+    {
+        if (Environment.GetEnvironmentVariable("XI_BIND_IF") is not { Length: > 0 } name) return;
+        var nic = System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces()
+                    .FirstOrDefault(n => n.Name == name);
+        if (nic is null) { Log.Always($"[net] XI_BIND_IF={name} is not an interface on this machine"); return; }
+        int idx = nic.GetIPProperties().GetIPv4Properties().Index;
+        sock.SetRawSocketOption(IPPROTO_IP, IP_BOUND_IF, BitConverter.GetBytes(idx));
+        Log.Always($"[net] pinned socket to {name} (index {idx})");
+    }
+
+    private static TcpClient NewTcp()
+    {
+        // Explicitly IPv4. TcpClient() with no argument creates a dual-stack IPv6 socket, and IP_BOUND_IF
+        // is an IPv4 option, so pinning one returns EINVAL and the connect fails outright.
+        var c = LocalBind() is { } ep ? new TcpClient(ep) : new TcpClient(AddressFamily.InterNetwork);
+        PinInterface(c.Client);
+        return c;
+    }
+
     // One auth exchange on 54231 (TLS): send the JSON command, return the parsed reply.
     // Commands (server: xiserver src/login/auth_session.h): 16=login, 32=create account.
     async Task<JsonDocument> AuthCommandAsync(string user, string pass, int command)
     {
-        var tcp = new TcpClient();
+        var tcp = NewTcp();
         await tcp.ConnectAsync(_serverIp, 54231);
         var ssl = new SslStream(tcp.GetStream(), false, (_, _, _, _) => true);
         await ssl.AuthenticateAsClientAsync(new SslClientAuthenticationOptions
@@ -131,7 +171,7 @@ public sealed class XiClient(string host, string clientVer)
     public void LobbyDataConnect()
     {
         Log.Info($"lobby data -> {_serverIp}:54230");
-        var data = new TcpClient();
+        var data = NewTcp();
         data.Connect(_serverIp, 54230);
         _dataStream = data.GetStream();
         _dataStream.ReadTimeout = 6000;
@@ -146,7 +186,7 @@ public sealed class XiClient(string host, string clientVer)
         Send_0xA1(withHash: true);
 
         Log.Info($"lobby view -> {_serverIp}:54001");
-        var view = new TcpClient();
+        var view = NewTcp();
         view.Connect(_serverIp, 54001);
         _viewStream = view.GetStream();
         _viewStream.ReadTimeout = 6000;
@@ -377,8 +417,23 @@ public sealed class XiClient(string host, string clientVer)
         _viewStream.ReadTimeout = 6000;
         int n = _viewStream.Read(resp, 0, resp.Length);
         if (n < 0x48)
-            throw new Exception($"0xA2 returned a {n}B error packet (0x24) — server declined the zone handoff " +
-                                "(likely a stale/duplicate session). Wait for it to time out or use a fresh char.");
+        {
+            // The real reason is IN the packet: login_helpers.cpp generateErrorMessage writes a uint16
+            // error code at offset 32. Guessing "stale session" for every short reply hid which of these
+            // it actually was, and they need completely different responses.
+            ushort code = n >= 34 ? RU16(resp, 32) : (ushort)0;
+            string meaning = code switch
+            {
+                201 => "that character is already logged in (stale session); wait for it to time out",
+                305 => "the server could not register the session with the world server",
+                313 => "character name unavailable",
+                321 => "character parameters are incorrect",
+                331 => "the game data has been updated (client version mismatch)",
+                332 => "could not connect to the lobby server",
+                _   => "unknown error code",
+            };
+            throw new Exception($"0xA2 declined the zone handoff: error {code} — {meaning} ({n}B reply)");
+        }
         var zoneIp = new IPAddress(resp[0x38..0x3C]);
         ushort zonePort = RU16(resp, 0x3C);
         _mapServer = new IPEndPoint(zoneIp, zonePort);

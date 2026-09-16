@@ -330,7 +330,21 @@ public static class PacketParsers
         w.Hpp = (byte)((flags0 >> 16) & 0xFF);
         w.VisibleGmLevel = (byte)((flags0 >> 29) & 0x7);   // flags0_t.GmLevel:3 (top bits) — !togglegm visibility
         w.ServerStatus = b[48];
-        b.Slice(4, 32).CopyTo(w.StatusIcons);
+        // Status effect ids: BufStatus[32]@0x04 holds the LOW BYTE of each id, and BufStatusBits@0x4C holds
+        // two bits per slot that carry the rest (bit 2i means add 256, bit 2i+1 means add 512, per the
+        // server's own packing in status_effect_container.cpp). Without the high bits every effect from 256
+        // up reads as a different effect entirely.
+        ulong hi = b.Length >= 0x54 ? BinaryPrimitives.ReadUInt64LittleEndian(b[0x4C..]) : 0;
+        for (int i = 0; i < 32; i++)
+        {
+            ushort id = b[4 + i];
+            if (id != 0 && id != 255)
+            {
+                if ((hi & (1UL << (i * 2))) != 0) id += 256;
+                if ((hi & (1UL << (i * 2 + 1))) != 0) id += 512;
+            }
+            w.StatusIcons[i] = id;
+        }
     }
 
     // 0x0DC GP_SERV_COMMAND_GROUP_SOLICIT_REQ: another PC invited us to a party. Inviter name is sName@0x0C
@@ -354,7 +368,14 @@ public static class PacketParsers
         {
             if (Environment.GetEnvironmentVariable("XI_DEBUG") == "1")
                 Log.Info($"    [0x00A floats] x@12={F32(b,12):F3} z@16={F32(b,16):F3} y@20={F32(b,20):F3}");
-            w.X = F32(b, 12); w.Z = F32(b, 16); w.Y = F32(b, 20);
+            // Vertical into w.Y, horizontal z into w.Z, the SAME fields entity updates use (line ~270 reads
+        // loc.p.y from 0x10 into e.Y). The server writes ".z = PChar->loc.p.y, // Not a typo" here, so @16
+        // is the vertical and @20 the horizontal z. Landing the vertical in w.Z for the self only meant one
+        // WorldState held two meanings for the same two fields, and BuildPos reads w.Y as the vertical: any
+        // 0x015 sent before the navigator overwrote the position told the server its height was its z, and
+        // the pair came back transposed on the next login. Navigator already assumes Y is the height
+        // (GroundY(st.X, st.Z, ty) -> st.Y), so this makes zone-in agree with it immediately.
+        w.X = F32(b, 12); w.Y = F32(b, 16); w.Z = F32(b, 20);
         }
         // Zone id at offset 48. Reflect it as-is (including 0) — masking a 0 hid that a homepoint with no
         // home point set warps the char into zone-0 limbo. ZoneNo=0 here = unset home point / limbo.
@@ -503,13 +524,21 @@ public static class PacketParsers
     // 0x029 GP_SERV_COMMAND_BATTLE_MESSAGE (s2c/0x029): UniqueNoCas@4, UniqueNoTar@8, Data@12,
     // Data2@16, ActIndexCas@20, ActIndexTar@22, MessageNum@24 (the reason/result code). Logging it
     // surfaces WHY an action (e.g. engage) was rejected instead of guessing.
-    // 0x04B GP_SERV_COMMAND_PBX_RESULT — delivery box reply: Command@4, BoxNo@5, PostWorkNo(slot)@6.
-    // The server replies on a SUCCESSFUL action only, so recording (cmd<<8)|slot lets Delivery confirm
-    // a Set landed (and thus that the outgoing slot was free + the receiver resolved).
+    // 0x04B GP_SERV_COMMAND_PBX_RESULT — delivery box reply: Command@4, BoxNo@5, PostWorkNo(slot)@6,
+    // ItemWorkNo@7, ItemStacks@8, Result@12.
+    //
+    // The old comment here claimed the server replies on a SUCCESSFUL action only, and it does not: the
+    // server sets Result to 0x01 for success and to an error message id otherwise
+    // (0x04b_pbx_result.cpp: "success: 0x01, else error message"). Recording an ack either way turned
+    // every failed Set into a confirmed one. The ack is now raised only on success, and the raw result is
+    // kept so the waiter can tell a refusal from silence instead of waiting out its timeout.
     static void PostBoxResult(ReadOnlySpan<byte> b, WorldState w)
     {
         if (b.Length < 7) return;
-        w.DboxAck = (b[4] << 8) | b[6];
+        int tag = (b[4] << 8) | b[6];
+        byte result = b.Length > 12 ? b[12] : (byte)1;   // short packet: assume the old behaviour
+        w.DboxResult = (tag << 8) | result;
+        if (result == 0x01) w.DboxAck = tag;
     }
 
     // 0x03C GP_SERV_COMMAND_SHOP_LIST — hdr(4) ShopItemOffsetIndex@4 Flags@6 pad@7, then GP_SHOP[N]@8,

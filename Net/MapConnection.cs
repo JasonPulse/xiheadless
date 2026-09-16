@@ -46,10 +46,40 @@ public sealed class MapConnection : ISession
         // zone-in (home-point / new-char / gate-proximity cutscenes) were prime casualties, so their
         // event id never reached the parser (w.EventId stayed 0 -> generic auto-finish inert).
         _udp.ReceiveBufferSize = 1 << 20;
-        _udp.Connect(mapServer); // matches the proven M1 path (Connect + Send/Receive)
+        // Same local address as the lobby used, for the reason spelled out on XiClient.LocalBind:
+        // the map server looks our session up by the UDP source IP and compares it with the address the
+        // login server recorded from the TCP side. They have to agree.
+        XiClient.PinInterface(_udp);
+        if (XiClient.LocalBind() is { } localEp)
+        {
+            _udp.Bind(localEp);
+            Log.Always($"[map] bound local endpoint to {localEp.Address}");
+        }
+        // A Connect()ed UDP socket accepts datagrams ONLY from the exact peer address:port and discards
+        // everything else without a trace. XI_UDP_OPEN=1 leaves it unconnected and uses SendTo/ReceiveFrom
+        // instead, so a reply arriving from an unexpected source is seen and logged rather than silently
+        // dropped. That is the difference between "the server never answered" and "we threw the answer away".
+        _openSocket = Environment.GetEnvironmentVariable("XI_UDP_OPEN") == "1";
+        if (_openSocket) _udp.Bind(new IPEndPoint(IPAddress.Any, 0));
+        else _udp.Connect(mapServer); // matches the proven M1 path (Connect + Send/Receive)
     }
 
     readonly IPEndPoint _mapServer;
+    readonly bool _openSocket;
+
+    void Tx(byte[] p)
+    {
+        if (_openSocket) _udp.SendTo(p, _mapServer); else _udp.Send(p);
+    }
+
+    int Rx(byte[] buf)
+    {
+        if (!_openSocket) return _udp.Receive(buf);
+        EndPoint from = new IPEndPoint(IPAddress.Any, 0);
+        int n = _udp.ReceiveFrom(buf, ref from);
+        Log.Always($"[udp] {n}B from {from}");
+        return n;
+    }
 
     // Mirrors the server's initBlowfish(): md5 of the 20-byte session key, then zero-truncate
     // the hash at its first zero byte, then key-schedule. (map_session.cpp initBlowfish)
@@ -85,24 +115,48 @@ public sealed class MapConnection : ISession
         // socket-error trace) — the root of the 0x032 reception gap. (Was left behind when RecvLoop hardened.)
         var buf = new byte[65536];
         ushort seq = 0;
+        int sockErrs = 0;
         State.InZone = false;
         var sw = System.Diagnostics.Stopwatch.StartNew();
         while (sw.ElapsedMilliseconds < timeoutMs && !State.InZone)
         {
             seq++;
             var login = BuildLogin0x0A(seq);
-            _udp.Send(login);                                            // first creates session; later one flushes
-            if (Dbg && seq <= 6) Log.Info($"    [zonein] sent 0x00A seq {seq} to {_mapServer}");
             try
             {
-                int n = _udp.Receive(buf);                               // inline receive between sends
+                // The send belongs inside the retry, not ahead of it. Outside it, one transient send failure
+                // was an UNHANDLED exception that killed the process: on a route that flaps (a Tailscale
+                // advertised subnet, in the case that found this) macOS returns NetworkUnreachable on a
+                // single datagram and is fine on the next one a moment later.
+                // XI_MAP_PORT_SWEEP=lo-hi fans the handshake across a port range, for finding which port
+                // the map process is really on when the zone table's answer gets us nothing. Diagnostic
+                // only: the real client sends to the one port the lobby named.
+                if (Environment.GetEnvironmentVariable("XI_MAP_PORT_SWEEP") is { Length: > 0 } sweep
+                    && sweep.Split('-') is [var loS, var hiS]
+                    && int.TryParse(loS, out int lo) && int.TryParse(hiS, out int hi))
+                {
+                    for (int port = lo; port <= hi; port++)
+                        try { _udp.SendTo(login, new IPEndPoint(_mapServer.Address, port)); } catch { }
+                }
+                else Tx(login);                                          // first creates session; later one flushes
+                if (Dbg && seq <= 6) Log.Info($"    [zonein] sent 0x00A seq {seq} to {_mapServer}");
+                int n = Rx(buf);                                         // inline receive between sends
                 // NEVER swallow a handshake-window dispatch failure (was Dbg-gated): this window is the zone-in
                 // burst — exactly where event starts (0x032) ride — and a silent drop reads as "the server never
                 // sent it" (the recv-gap ghost that strands chars in status=4 with no parsed id).
                 if (n > PH + 16) { try { HandleInbound(buf[..n]); } catch (Exception ex) { Log.Always($"[zonein-dispatch-err] {n}B datagram DROPPED mid-dispatch: {ex.Message} (possible lost event burst)"); } }
             }
-            catch (SocketException sx) { if (sx.SocketErrorCode != SocketError.TimedOut) Log.Always($"[zonein-sockerr] {sx.SocketErrorCode} — handshake datagram DROPPED (a lost event burst reads as a reception gap)"); }
+            catch (SocketException sx)
+            {
+                if (sx.SocketErrorCode != SocketError.TimedOut)
+                {
+                    sockErrs++;
+                    Log.Always($"[zonein-sockerr] {sx.SocketErrorCode} — handshake datagram DROPPED (a lost event burst reads as a reception gap)");
+                }
+            }
         }
+        if (!State.InZone && sockErrs > 0)
+            Log.Always($"[zonein] gave up after {seq} attempts with {sockErrs} socket error(s). The route to {_mapServer} is failing, not the handshake");
         _clientId = (ushort)(seq + 1);
         if (State.InZone) { _everZoned = true; Enqueue(BuildGameOk()); }
         return State.InZone;
@@ -239,7 +293,7 @@ public sealed class MapConnection : ISession
         {
             State.NowMs = _clock.ElapsedMilliseconds; // runtime clock for entity aging / repath timing
             int n;
-            try { n = _udp.Receive(buf); }
+            try { n = Rx(buf); }
             catch (SocketException sx) { if (sx.SocketErrorCode != SocketError.TimedOut) Log.Always($"[recv-sockerr] {sx.SocketErrorCode} — datagram DROPPED (a lost event frame reads as a reception gap)"); continue; }
             if (Dbg) Log.Info($"    [recv] {n}B head={Convert.ToHexString(buf.AsSpan(0, Math.Min(8, n)))}");
             if (n <= PH + 16) continue;
@@ -372,7 +426,7 @@ public sealed class MapConnection : ISession
         MD5.HashData(outPkt.AsSpan(PH, payloadLen)).CopyTo(outPkt, PH + payloadLen);
         int cypher = ((payloadLen + 16) / 4) & ~1;
         _bf.EncipherBuffer(outPkt, PH, cypher * 4);
-        try { _udp.Send(outPkt); } catch { }
+        try { Tx(outPkt); } catch { }
     }
 
     byte[] BuildPos()
