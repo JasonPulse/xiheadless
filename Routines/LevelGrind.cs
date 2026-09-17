@@ -34,6 +34,8 @@ public sealed class LevelGrind(
         public bool Ranged = false;               // RNG/COR fight by SHOOTING — the fight loop fires Shoot on cadence (set by JobKits.Apply)
         public ushort AmmoQuiver = 0;             // ranged jobs: buy a 12-stack of THIS quiver/pouch (each opens to 99 arrows)
         public ushort AmmoArrow = 0;              // ...the arrow/bolt/bullet it yields — opened on demand + equipped (AmmoRoutines)
+        public ushort ToolStack = 0;              // NIN: a consumable spell reagent (Shihei) bought as a stack in the session-start buy phase, held not equipped
+        public int ToolCount = 0;                 // how many of ToolStack to keep on hand
         public bool SellJunkWhenFull = false;     // vendor round-trip when the bag fills (off: trips cost grind time)
         public int SellAtItems = 25;
         // In-place bag clearing (inv.SellAllJunk) for farms where drops must keep landing but a vendor trip
@@ -147,6 +149,11 @@ public sealed class LevelGrind(
             // slot until opened). AmmoRoutines opens them on demand in the loop. Reuses BuyAtLeast (powders).
             if (cfg.AmmoQuiver != 0)
                 await ShopRoutines.BuyAtLeast(ah, p, inv, cfg.AmmoQuiver, 12, cfg.Keep, SellJunk, ct);
+            // NIN reagent (Shihei) stocked here in the RELIABLE session-start buy, not OnRestock: OnRestock only
+            // fires after a bag-full sell at an AH, which a death-spiralling NIN never reaches, so Utsusemi never
+            // came online and it died 36x (Mesae, user 2026-09-16). Same BuyAtLeast path as ammo.
+            if (cfg.ToolStack != 0 && cfg.ToolCount > 0)
+                await ShopRoutines.BuyAtLeast(ah, p, inv, cfg.ToolStack, cfg.ToolCount, cfg.Keep, SellJunk, ct);
         }
 
         // 2) Reach the hunt zone. Path mode travels solo; fixed-zone mode with a Reunion defers entry to the

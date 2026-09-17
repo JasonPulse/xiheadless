@@ -69,27 +69,20 @@ public sealed class NinBrain(
     {
         HomeNation = Nation.Windurst,
         AhZone = AhZone,
-        BuyItems = GearRoutines.BuyList(Gear).ToArray(),
+        // NIN main also buys the Utsusemi scroll (learned in Equip at lv15) and stocks Shihei (ToolStack, bought
+        // reliably in the session-start phase). Gated to the NIN phase so the WAR prereq days don't waste gil.
+        BuyItems = (job == Job.Nin ? GearRoutines.BuyList(Gear).Append(UtsuIchiScroll) : GearRoutines.BuyList(Gear)).ToArray(),
+        ToolStack = job == Job.Nin ? Shihei : (ushort)0,
+        ToolCount = job == Job.Nin ? 40 : 0,
         GearTable = Gear,
         Keep = NinKeep,
         Equip = Equip,
-        OnRestock = Restock,   // solo/upkeep AH trip: keep the shadow tools + scroll stocked
         WepSkillForLevel = _ => job == Job.War ? GreatAxeSkill : KatanaSkill,
         ConMin = 1, ConMax = 3,
         CleanPullNeighborCon = 3,
         RestHpTrigger = 70, RestHpTarget = 90,
         Tag = "nin",
     };
-
-    // Utsusemi needs the SCROLL (learned once) + a stock of SHIHEI (consumed per cast) — a NIN-main lv15
-    // thing, bought on the self-funding AH trip (reuses ShopRoutines, same as the WHM scroll arc / RNG ammo).
-    async Task Restock(CancellationToken ct)
-    {
-        if (p.World.MainJob != Job.Nin || p.World.MainJobLevel < 15) return;
-        if (!Game.Zonelines.HasAuctionHouse(zoning.CurrentZone)) return;
-        await ShopRoutines.BuyItem(ah, p, inv, UtsuIchiScroll, NinKeep, ShopRoutines.NoFree, ct);
-        await ShopRoutines.BuyAtLeast(ah, p, inv, Shihei, 40, NinKeep, ShopRoutines.NoFree, ct);
-    }
 
     async Task Equip(CancellationToken ct)
     {
