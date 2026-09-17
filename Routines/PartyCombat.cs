@@ -129,12 +129,21 @@ public static class PartyCombat
 
     // ---- pull execution ---------------------------------------------------------------------------------
 
-    /// The RANGED pull (main-tank style): Provoke if the job has it, else Shoot (boomerang), then walk home.
-    /// Never engages at the mob — hate-only, so the mob does the walking.
+    /// The pull: grab hate so the mob chases to camp, then walk home. A tank Provokes (clean, hate-only). Any
+    /// other puller (a SMN/DD voted puller in a thin party that fielded no tank/BRD/ranged) falls back to a
+    /// Shoot then a MELEE TAG (Engage), one of which grabs it. Without this a SMN puller logged 700 'pulling'
+    /// lines with 0 grabbed and 0 kills, the whole party day wasted (user 2026-09-16). The melee tag lets the
+    /// mob beat on the puller en route (not the hate-only ideal), but a mob dragged home beats one that never
+    /// moves; the party then kills it at camp.
     public static async Task RangedPull(ICombat combat, IPerception p, INavigation nav, uint mobId,
                                         (float x, float z) camp, CancellationToken ct)
     {
-        if (!await combat.UseAbility(Ability.Provoke, mobId, ct)) combat.RangedAttack(mobId);
+        if (!await combat.UseAbility(Ability.Provoke, mobId, ct))
+        {
+            combat.RangedAttack(mobId);                 // ranged jobs (RNG/COR) shoot to grab from range
+            await Task.Delay(500, ct);
+            if (!combat.Engaged) await combat.Engage(mobId);   // universal melee tag when nothing ranged landed
+        }
         await Task.Delay(800, ct);
         nav.MoveTo(camp.x, camp.z);                     // drag it home; the party engages at camp
     }
