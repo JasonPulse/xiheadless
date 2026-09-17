@@ -143,15 +143,22 @@ public static class PartyCombat
     public static async Task RangedPull(ICombat combat, IPerception p, INavigation nav, uint mobId,
                                         (float x, float z) camp, CancellationToken ct)
     {
-        if (!await combat.UseAbility(Ability.Provoke, mobId, ct))
+        if (!await combat.UseAbility(PullAbilityFor(p.World.MainJob), mobId, ct))
         {
             combat.RangedAttack(mobId);                 // ranged jobs (RNG/COR) shoot to grab from range
             await Task.Delay(500, ct);
-            if (!combat.Engaged) await combat.Engage(mobId);   // universal melee tag when nothing ranged landed
+            if (!combat.Engaged) await combat.Engage(mobId);   // universal melee tag when nothing ranged landed (BST)
         }
         await Task.Delay(800, ct);
         nav.MoveTo(camp.x, camp.z);                     // drag it home; the party engages at camp
     }
+
+    /// The PULL ability each puller job grabs with, its OWN tool rather than a borrowed one. Provoke (WAR native
+    /// + every /WAR sub) is the enmity pull for 13 of the 15 fleet puller jobs. DRG leads with Jump, a native
+    /// gap-closer that lands hate on contact (Chi Blast/Quick Draw are lvl 40+, out of the fleet's band). RNG/COR
+    /// have no low hate JA but carry a ranged weapon, and BST (/WHM, no Provoke) has neither, so both fall to the
+    /// RangedPull Shoot-then-melee-tag path. (user 2026-09-16)
+    static Ability PullAbilityFor(byte job) => job == Job.Drg ? Ability.Jump : Ability.Provoke;
 
     /// The BARD pull (user spec): pull with ELEGY (slow — hate + a debuff that matters all fight), walk home,
     /// and once the mob has chased back TO CAMP, cast Foe Lullaby — it sleeps AT the camp until the party
