@@ -83,8 +83,13 @@ public static class PartyCombat
             if (subTank is not null) return new(subTank, PullStyle.SataSubTank, tank, thief);
         }
 
-        // 3. Main tank pulls at range (Provoke, else boomerang Shoot).
-        return new(tank ?? roster.Keys.OrderBy(k => k, StringComparer.OrdinalIgnoreCase).First(), PullStyle.TankRanged, tank, thief);
+        // 3. No BRD and no SATA line: a NON-CASTER pulls. Tank first (Provoke), else the first physical/ranged
+        //    DD (it shoots or melee-tags the mob home). A CASTER (SMN/WHM/BLM/RDM/SCH/GEO) NEVER pulls: it is a
+        //    fragile back-line job that summons/nukes/heals from camp. A SMN voted puller pulled 700x and killed
+        //    nothing (user 2026-09-16). An all-caster roster has no valid puller (Puller = "" -> nobody pulls);
+        //    such a party never should have started without a tank/physical DD.
+        var puller = tank ?? First(j => !JobKits.CastsPrimary(j));
+        return new(puller ?? "", PullStyle.TankRanged, tank, thief);
     }
 
     // ---- role stations (user spec 2026-07-14) -----------------------------------------------------------

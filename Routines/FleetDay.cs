@@ -87,6 +87,15 @@ public static class FleetDay
                 Log.Always($"[{hooks.Tag}] party up ({party.MemberCount + 1} incl. me) — waiting for the JOB roster before the puller vote");
                 var plan2 = await VoteWhenRosterComplete(p, party, chat, hooks.Tag, ct);
                 Log.Always($"[{hooks.Tag}] puller vote: puller={plan2.Puller} style={plan2.Style} tank={plan2.Tank ?? "?"}");
+                // No valid puller (roster is all casters + healer, nobody can pull) = the party can't hunt.
+                // Solo grind the rest of the day instead of holding an idle camp (user 2026-09-16). Same
+                // fallback as the 30-min no-party path above.
+                if (string.IsNullOrEmpty(plan2.Puller))
+                {
+                    Log.Always($"[{hooks.Tag}] no pull-capable job in the party — SOLO grind for the day");
+                    await hooks.SoloGrind(ct);
+                    return;
+                }
                 int lastSize = party.MemberCount;
                 while (!ct.IsCancellationRequested)
                 {
