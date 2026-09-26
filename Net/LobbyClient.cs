@@ -379,13 +379,25 @@ public sealed class XiClient(string host, string clientVer)
 
     public bool SelectOrCreate(byte creationJob = 1)
     {
+        // A valid char-list reply carries the 16-slot structure (36 header + 140/slot). A locked session or a
+        // server-side hiccup returns an EMPTY/tiny payload — which the old code mistook for an empty account and
+        // CREATED OVER the existing char, spawning a junk char that then outranks the real one (the Sept outage
+        // did exactly this to fleetbot26/34). So CREATE only if a genuine, well-formed char-list actually came
+        // back and showed no char. If it never reads clean, the account state is UNKNOWN: skip the login rather
+        // than risk a junk char (the wave retries next window).
+        const int MinValidCharList = 176;   // header + one slot region; a real empty-account reply is far larger
+        bool sawValidList = false;
         for (int i = 1; i <= 5; i++)
         {
-            if (TrySelectBest(FetchCharList())) { Log.Always($"  selected char id={_charId} '{_charName}' (read attempt {i})"); return false; }
-            Log.Info($"  no char in char-list (attempt {i}/5)");
+            var view = FetchCharList();
+            if (TrySelectBest(view)) { Log.Always($"  selected char id={_charId} '{_charName}' (read attempt {i})"); return false; }
+            if (view.Length >= MinValidCharList) sawValidList = true;
+            Log.Info($"  no char in char-list (attempt {i}/5, {view.Length}B)");
             if (i < 5) Thread.Sleep(500);
         }
-        Log.Info($"  account is empty -> provisioning a character (creation job {creationJob})");
+        if (!sawValidList)
+            throw new InvalidOperationException("char-list never read cleanly (empty/short payload) — refusing to create-over a possibly-existing char");
+        Log.Info($"  account confirmed empty (valid char-list, no char) -> provisioning a character (creation job {creationJob})");
         return CreateChar(creationJob);
     }
 
