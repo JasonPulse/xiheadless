@@ -20,10 +20,10 @@ public static class GmGrant
     public static Task<bool> RequestSpell(IPerception p, IChat chat, string spellIdOrName, string tag, CancellationToken ct)
         => Request(p, chat, $"spell {spellIdOrName}", "added", tag, ct);
 
-    // Travel key items the fleet can't reliably self-quest (server ids: Chocobo License 138, Airship Pass 8).
-    // Grant is idempotent server-side (!addkeyitem no-ops if already held). NOTE: these only speed travel once
-    // the nav stack learns to rent/board — the route graph is walk-only today (see the travel TODO).
-    public const int ChocoboLicense = 138, AirshipPass = 8;
+    // Travel key items the fleet can't reliably self-quest. Grant is idempotent server-side (!addkeyitem no-ops
+    // if already held). ChocoboCompanion (3072) is what the MODERN mount action (0x1A) checks — NOT the classic
+    // rental license 138. AirshipPass 8 = nation<->Jeuno airships; 9 = Jeuno<->Kazham.
+    public const int ChocoboCompanion = 3072, ChocoboLicense = 138, AirshipPass = 8, AirshipPassKazham = 9;
     public static Task<bool> RequestKeyItem(IPerception p, IChat chat, int keyItemId, string tag, CancellationToken ct)
         => Request(p, chat, $"keyitem {keyItemId}", "key item", tag, ct);
 

@@ -126,6 +126,7 @@ public sealed class JobLifecycle(
     {
         await Task.Delay(4000, ct);
         await ApplyDetectedNation(ct);
+        _ = RequestChocoboWhenEligible(ct);   // non-blocking: GM-grant the chocobo mount key item at lv20 so travel legs ride
         var seesaw = new JobLeveling(p, jobs, zoning);
         Log($"lifecycle start: {(cfg.Advanced ? "ADVANCED" : "basic")} main={JN(cfg.MainJob)} sub={JN(cfg.SubJob)} " +
             $"(now {JN(p.World.MainJob)} {p.World.MainJobLevel} / levels {JN(cfg.MainJob)}={LevelOf(cfg.MainJob)} {JN(cfg.SubJob)}={LevelOf(cfg.SubJob)})");
@@ -213,6 +214,24 @@ public sealed class JobLifecycle(
     }
 
     Nation? _detectedNation;   // non-null when ApplyDetectedNation swapped away from the Windurst defaults
+
+    // Off the main loop: once the bot is level 20 (the mount requirement), ask the GM once for the Chocobo
+    // Companion key item (3072) so travel legs ride instead of walk. Idempotent server-side; GmGrant retries
+    // until the GM acks, so a missed grant catches up. No-op if there's no GM chat channel.
+    async Task RequestChocoboWhenEligible(CancellationToken ct)
+    {
+        if (chat is null) return;
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                if (p.World.MainJobLevel >= 20)
+                { await GmGrant.RequestKeyItem(p, chat, GmGrant.ChocoboCompanion, cfg.Tag, ct); return; }
+                await Task.Delay(60_000, ct);
+            }
+        }
+        catch (OperationCanceledException) { }
+    }
 
     // One grind stint for `job` (which must already be MAIN — the caller ensures it). While HuntZonePlan
     // returns a gated zone we fix to it (+ baby con band below BabyUntil) and own the post-death return; when

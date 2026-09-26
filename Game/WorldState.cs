@@ -37,6 +37,7 @@ public sealed class WorldState
     // (every Corsair roll, every Puppetmaster maneuver, Aftermath, the en-spell II line) only come out
     // right when both halves are recombined. 0 = none, 255 = empty slot, as the server writes EFFECT_NONE.
     public ushort[] StatusIcons = new ushort[32];
+    public bool IsMounted => System.Array.IndexOf(StatusIcons, (ushort)252) >= 0;   // EFFECT_MOUNTED (252) — on a chocobo
     public byte[] KnownSpellBits = System.Array.Empty<byte>(); // 0x0AA bitmap; bit N = spell N known
     public uint CurrentTargetId; // last target we engaged/acted on (for disengage etc.)
     public bool InZone;         // true once 0x00A zone-in parsed

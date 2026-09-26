@@ -14,6 +14,7 @@ public static class Zonelines
 
     const ushort MiscAh = 0x200;       // ZONEMISC MISC_AH bit: zone allows auction-house use
     const ushort MiscMogMenu = 0x20;   // ZONEMISC MISC_MOGMENU: Explorer/Nomad Moogle (job change w/o Mog House)
+    const ushort MiscMount = 0x04;     // ZONEMISC MISC_MOUNT: chocobo/mount allowed (outdoor field zones)
 
     // Canonical name (and a spaces<->underscores, case-insensitive variant) -> zone id.
     static readonly Dictionary<string, ushort> _byName = BuildNames();
@@ -36,6 +37,10 @@ public static class Zonelines
     public static bool HasAuctionHouse(ushort id) => AhTowns.Contains(id) || (_info.TryGetValue(id, out var i) && (i.misc & MiscAh) != 0);
     // True if the zone has an Explorer/Nomad Moogle, so job change works without entering a Mog House.
     public static bool HasMogMenu(ushort id) => _info.TryGetValue(id, out var i) && (i.misc & MiscMogMenu) != 0;
+
+    /// Outdoor field zone where a chocobo can be mounted (server gates the 0x1A Mount on MISC_MOUNT). Towns and
+    /// dungeons return false — attempting to mount there is rejected server-side.
+    public static bool HasMount(ushort id) => _info.TryGetValue(id, out var i) && (i.misc & MiscMount) != 0;
 
     static readonly Dictionary<ushort, List<ZoneLine>> _byFrom = Build();
 

@@ -55,6 +55,7 @@ public sealed class Zoning(ISession s, INavigation nav) : IZoning
             ushort from = CurrentZone;
             Log.Info($"[travel] zone {from}: walking to the {hop.To} zone line (status={s.State.ServerStatus})");
             await WaitOutEvent(ct);   // don't walk (char is locked) or cross while in a cutscene
+            nav.TryMount();           // chocobo the overland legs (no-op indoors/under-lv20/no key item); engaging dismounts
             await WalkTo(hop.TriggerX, hop.TriggerY, hop.TriggerZ, ct);
 
             // Cross it. Position isn't server-validated, so one 0x5E should do it; retry for UDP loss.

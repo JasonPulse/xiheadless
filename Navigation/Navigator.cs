@@ -7,6 +7,11 @@ namespace XiHeadless.Navigation;
 public sealed class Navigator : INavigation
 {
     const float WalkSpeed = 5.0f;   // yalms/sec (under the server's speed limit)
+    const float MountSpeed = 7.5f;  // yalms/sec on a chocobo. The bot dead-reckons its OWN motion, so mounting
+                                    // only speeds travel if we move faster here. The server applies EFFECT_MOUNTED
+                                    // so it EXPECTS a faster rate; keep this conservatively under the mount cap
+                                    // (empirically tune up if the server accepts more without speedhack flags).
+    long _lastMountMs;              // 60s mount recast throttle
     const int StepMs = 200;         // movement tick
     const float Arrive = 1.0f;      // waypoint arrival radius
 
@@ -22,6 +27,20 @@ public sealed class Navigator : INavigation
     public Navigator(ISession s, NavMesh? mesh) { _s = s; _mesh = mesh; }
 
     public bool IsMoving { get { lock (_lock) return _wp < _path.Count || _followId != 0; } }
+
+    /// Mount a chocobo for long overland travel (0x1A action, MountId 0). No-op unless eligible: not already
+    /// mounted, level >= 20, in an outdoor MISC_MOUNT zone, and past the 60s recast. Needs the CHOCOBO_COMPANION
+    /// key item (GM-granted); without it the server silently rejects and we stay on foot. The speed gain is the
+    /// mounted branch in the step loop. Engaging/acting dismounts server-side, so no explicit dismount is needed.
+    public void TryMount()
+    {
+        var st = _s.State;
+        if (st.IsMounted || st.MainJobLevel < 20 || !Game.Zonelines.HasMount(st.ZoneId)) return;
+        if (st.NowMs - _lastMountMs < 62_000) return;   // 60s server mount recast + margin
+        _lastMountMs = st.NowMs;
+        Log.Info("[nav] mounting chocobo for travel");
+        _s.Enqueue(Capabilities.ActionPacket.Build(Capabilities.ActionPacket.Mount, st.MyId, st.MyIndex));
+    }
 
     /// Swap in the navmesh for the current zone (called after a zone change). Drops any
     /// in-flight path since it belonged to the old zone, then reconciles position.
@@ -141,7 +160,7 @@ public sealed class Navigator : INavigation
             var (tx, ty, tz) = _path[_wp];
             float dx = tx - st.X, dz = tz - st.Z;
             float dist = MathF.Sqrt(dx * dx + dz * dz);
-            float stepDist = WalkSpeed * dt;
+            float stepDist = (st.IsMounted ? MountSpeed : WalkSpeed) * dt;
 
             if (dist <= MathF.Max(stepDist, Arrive)) { st.X = tx; st.Y = ty; st.Z = tz; _wp++; }
             else
