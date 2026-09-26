@@ -16,6 +16,7 @@ public static class FleetDay
     public sealed class Hooks
     {
         public Func<CancellationToken, Task> GoToHuntZone = _ => Task.CompletedTask;   // travel per the leveling guide
+        public Func<bool> AtHuntZone = () => true;   // true once we're IN the hunt zone — formation gates on this so a puller never parties in a city / en-route hub
         public (float x, float z)? MeetSpot;   // formation anchor: SHOUT ONLY REACHES 180y (server), so everyone converges here first
         public Func<CancellationToken, Task> SoloGrind = _ => Task.CompletedTask;      // the brain's normal loop
         public Func<PartyCombat.PullPlan, CancellationToken, Task> PartyGrind = (_, _) => Task.CompletedTask;
@@ -45,7 +46,23 @@ public static class FleetDay
 
             case SessionPlan.DayMode.Party:
                 Log.Always($"[{hooks.Tag}] today is a PARTY day — heading to the hunt zone to group up");
-                await hooks.GoToHuntZone(ct);
+                // Reach the ACTUAL hunt zone BEFORE forming. Party joining must never trigger in a city or an
+                // en-route hub: a puller stranded in Port Jeuno con'd only city objects and killed nothing all
+                // session (user 2026-09-26). Retry the travel; if we can't land in the hunt zone within the
+                // budget, SOLO grind rather than form a party where there are no mobs.
+                long arriveDeadline = Environment.TickCount64 + 1_800_000;
+                while (!ct.IsCancellationRequested && !hooks.AtHuntZone())
+                {
+                    await hooks.GoToHuntZone(ct);
+                    if (hooks.AtHuntZone()) break;
+                    if (Environment.TickCount64 > arriveDeadline)
+                    {
+                        Log.Always($"[{hooks.Tag}] could not reach the hunt zone — SOLO grind for the day (never partying in a city)");
+                        await hooks.SoloGrind(ct);
+                        return;
+                    }
+                    await Task.Delay(5000, ct);
+                }
                 if (hooks.MeetSpot is { } meet)   // converge into shout range (180y) before recruiting
                 {
                     await NavRoutines.WalkTo(nav, p, meet.x, meet.z, within: 3f, ct, legTimeoutMs: 120_000);

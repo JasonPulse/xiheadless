@@ -298,13 +298,23 @@ public sealed class JobLifecycle(
                 var basePlan = SessionPlan.ForToday(p.World.MyId);
                 var effEnd = BotHost.SessionEndUtc == DateTime.MaxValue ? basePlan.EndUtc : BotHost.SessionEndUtc;
                 var effPlan = new SessionPlan.Plan(basePlan.Mode, basePlan.StartUtc, effEnd);
+                // The party's hunt zone: the nursery plan zone if we're still in the nursery, ELSE the nation
+                // path's level-appropriate leg (HuntZones.ZoneFor). Past lv25 the plan is null, so without this a
+                // high-level bot had no travel target and no zone gate — it formed/pulled wherever it stood, e.g.
+                // stranded in Port Jeuno (user 2026-09-26). One target drives travel, the arrival gate, and camp.
+                (string name, ushort id)? huntTarget;
+                if (plan is (string pz0, ushort pid0)) huntTarget = (pz0, pid0);
+                else { var zn = Game.HuntZones.ZoneFor(g.HomeNation, p.World.MainJobLevel); huntTarget = Game.Zonelines.Resolve(zn) is { } zid ? (zn, zid) : null; }
                 await FleetDay.Run(p, combat, party, chat, magic, nav, lifecycle, new FleetDay.Hooks
                 {
-                    GoToHuntZone = async c => { if (plan is (string pz, ushort pid) && zoning.CurrentZone != pid) await zoning.GoTo(pz, c); },
+                    GoToHuntZone = async c => { if (huntTarget is (string hz, ushort hid) && zoning.CurrentZone != hid) await zoning.GoTo(hz, c); },
+                    // FleetDay gates party formation on this: never form/pull unless we're actually IN the hunt
+                    // zone (no known target -> no gate). Stops a stranded puller partying in a city (user 2026-09-26).
+                    AtHuntZone = () => huntTarget is not (string _, ushort hid2) || zoning.CurrentZone == hid2,
                     // Anchor formation on the leg's CURATED camp (dense spawn ground), NOT the zone-in edge.
                     // Without this the party camped where the traveler landed (~700y off the mobs in Konschtat)
                     // and roamed empty all session (user 2026-08-27). Null leg-camp -> old behavior (form where we stand).
-                    MeetSpot = plan is (string mz, ushort _) ? Game.HuntZones.CampFor(g.HomeNation, mz) : null,
+                    MeetSpot = huntTarget is (string mz, ushort _) ? Game.HuntZones.CampFor(g.HomeNation, mz) : null,
                     SoloGrind = c => new LevelGrind(p, nav, combat, zoning, gear, ah, delivery, inv, shop, g).RunAsync(c),
                     PartyGrind = (pp, c) => pg.Beat(pp, c),
                     Tag = cfg.Tag,
