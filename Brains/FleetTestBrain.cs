@@ -40,7 +40,7 @@ public sealed class FleetTestBrain(
         await Routines.FleetDay.Run(p, combat, party, chat, magic, nav, lifecycle, new Routines.FleetDay.Hooks
         {
             Tag = "fleettest",
-            GoToHuntZone = _ => Task.CompletedTask,   // we're already at the meet zone
+            GoToHuntZone = _ => Task.FromResult(true),   // we're already at the meet zone
             MeetSpot = (-92f, 62f),                    // the Windurst Woods HP crystal plaza — inside 180y shout range for all
             PartyGrind = async (pull, c) =>
             {

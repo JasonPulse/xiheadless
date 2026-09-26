@@ -15,7 +15,7 @@ public static class FleetDay
 {
     public sealed class Hooks
     {
-        public Func<CancellationToken, Task> GoToHuntZone = _ => Task.CompletedTask;   // travel per the leveling guide
+        public Func<CancellationToken, Task<bool>> GoToHuntZone = _ => Task.FromResult(true);   // travel per the leveling guide; returns false ONLY if the zone is unreachable (no route)
         public Func<bool> AtHuntZone = () => true;   // true once we're IN the hunt zone — formation gates on this so a puller never parties in a city / en-route hub
         public (float x, float z)? MeetSpot;   // formation anchor: SHOUT ONLY REACHES 180y (server), so everyone converges here first
         public Func<CancellationToken, Task> SoloGrind = _ => Task.CompletedTask;      // the brain's normal loop
@@ -48,18 +48,24 @@ public static class FleetDay
                 Log.Always($"[{hooks.Tag}] today is a PARTY day — heading to the hunt zone to group up");
                 // Reach the ACTUAL hunt zone BEFORE forming. Party joining must never trigger in a city or an
                 // en-route hub: a puller stranded in Port Jeuno con'd only city objects and killed nothing all
-                // session (user 2026-09-26). Retry the travel; if we can't land in the hunt zone within the
-                // budget, SOLO grind rather than form a party where there are no mobs.
-                long arriveDeadline = Environment.TickCount64 + 1_800_000;
+                // session (user 2026-09-26). TRAVEL IS NOT TIME-BUDGETED: chocobo/airship-less chars can take
+                // 30+ min of overland hops just to arrive, so the formation budget must NOT start until we're
+                // there (user 2026-09-26). Keep travelling as long as we make zone progress; only SOLO if the
+                // zone is unreachable (no route) or we're genuinely stuck (no zone change over many attempts).
+                ushort lastZone = 0; int noProgress = 0;
                 while (!ct.IsCancellationRequested && !hooks.AtHuntZone())
                 {
-                    await hooks.GoToHuntZone(ct);
-                    if (hooks.AtHuntZone()) break;
-                    if (Environment.TickCount64 > arriveDeadline)
+                    if (!await hooks.GoToHuntZone(ct))
                     {
-                        Log.Always($"[{hooks.Tag}] could not reach the hunt zone — SOLO grind for the day (never partying in a city)");
-                        await hooks.SoloGrind(ct);
-                        return;
+                        Log.Always($"[{hooks.Tag}] no route to the hunt zone — SOLO grind for the day (never partying in a city)");
+                        await hooks.SoloGrind(ct); return;
+                    }
+                    if (hooks.AtHuntZone()) break;
+                    if (p.World.ZoneId == lastZone) noProgress++; else { noProgress = 0; lastZone = p.World.ZoneId; }
+                    if (noProgress >= 6)   // 6 full travel attempts with zero zone change = stuck en route, not slow
+                    {
+                        Log.Always($"[{hooks.Tag}] stuck en route to the hunt zone (no zone progress) — SOLO grind for the day");
+                        await hooks.SoloGrind(ct); return;
                     }
                     await Task.Delay(5000, ct);
                 }

@@ -307,7 +307,13 @@ public sealed class JobLifecycle(
                 else { var zn = Game.HuntZones.ZoneFor(g.HomeNation, p.World.MainJobLevel); huntTarget = Game.Zonelines.Resolve(zn) is { } zid ? (zn, zid) : null; }
                 await FleetDay.Run(p, combat, party, chat, magic, nav, lifecycle, new FleetDay.Hooks
                 {
-                    GoToHuntZone = async c => { if (huntTarget is (string hz, ushort hid) && zoning.CurrentZone != hid) await zoning.GoTo(hz, c); },
+                    GoToHuntZone = async c =>
+                    {
+                        if (huntTarget is not (string hz, ushort hid) || zoning.CurrentZone == hid) return true;   // no target / already there
+                        if (Game.Zonelines.Route(zoning.CurrentZone, hid) is null) return false;                   // genuinely unreachable -> caller solos
+                        await zoning.GoTo(hz, c);
+                        return true;   // attempted; a long chocobo-less multi-hop trek may need more passes
+                    },
                     // FleetDay gates party formation on this: never form/pull unless we're actually IN the hunt
                     // zone (no known target -> no gate). Stops a stranded puller partying in a city (user 2026-09-26).
                     AtHuntZone = () => huntTarget is not (string _, ushort hid2) || zoning.CurrentZone == hid2,

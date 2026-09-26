@@ -40,7 +40,7 @@ public sealed class PartyComboTestBrain(
         await Routines.FleetDay.Run(p, combat, party, chat, magic, nav, lifecycle, new Routines.FleetDay.Hooks
         {
             Tag = "partytest",
-            GoToHuntZone = _ => Task.CompletedTask,     // already in the hunt zone
+            GoToHuntZone = _ => Task.FromResult(true),     // already in the hunt zone
             MeetSpot = null,                            // form where we stand (all three travel to the same zone)
             PartyGrind = (pull, c) => pg.Beat(pull, c), // THE real combat beat
         }, plan, ct);
