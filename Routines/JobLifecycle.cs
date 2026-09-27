@@ -127,6 +127,8 @@ public sealed class JobLifecycle(
         await Task.Delay(4000, ct);
         await ApplyDetectedNation(ct);
         _ = RequestChocoboWhenEligible(ct);   // non-blocking: GM-grant the chocobo mount key item at lv20 so travel legs ride
+        if (chat is { } gmChat)               // GM-warp fallback for zones the walk/chocobo graph can't reach (Kazham/expansion)
+            zoning.WarpFallback = (zid, c) => GmGrant.RequestTravel(p, gmChat, zid, cfg.Tag, c);
         var seesaw = new JobLeveling(p, jobs, zoning);
         Log($"lifecycle start: {(cfg.Advanced ? "ADVANCED" : "basic")} main={JN(cfg.MainJob)} sub={JN(cfg.SubJob)} " +
             $"(now {JN(p.World.MainJob)} {p.World.MainJobLevel} / levels {JN(cfg.MainJob)}={LevelOf(cfg.MainJob)} {JN(cfg.SubJob)}={LevelOf(cfg.SubJob)})");

@@ -27,6 +27,9 @@ public sealed class GmBrain(IPerception p, IChat chat, ILifecycle lifecycle, Wor
     // STOCK !addkeyitem <id> <player>: travel key items the bots can't self-quest reliably — Chocobo License
     // (138), Airship Pass (8). Lets the fleet reach hunt zones faster once the travel code uses them.
     static readonly string[] KeyItemWords = { "keyitem", "ki", "addkeyitem" };
+    // !zone <zoneid> <player>: warp a bot to a zone. ONLY the fallback for expansion/airship-gated zones the
+    // walk+chocobo route graph can't reach (e.g. Kazham); normal travel still walks. Requester asks per zone.
+    static readonly string[] TravelWords = { "travel", "zone", "warp" };
 
     // Last tell timestamp (WorldState.NowMs) we've already acted on, per sender — so a NEW tell is processed
     // but the same one isn't re-issued every poll (WorldState.Tells keeps only the latest per sender).
@@ -69,12 +72,13 @@ public sealed class GmBrain(IPerception p, IChat chat, ILifecycle lifecycle, Wor
                         "job" => $"!grantjob {sender} {value}",
                         "spell" => $"!addspell {value} {sender}",
                         "keyitem" => $"!addkeyitem {value} {sender}",
+                        "travel" => $"!zone {value} {sender}",
                         _ => $"!setcap {sender} {value}",
                     };
                     chat.Say(cmd);
                     grants++;
                     Log.Always($"[gm] {sender} requested '{msg}' -> issued: {cmd} ({grants} issued)");
-                    chat.Tell(sender, kind switch { "job" => $"granted job {value}", "spell" => $"added spell {value}", "keyitem" => $"added key item {value}", _ => $"set cap {value}" });
+                    chat.Tell(sender, kind switch { "job" => $"granted job {value}", "spell" => $"added spell {value}", "keyitem" => $"added key item {value}", "travel" => $"warped to {value}", _ => $"set cap {value}" });
 
                     await Task.Delay(CommandSpacingMs, ct); // let the server process one command per tick
 
@@ -108,6 +112,7 @@ public sealed class GmBrain(IPerception p, IChat chat, ILifecycle lifecycle, Wor
         if (System.Array.IndexOf(CapWords, verb) >= 0) { kind = "cap"; return true; }
         if (System.Array.IndexOf(SpellWords, verb) >= 0) { kind = "spell"; return true; }
         if (System.Array.IndexOf(KeyItemWords, verb) >= 0) { kind = "keyitem"; return true; }
+        if (System.Array.IndexOf(TravelWords, verb) >= 0) { kind = "travel"; return true; }
         return false;
     }
 }

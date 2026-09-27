@@ -24,6 +24,9 @@ public sealed class Zoning(ISession s, INavigation nav) : IZoning
     public ushort CurrentZone => s.State.ZoneId;
 
     public Func<CancellationToken, Task>? BeforeLeg { get; set; }
+    // FALLBACK for zones the walk+chocobo graph can't reach (expansion/airship-gated, e.g. Kazham): a GM warp
+    // request. Set by the caller (JobLifecycle). Only fires when Route is null; normal travel walks/chocobos.
+    public Func<ushort, CancellationToken, Task<bool>>? WarpFallback { get; set; }
 
     public void RequestZoneLine(uint rectId)
         => s.Enqueue(ZoneRequestPacket.Build(rectId, s.State.X, s.State.Y, s.State.Z));
@@ -42,7 +45,17 @@ public sealed class Zoning(ISession s, INavigation nav) : IZoning
     public async Task ToZone(ushort targetZone, CancellationToken ct = default)
     {
         var route = Zonelines.Route(CurrentZone, targetZone);
-        if (route is null) { Log.Info($"[travel] no route {CurrentZone} -> {targetZone}"); return; }
+        if (route is null)
+        {
+            // Unreachable on foot/chocobo (expansion/airship-gated). Ask the GM to warp us there, if wired.
+            if (WarpFallback is { } warp)
+            {
+                Log.Info($"[travel] no walk/chocobo route {CurrentZone} -> {targetZone}; requesting GM warp");
+                if (await warp(targetZone, ct) && CurrentZone == targetZone) { Log.Info($"[travel] GM-warped to {targetZone}"); return; }
+            }
+            Log.Info($"[travel] no route {CurrentZone} -> {targetZone}");
+            return;
+        }
         foreach (var hop in route)
         {
             ct.ThrowIfCancellationRequested();

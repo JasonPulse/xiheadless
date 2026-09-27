@@ -15,4 +15,8 @@ public interface IZoning
     // by movement, so this is where stealth re-application belongs — a background maintainer firing mid-walk
     // never lands. Null (fleet default) = no-op. Set around a trek, clear in a finally.
     Func<CancellationToken, Task>? BeforeLeg { get; set; }
+
+    // Fallback for a target zone the walk+chocobo route graph can't reach (expansion/airship-gated). Fires only
+    // when Route is null; returns true once warped. Null (default) = no warp, the travel just fails.
+    Func<ushort, CancellationToken, Task<bool>>? WarpFallback { get; set; }
 }

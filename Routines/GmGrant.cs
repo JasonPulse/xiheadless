@@ -27,6 +27,11 @@ public static class GmGrant
     public static Task<bool> RequestKeyItem(IPerception p, IChat chat, int keyItemId, string tag, CancellationToken ct)
         => Request(p, chat, $"keyitem {keyItemId}", "key item", tag, ct);
 
+    // Warp to a zone the walk+chocobo route graph can't reach (expansion/airship-gated, e.g. Kazham). The GM
+    // runs !zone <zoneid> <player>. FALLBACK ONLY — normal travel walks/chocobos; this fires when Route is null.
+    public static Task<bool> RequestTravel(IPerception p, IChat chat, ushort zoneId, string tag, CancellationToken ct)
+        => Request(p, chat, $"travel {zoneId}", "warped", tag, ct);
+
     static async Task<bool> Request(IPerception p, IChat chat, string request, string ackWord, string tag, CancellationToken ct)
     {
         var w = p.World;
