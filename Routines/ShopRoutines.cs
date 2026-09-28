@@ -15,27 +15,6 @@ public static class ShopRoutines
     static readonly uint[] BidLadder =
         { 50, 100, 150, 200, 300, 400, 500, 700, 900, 1200, 1600, 2200, 3000, 4200, 6000, 8500, 12000 };
 
-    /// Buy up to `qty` of `itemId` from a FIXED NPC shop (not the AH): walk to the NPC, open its shop, find the
-    /// slot stocking the item, and Buy. For consumables an NPC sells but the AH doesn't (NIN Shihei tools). No-op
-    /// if the shop won't open, doesn't stock it, or we can't afford it.
-    public static async Task<bool> BuyFromNpc(IShop shop, INavigation nav, IPerception p, uint npcId,
-                                              float x, float y, float z, ushort itemId, int qty, CancellationToken ct)
-    {
-        await NavRoutines.WalkTo(nav, p, x, z, within: 4f, ct, y: y, legTimeoutMs: 60_000);
-        var stock = await shop.Open(npcId, ct);
-        foreach (var kv in stock)
-            if (kv.Value.itemId == itemId)
-            {
-                if (p.World.Gil < kv.Value.price) { Log.Info($"[shop] {itemId} costs {kv.Value.price} > gil {p.World.Gil}"); return false; }
-                shop.Buy(kv.Key, (ushort)qty);
-                Log.Info($"[shop] bought {qty}x {itemId} @ {kv.Value.price}g from npc 0x{npcId:X}");
-                await Task.Delay(1500, ct);
-                return true;
-            }
-        Log.Info($"[shop] npc 0x{npcId:X} shop ({stock.Count} slots) doesn't stock {itemId}");
-        return false;
-    }
-
     /// A free-space callback that never sells (returns 0). For buy sites with no vendor reachable — the AH
     /// buy just fails on a full bag rather than trekking off to sell. Shared: brains/routines had a private
     /// copy each.

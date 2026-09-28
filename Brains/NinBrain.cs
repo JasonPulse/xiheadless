@@ -14,7 +14,8 @@ public sealed class NinBrain(
     const byte KatanaSkill = 9;               // LSB skill enum (Katana=9 — verified vs the generated WS table)
     const byte GreatAxeSkill = 6;             // WAR prereq/sub phases ride the proven Great Axe kit
     const string AhZone = "Windurst Woods";   // home-nation AH (char is Windurst)
-    const ushort Shihei = 1179;               // ninja tool Utsusemi consumes (NPC-bought + held, never equipped)
+    const ushort Shihei = 1179;               // ninja tool Utsusemi consumes (AH-bought + held, never equipped)
+    const ushort UtsuIchiScroll = 4946;       // teaches Utsusemi: Ichi (spell 338); on the AH (the AH bot stocks it)
 
     // Ascending by level so later pieces override earlier ones in the same slot.
     static readonly (ushort item, byte slot, byte lvl)[] Gear =
@@ -52,35 +53,27 @@ public sealed class NinBrain(
     // CAVEAT (unchanged): the Korroloka qm2 examines spawn 3x Korroloka Leech NMs that must be killed
     // between the two examines; QuestRunner has no "clear the spawned NMs" step, so the unlock will fail
     // gracefully (hold + level WAR) until that fight is handled.
-    public Task RunAsync(CancellationToken ct)
-    {
-        _ = RequestUtsusemiWhenEligible(ct);   // non-blocking: GM-grant Utsusemi: Ichi at lv15 (scroll isn't shoppable here)
-        return new JobLifecycle(p, nav, combat, zoning, gear, ah, delivery, inv, shop, jobs, quests, trade, events,
+    public Task RunAsync(CancellationToken ct) =>
+        new JobLifecycle(p, nav, combat, zoning, gear, ah, delivery, inv, shop, jobs, quests, trade, events,
             new JobLifecycle.Config
             {
                 MainJob = Job.Nin, SubJob = Job.War, Advanced = true,
                 UnlockSteps = QuestDefs.Unlock[Job.Nin],   // "Ayame and Kaede"
                 GrindCfgFor = GrindCfg, Tag = "nin",
             }, lifecycle: lifecycle, chat: chat, magic: magic, party: party).RunAsync(ct);
-    }
 
     static readonly HashSet<ushort> NinKeep =
-        GearRoutines.KeepSet(Gear, 1126, 1127, Shihei);   // never sell the shadow tools
-
-    // Ominous_Cloud (the ninja-tool vendor) by zone: it sits IN each nation's shop city, so a NIN buys Shihei
-    // right where it already visits the AH — Windurst Woods (the default AhZone), Southern San d'Oria, Port Bastok.
-    static readonly Dictionary<ushort, (uint npc, float x, float y, float z)> NinjaVendor = new()
-    {
-        [241] = (17764582, -20.632f, -2.939f, -40.554f),   // Windurst Woods
-        [230] = (17719535, -41.550f,  1.999f,  -2.845f),   // Southern San d'Oria
-        [236] = (17744022, 146.962f,  8.499f, -63.316f),   // Port Bastok
-    };
+        GearRoutines.KeepSet(Gear, 1126, 1127, Shihei, UtsuIchiScroll);   // never sell the shadow tools/scroll
 
     LevelGrind.Config GrindCfg(byte job) => new()
     {
         HomeNation = Nation.Windurst,
         AhZone = AhZone,
-        BuyItems = GearRoutines.BuyList(Gear).ToArray(),
+        // NIN main also AH-buys the Utsusemi scroll (learned in Equip at lv15) and stocks Shihei (ToolStack).
+        // Both are on the AH (the AH bot keeps it full). Gated to the NIN phase so WAR prereq days don't spend on it.
+        BuyItems = (job == Job.Nin ? GearRoutines.BuyList(Gear).Append(UtsuIchiScroll) : GearRoutines.BuyList(Gear)).ToArray(),
+        ToolStack = job == Job.Nin ? Shihei : (ushort)0,
+        ToolCount = job == Job.Nin ? 40 : 0,
         GearTable = Gear,
         Keep = NinKeep,
         Equip = Equip,
@@ -91,32 +84,12 @@ public sealed class NinBrain(
         Tag = "nin",
     };
 
-    // Utsusemi is GM-granted (the Utsu: Ichi scroll isn't sold by any NPC or on the AH here — quest/drop only),
-    // same as BLU/SMN spells. Off the main loop: at NIN-main lv15, request spell 338 once; JobKits casts it.
-    async Task RequestUtsusemiWhenEligible(CancellationToken ct)
-    {
-        if (chat is null) return;
-        try
-        {
-            while (!ct.IsCancellationRequested)
-            {
-                if (p.World.MainJob == Job.Nin && p.World.MainJobLevel >= 15 && !magic.Known(Spell.UtsusemiIchi))
-                { await GmGrant.RequestSpell(p, chat, ((ushort)Spell.UtsusemiIchi).ToString(), "nin", ct); return; }
-                await Task.Delay(60_000, ct);
-            }
-        }
-        catch (OperationCanceledException) { }
-    }
-
     async Task Equip(CancellationToken ct)
     {
         (byte slot, ushort item)? phase = p.World.MainJob == Job.War ? (EquipSlot.Main, WarBrain.Weapon20) : null;
         var (n, total) = await GearRoutines.EquipByLevel(gear, p, Gear, ct, phase);
         Log.Info($"[nin] equipped {n}/{total} (job {p.World.MainJob} lvl {p.World.MainJobLevel}, katana={gear.SkillLevel(KatanaSkill)})");
-        // Stock Shihei from Ominous_Cloud when NIN-main and standing in its shop city (Utsusemi consumes one per
-        // cast). NPC-shop-bought, not AH (Shihei isn't AH-listed) and not GM-granted (it's a farmable consumable).
-        if (p.World.MainJob == Job.Nin && p.World.MainJobLevel >= 15 && inv.CountOf(Shihei) < 20
-            && NinjaVendor.TryGetValue(zoning.CurrentZone, out var v))
-            await ShopRoutines.BuyFromNpc(shop, nav, p, v.npc, v.x, v.y, v.z, Shihei, 40, ct);
+        if (p.World.MainJob == Job.Nin && p.World.MainJobLevel >= 15)
+            await MagicRoutines.LearnFromScroll(inv, magic, p, UtsuIchiScroll, Spell.UtsusemiIchi, ct, "nin");
     }
 }
