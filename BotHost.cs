@@ -237,6 +237,7 @@ public static class BotHost
         for (int attempt = 1; ; attempt++)
         {
             PrepareForLogout(caps, shutdownStart + budgetMs);
+            WaitOutDamageOverTime(caps, shutdownStart + budgetMs);
             bool lastTry = attempt >= 4 || Environment.TickCount64 + 40_000 + 15_000 > shutdownStart + budgetMs;
             if (conn.TryLogout(abortOnHit: !lastTry)) break;
             Log.Always($"[logout] attempt {attempt} interrupted — clearing the attacker and starting the logout again");
@@ -244,6 +245,28 @@ public static class BotHost
         conn.Stop();   // logout already done above; this just stops the send/recv loops
         Log.Always("session ended cleanly.");
         return 0;
+    }
+
+    // HP falling with nothing hitting us = a damage-over-time effect (Death_Wasp poison). Each tick cancels the
+    // logout server-side exactly like a hit, and there is no attacker to fight: Mesae's retry ran into the
+    // budget's blind final hold, poison cancelled it, and the char was left link-dead by a Goobbue (2026-10-07).
+    // Wait until 8s pass with no HP drop (budget permitting, keeping the 40s hold + margin) before the countdown.
+    static void WaitOutDamageOverTime(CapabilitySet caps, long deadlineTick)
+    {
+        var w = caps.Perception.World;
+        byte last = w.Hpp;
+        long start = Environment.TickCount64, lastDrop = start - 5_000;   // observe >= 3s: poison ticks every ~3s
+        bool logged = false;
+        while (Environment.TickCount64 + 50_000 < deadlineTick && !caps.Combat.Dead)
+        {
+            Thread.Sleep(500);
+            long now = Environment.TickCount64;
+            if (w.Hpp < last) lastDrop = now;
+            last = w.Hpp;
+            if (KillRoutine.AttackerOnMe(caps.Perception) is not null) return;   // a real attacker: the fight path handles it
+            if (now - lastDrop >= 8_000) return;
+            if (!logged && now - start > 3_500) { logged = true; Log.Always("[logout] HP still dropping with no attacker (poison/DoT) — waiting it out before the countdown"); }
+        }
     }
 
     // Before each logout attempt: never log out KO'd (a dead logout re-strands the char in zone-0 limbo on next
