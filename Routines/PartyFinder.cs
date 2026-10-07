@@ -125,7 +125,7 @@ public sealed class PartyFinder(IPerception p, IParty party, IChat chat, INaviga
             if (_accepted.ContainsKey(sender)) continue;
             if ((PartyRoles.Role.None != (role & need)) || (job != 0 && (PartyRoles.CanFillOf(job) & need) != 0))
             {
-                _accepted[sender] = (role, level, w.NowMs, 0);
+                _accepted[sender] = (job != 0 ? PartyRoles.CanFillOf(job) : role, level, w.NowMs, 0);   // every slot they can fill
                 // Carry the rendezvous: invites need the recruit's ENTITY visible (~50y), and shout only
                 // reaches 180y — the recruit walks to us. Humans read "meet at (X Z)" just fine.
                 chat.Tell(sender, $"sweet - sending an invite! meet at ({w.X:F0} {w.Z:F0})");
@@ -169,16 +169,36 @@ public sealed class PartyFinder(IPerception p, IParty party, IChat chat, INaviga
     }
 
     /// Party is viable to START grinding: Tank + Healer + DD minimum (recruiter counts itself).
-    public bool MinimumMet()
+    /// Minimum start comp: three DIFFERENT members can cover Tank, Healer and DD. Counts joined members by their
+    /// announced JOB (the roster) plus promised recruits not yet in it. The old check OR'd primary roles of
+    /// PROMISES only, and promises are deleted once the recruit joins, so a full PLD/RDM/RNG/NIN party read as
+    /// "no healer" and idled the whole 30-min budget (Kougrou, 2026-10-07).
+    public bool MinimumMet() =>
+        CanStaff(Fills(), [PartyRoles.Role.Tank, PartyRoles.Role.Healer, PartyRoles.Role.Dps]);
+
+    List<PartyRoles.Role> Fills()
     {
-        var have = RolesInParty();
-        return have.HasFlag(PartyRoles.Role.Tank) && have.HasFlag(PartyRoles.Role.Healer) && have.HasFlag(PartyRoles.Role.Dps);
+        var roster = PartyCombat.Roster(p);
+        var fills = roster.Values.Select(PartyRoles.CanFillOf).ToList();          // joined (incl. us)
+        foreach (var (name, a) in _accepted)
+            if (!roster.ContainsKey(name)) fills.Add(a.role);                     // promised, not yet announced
+        return fills;
+    }
+
+    // Can each slot be given to a distinct member whose fill covers it? (tiny backtracking assignment)
+    static bool CanStaff(List<PartyRoles.Role> fills, PartyRoles.Role[] slots, int i = 0, int used = 0)
+    {
+        if (i == slots.Length) return true;
+        for (int m = 0; m < fills.Count; m++)
+            if ((used & (1 << m)) == 0 && fills[m].HasFlag(slots[i]) && CanStaff(fills, slots, i + 1, used | (1 << m)))
+                return true;
+        return false;
     }
 
     PartyRoles.Role RolesInParty()
     {
-        var have = PartyRoles.CanFillOf(p.World.MainJob);            // us
-        foreach (var kv in _accepted) have |= kv.Value.role;         // promised roles of joiners
+        var have = PartyRoles.Role.None;
+        foreach (var f in Fills()) have |= f;
         return have;
     }
 

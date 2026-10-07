@@ -233,6 +233,7 @@ public sealed class Entity
     public byte Rotation;
     public byte Hpp;
     public long LastSeenMs;     // for aging out stale entities
+    public uint ClaimId;        // mob's claim owner (0x00E UPDATE_STATUS @0x2C, m_OwnerID); 0 = unclaimed
 
     // Type/allegiance, learned from a 0x00E carrying UPDATE_HP (persists across pos-only updates).
     public byte Allegiance;     // 0x00E @0x29: 0=MOB, 1=PLAYER, 2-4=town NPC nation, 5-6=beastmen

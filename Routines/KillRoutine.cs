@@ -183,4 +183,23 @@ public static class KillRoutine
         }
         return (mx, mz - 7f);
     }
+
+    /// The mob hitting US right now (0x028 attack tracking within `withinMs`), nearest first; null if none.
+    public static Entity? AttackerOnMe(IPerception p, long withinMs = 8000) =>
+        p.Nearest(e => e.IsMob && e.Hpp > 0 && CombatRoutines.NotObject(e)
+            && p.World.Attackers.TryGetValue(e.Id, out var a) && a.target == p.World.MyId && p.World.NowMs - a.ms < withinMs);
+
+    /// Fight back against whatever is hitting us mid-walk (travel legs, meet walks, logout prep). You can't
+    /// outrun FFXI hate: walking on just stacks hits until death (Nutha walked a party meet-spot leg from 100%
+    /// to KO without one swing, 2026-10-07; no travel path had any defense). Returns true if it fought.
+    public static async Task<bool> DefendSelf(ICombat combat, IPerception p, INavigation nav, IGear gear,
+                                              Hooks h, CancellationToken ct)
+    {
+        if (combat.Dead || AttackerOnMe(p) is not { } mob) return false;
+        nav.Stop();
+        XiHeadless.Log.Auto($"[{h.Tag}] '{mob.Name}' is hitting us mid-walk — fighting back");
+        await Fight(combat, p, nav, gear, mob, fightCon: 3, h, breakOffHpp: 0, ct);
+        if (combat.Engaged) combat.Disengage();
+        return true;
+    }
 }

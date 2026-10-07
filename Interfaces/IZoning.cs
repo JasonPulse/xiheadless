@@ -19,4 +19,8 @@ public interface IZoning
     // Fallback for a target zone the walk+chocobo route graph can't reach (expansion/airship-gated). Fires only
     // when Route is null; returns true once warped. Null (default) = no warp, the travel just fails.
     Func<ushort, CancellationToken, Task<bool>>? WarpFallback { get; set; }
+
+    // Self-defense while walking a route leg: polled during the walk, returns true after fighting off an
+    // attacker (the leg then resumes). Null (default) = walk on regardless.
+    Func<CancellationToken, Task<bool>>? Defend { get; set; }
 }

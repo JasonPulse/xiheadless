@@ -279,6 +279,8 @@ public static class PacketParsers
                 e.TypeKnown = true;
             }
         }
+        if (!isPc && (mask & 0x02) != 0 && b.Length >= 0x30)   // UPDATE_STATUS -> claim owner (m_OwnerID @0x2C)
+            e.ClaimId = U32(b, 0x2C);
         if ((mask & 0x10) != 0 && b.Length >= 0x34)        // UPDATE_LOOK -> model (look_t @0x30)
         {
             var lk = new EntityLook { Type = U16(b, 0x30), Known = true };
@@ -305,15 +307,18 @@ public static class PacketParsers
     }
 
     // 0x01b JOB_INFO (s2c/0x01b_job_info.h, GP_MYROOM_DANCER): mjob@8, sjob@11,
-    // job_lev[16]@16 (level per job), bp_base[7]@32 (STR..CHR), hpmax@60(i32), mpmax@64(i32).
+    // job_lev[16]@16 (jobs 0-15), bp_base[7]@32 (STR..CHR), hpmax@60(i32), mpmax@64(i32),
+    // job_lev2[0x18]@72 (ALL jobs 0-23). Jobs 16+ (BLU/COR/PUP/DNC/SCH/GEO/RUN) live ONLY in job_lev2: reading
+    // just job_lev left them at level 0, so the seesaw saw "COR=0" and mis-planned every advanced-job day.
     static void JobInfo(ReadOnlySpan<byte> b, WorldState w)
     {
         if (b.Length < 68) return;
         w.MainJob = b[8];
         w.SubJob = b[11];
-        if (w.MainJob < 16) w.MainJobLevel = b[16 + w.MainJob];
-        if (w.SubJob < 16) w.SubJobLevel = b[16 + w.SubJob];
-        for (byte j = 1; j < 16; j++) w.JobLevels[j] = b[16 + j];   // full per-job table (seesaw leveling reads it)
+        var lev = b.Length >= 72 + 0x18 ? b.Slice(72, 0x18) : b.Slice(16, 16);
+        for (byte j = 1; j < lev.Length; j++) w.JobLevels[j] = lev[j];   // full per-job table (seesaw leveling reads it)
+        if (w.MainJob < lev.Length) w.MainJobLevel = lev[w.MainJob];
+        if (w.SubJob < lev.Length) w.SubJobLevel = lev[w.SubJob];
         for (int i = 0; i < 7; i++) w.Stats[i] = U16(b, 32 + i * 2);
         w.MaxHp = (int)U32(b, 60);
         w.MaxMp = (int)U32(b, 64);

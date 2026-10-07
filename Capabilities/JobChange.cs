@@ -26,6 +26,9 @@ public sealed class JobChange(ISession s, IDelivery delivery) : IJobChange
 {
     public async Task<bool> ChangeJob(byte mainJob, byte supportJob, CancellationToken ct = default)
     {
+        // Already this main/sub: nothing to change. Without this the lifecycle's every-login "set my jobs" probe
+        // trekked to the nearest Mog House city from the field (Gamae: Meriphataud -> Port Jeuno and back, daily).
+        if (s.State.MainJob == mainJob && (supportJob == 0 || s.State.SubJob == supportJob)) return true;
         // Need Moogle-menu access. A zone with an Explorer/Nomad Moogle (MISC_MOGMENU) allows it
         // directly; otherwise enter the Mog House first (any city has one or the other).
         ushort zone = s.State.ZoneId;

@@ -40,16 +40,23 @@ public static class PartyCombat
     }
 
     /// Roster of announced jobs (name -> job id), read from party chat. Includes ourselves.
+    /// Reads the chat history, not just each sender's LAST party line: a member's JOB line was overwritten by
+    /// its next line (ENDAT/START/CAMP), dropping it from the roster until the next re-announce.
     public static Dictionary<string, byte> Roster(IPerception p)
     {
         var w = p.World;
-        var roster = new Dictionary<string, byte>(StringComparer.OrdinalIgnoreCase) { [w.MyName] = w.MainJob };
-        foreach (var (sender, (msg, _)) in w.PartyChat.ToArray())
+        var roster = new Dictionary<string, byte>(StringComparer.OrdinalIgnoreCase);
+        void Take(string sender, string msg)
         {
-            if (!msg.StartsWith("JOB ", StringComparison.OrdinalIgnoreCase)) continue;
+            if (!msg.StartsWith("JOB ", StringComparison.OrdinalIgnoreCase)) return;
             var parts = msg.Split(' ', StringSplitOptions.RemoveEmptyEntries);
             if (parts.Length >= 2 && PartyRoles.ParseJobToken(parts[1]) is var j and > 0) roster[sender] = j;
         }
+        ChatLine[] log;
+        try { log = w.ChatLog.ToArray(); } catch (ArgumentException) { log = []; }   // receive thread appends
+        foreach (var c in log) if (c.Kind is 4 or 15) Take(c.Sender, c.Message);     // oldest -> newest
+        foreach (var (sender, (msg, _)) in w.PartyChat.ToArray()) Take(sender, msg);   // latest line wins
+        roster[w.MyName] = w.MainJob;
         return roster;
     }
 
@@ -134,24 +141,59 @@ public static class PartyCombat
 
     // ---- pull execution ---------------------------------------------------------------------------------
 
-    /// The pull: grab hate so the mob chases to camp, then walk home. A tank Provokes (clean, hate-only). Any
-    /// other puller (a SMN/DD voted puller in a thin party that fielded no tank/BRD/ranged) falls back to a
-    /// Shoot then a MELEE TAG (Engage), one of which grabs it. Without this a SMN puller logged 700 'pulling'
-    /// lines with 0 grabbed and 0 kills, the whole party day wasted (user 2026-09-16). The melee tag lets the
-    /// mob beat on the puller en route (not the hate-only ideal), but a mob dragged home beats one that never
-    /// moves; the party then kills it at camp.
-    public static async Task RangedPull(ICombat combat, IPerception p, INavigation nav, uint mobId,
-                                        (float x, float z) camp, CancellationToken ct)
+    /// The pull: GRAB the mob, CONFIRM it is ours, then drag it home without outrunning it. Escalates through
+    /// the puller's tools until the server shows the claim: the job's hate JA (Provoke/Jump) from range, then a
+    /// ranged Shot, then a MELEE TAG from inside melee range. The old version fired these blind and walked
+    /// home regardless: an Engage from 13y never swings, so a COR/RDM puller (no Provoke, no ammo) logged 219
+    /// "pulling" lines in one party day with 0 grabs and 0 kills (Gamae, 2026-10-05). Returns false when the
+    /// grab never landed, so the caller can move on instead of dragging nothing home.
+    public static async Task<bool> RangedPull(ICombat combat, IPerception p, INavigation nav, uint mobId,
+                                              (float x, float z) camp, CancellationToken ct)
     {
-        if (!await combat.UseAbility(PullAbilityFor(p.World.MainJob), mobId, ct))
+        bool Grabbed() => p.World.Entities.TryGetValue(mobId, out var m)
+            && (ClaimedByParty(p, m) || m.Hpp < 100
+                || (p.World.Attackers.TryGetValue(mobId, out var a) && a.target == p.World.MyId));
+        async Task<bool> Await(int ms)
         {
-            combat.RangedAttack(mobId);                 // ranged jobs (RNG/COR) shoot to grab from range
-            await Task.Delay(500, ct);
-            if (!combat.Engaged) await combat.Engage(mobId);   // universal melee tag when nothing ranged landed (BST)
+            for (int t = 0; t < ms && !Grabbed() && !ct.IsCancellationRequested; t += 250) await Task.Delay(250, ct);
+            return Grabbed();
         }
-        await Task.Delay(800, ct);
-        nav.MoveTo(camp.x, camp.z);                     // drag it home; the party engages at camp
+
+        bool got = await combat.UseAbility(PullAbilityFor(p.World.MainJob), mobId, ct) && await Await(2500);
+        if (!got) { combat.RangedAttack(mobId); got = await Await(3000); }   // RNG/COR shoot from range
+        if (!got)
+        {
+            // MELEE TAG: close to swing range and hit it once. Hate is what makes it follow; one connect does it.
+            await combat.Engage(mobId, ct);
+            for (int t = 0; t < 20_000 && !Grabbed() && !ct.IsCancellationRequested; t += 250)
+            {
+                if (p.World.Entities.GetValueOrDefault(mobId) is not { } m || m.Hpp == 0) break;
+                if (p.DistanceTo(m.X, m.Z) > 2.5f) nav.Follow(mobId); else { nav.Stop(); nav.Face(mobId); }
+                await Task.Delay(250, ct);
+            }
+            nav.Stop();
+            got = Grabbed();
+        }
+        if (combat.Engaged) combat.Disengage();   // walk home un-engaged; the hate keeps it chasing
+        if (!got) { Log.Info($"[pull] grab on 0x{mobId:X} never landed"); return false; }
+
+        // DRAG: walk straight home, then give it time to arrive. Never stall en route waiting for it: a mob that
+        // hangs back (ledge, slow pathing, TP moves from range) kept the puller standing still taking hits from
+        // 67% to 19% with no swing back (Drusho, 2026-10-07). Hate keeps it coming; the party engages at camp.
+        await NavRoutines.WalkTo(nav, p, camp.x, camp.z, within: 4f, ct, legTimeoutMs: 60_000);
+        for (int t = 0; t < 20_000 && !ct.IsCancellationRequested; t += 250)
+        {
+            if (p.World.Entities.GetValueOrDefault(mobId) is not { } m || m.Hpp == 0) break;
+            if (Geometry.Dist2D(m.X, m.Z, camp.x, camp.z) < 12f) break;   // arrived: the camp fight takes it from here
+            await Task.Delay(250, ct);
+        }
+        return true;
     }
+
+    /// The mob's server claim owner is us or a party member (0x00E @0x2C). Ground truth for "the pull landed"
+    /// and for "this camp mob is ours", where hate packets and HP% are only indirect hints.
+    public static bool ClaimedByParty(IPerception p, Entity e) =>
+        e.ClaimId != 0 && (e.ClaimId == p.World.MyId || p.World.PartyMembers.ContainsKey(e.ClaimId));
 
     /// The PULL ability each puller job grabs with, its OWN tool rather than a borrowed one. Provoke (WAR native
     /// + every /WAR sub) is the enmity pull for 13 of the 15 fleet puller jobs. DRG leads with Jump, a native

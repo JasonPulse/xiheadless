@@ -129,6 +129,8 @@ public sealed class JobLifecycle(
         _ = RequestChocoboWhenEligible(ct);   // non-blocking: GM-grant the chocobo mount key item at lv20 so travel legs ride
         if (chat is { } gmChat)               // GM-warp fallback for zones the walk/chocobo graph can't reach (Kazham/expansion)
             zoning.WarpFallback = (zid, c) => GmGrant.RequestTravel(p, gmChat, zid, cfg.Tag, c);
+        // Every travel leg fights back when jumped (the one shared KillRoutine), instead of walking on to a KO.
+        zoning.Defend = c => KillRoutine.DefendSelf(combat, p, nav, gear, new KillRoutine.Hooks { Tag = cfg.Tag }, c);
         var seesaw = new JobLeveling(p, jobs, zoning);
         Log($"lifecycle start: {(cfg.Advanced ? "ADVANCED" : "basic")} main={JN(cfg.MainJob)} sub={JN(cfg.SubJob)} " +
             $"(now {JN(p.World.MainJob)} {p.World.MainJobLevel} / levels {JN(cfg.MainJob)}={LevelOf(cfg.MainJob)} {JN(cfg.SubJob)}={LevelOf(cfg.SubJob)})");
@@ -342,6 +344,11 @@ public sealed class JobLifecycle(
                     // Without this the party camped where the traveler landed (~700y off the mobs in Konschtat)
                     // and roamed empty all session (user 2026-08-27). Null leg-camp -> old behavior (form where we stand).
                     MeetSpot = huntTarget is (string mz, ushort _) ? Game.HuntZones.CampFor(g.HomeNation, mz) : null,
+                    Defend = c => KillRoutine.DefendSelf(combat, p, nav, gear, new KillRoutine.Hooks
+                    {
+                        UseAbilities = g.UseAbilities, EmergencyHeal = g.EmergencyHeal,
+                        WepSkillForLevel = g.WepSkillForLevel, Tag = cfg.Tag,
+                    }, c),
                     SoloGrind = c => new LevelGrind(p, nav, combat, zoning, gear, ah, delivery, inv, shop, g).RunAsync(c),
                     PartyGrind = (pp, c) => pg.Beat(pp, c),
                     Tag = cfg.Tag,

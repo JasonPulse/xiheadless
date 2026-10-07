@@ -246,14 +246,23 @@ public sealed class MapConnection : ISession
     public void Stop()
     {
         if (System.Threading.Interlocked.Exchange(ref _stopping, 1) == 1) return;
-        // Clean logout: send 0x0E7 reqlogout (Mode=LogoutOn, Kind=Logout). The server applies a
-        // LEAVEGAME effect then runs the full logout (shuttingDown=1, char save) and only then is
-        // accounts_sessions DELETEd. The whole procedure takes ~30s; if we disconnect early the row
-        // falls to the slow MAX_TIME_LASTUPDATE d/c timeout instead -> ORPHANED session -> the next
-        // login fails 0xA2 on the unique-accid constraint. So hold the connection (SendLoop keeps the
-        // 0x015 keepalive flowing, so we're not flagged link-dead) for the full logout. It's ~30s of
-        // in-game logout time which works out to ~40s real before the session is safely cleared
-        // (user-confirmed from watching it in-game), so hold 40s.
+        if (!_loggedOut) TryLogout(abortOnHit: false);
+        _running = false;
+    }
+
+    /// Clean logout: send 0x0E7 reqlogout (Mode=LogoutOn, Kind=Logout). The server applies a LEAVEGAME
+    /// effect then runs the full logout (shuttingDown=1, char save) and only then is accounts_sessions
+    /// DELETEd. The whole procedure takes ~30s; if we disconnect early the row falls to the slow
+    /// MAX_TIME_LASTUPDATE d/c timeout instead -> ORPHANED session -> the next login fails 0xA2 on the
+    /// unique-accid constraint. So hold the connection (SendLoop keeps the 0x015 keepalive flowing, so we're
+    /// not flagged link-dead) for the full logout: ~30s in-game, ~40s real before the session is cleared.
+    /// abortOnHit: LEAVEGAME carries the server's on-DAMAGE removal flag (status_effects.sql 'leavegame'),
+    /// so one hit during the countdown CANCELS the logout server-side. Holding blindly then closed the socket
+    /// on a char still in the world, and the mob killed it link-dead: 16 of 96 fleet sessions logged in dead
+    /// (2026-09-30..10-07). With abortOnHit the hold returns false at the first HP drop, connection still up,
+    /// so the caller can deal with the attacker and try again.
+    public bool TryLogout(bool abortOnHit)
+    {
         // InZone can be MOMENTARILY false mid-rezone (mog house 241->241, zone line) while the session is
         // very much alive server-side — skipping the logout then exits in milliseconds and ORPHANS the row
         // (the exact "instant stop, no 30s logout + 10s db clear" failure). If we were EVER zoned, the
@@ -264,12 +273,25 @@ public sealed class MapConnection : ISession
         {
             Enqueue(BuildReqLogout());
             Log.Always("[logout] sent 0x0E7 — holding session 40s for the server's logout timer + db clear");
-            Thread.Sleep(40000);
+            byte last = State.Hpp;
+            for (int t = 0; t < 40000; t += 250)
+            {
+                Thread.Sleep(250);
+                byte now = State.Hpp;
+                if (abortOnHit && now < last && t < 30000)   // past ~30s the server has already run leaveGame
+                {
+                    Log.Always($"[logout] hit during the logout countdown (HP {last}->{now}%) — the server cancelled it");
+                    return false;
+                }
+                last = now;
+            }
         }
         else if (_everZoned)
             Log.Always("[logout] WARNING: session was live but InZone never returned (dead re-zone?) — exiting without 0x0E7; the server row will orphan to the d/c timeout");
-        _running = false;
+        _loggedOut = true;
+        return true;
     }
+    bool _loggedOut;
 
     static byte[] BuildReqLogout()
     {
@@ -295,6 +317,10 @@ public sealed class MapConnection : ISession
             int n;
             try { n = Rx(buf); }
             catch (SocketException sx) { if (sx.SocketErrorCode != SocketError.TimedOut) Log.Always($"[recv-sockerr] {sx.SocketErrorCode} — datagram DROPPED (a lost event frame reads as a reception gap)"); continue; }
+            // Re-stamp at RECEIPT: Rx blocks up to 1s, so the pre-Rx stamp is stale. Packets stamped with it
+            // tie a reader's "seen up to NowMs" marker and get skipped as old: a recruiter never saw the LFP
+            // tell that landed during the block and never invited (Gamae/Nutha live test, 2026-10-07).
+            State.NowMs = _clock.ElapsedMilliseconds;
             if (Dbg) Log.Info($"    [recv] {n}B head={Convert.ToHexString(buf.AsSpan(0, Math.Min(8, n)))}");
             if (n <= PH + 16) continue;
             var pkt = buf[..n];

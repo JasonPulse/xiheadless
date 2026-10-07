@@ -27,6 +27,7 @@ public sealed class Zoning(ISession s, INavigation nav) : IZoning
     // FALLBACK for zones the walk+chocobo graph can't reach (expansion/airship-gated, e.g. Kazham): a GM warp
     // request. Set by the caller (JobLifecycle). Only fires when Route is null; normal travel walks/chocobos.
     public Func<ushort, CancellationToken, Task<bool>>? WarpFallback { get; set; }
+    public Func<CancellationToken, Task<bool>>? Defend { get; set; }
 
     public void RequestZoneLine(uint rectId)
         => s.Enqueue(ZoneRequestPacket.Build(rectId, s.State.X, s.State.Y, s.State.Z));
@@ -97,7 +98,16 @@ public sealed class Zoning(ISession s, INavigation nav) : IZoning
     {
         nav.MoveTo(x, y, z);
         await Task.Delay(250, ct);                          // let the path compute / IsMoving latch
-        await WaitFor(() => !nav.IsMoving, 60000, ct);      // walk until the path is exhausted (or stuck)
+        for (int t = 0; t < 60000 && nav.IsMoving; t += 100)   // walk until the path is exhausted (or stuck)
+        {
+            await Task.Delay(100, ct);
+            if (Defend is { } defend && await defend(ct))   // jumped mid-leg: fight it, then resume the leg
+            {
+                if (s.State.Hpp == 0) break;
+                nav.MoveTo(x, y, z);
+                await Task.Delay(250, ct);
+            }
+        }
         nav.Stop();
     }
 

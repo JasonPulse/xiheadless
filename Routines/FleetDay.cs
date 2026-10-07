@@ -18,6 +18,7 @@ public static class FleetDay
         public Func<CancellationToken, Task<bool>> GoToHuntZone = _ => Task.FromResult(true);   // travel per the leveling guide; returns false ONLY if the zone is unreachable (no route)
         public Func<bool> AtHuntZone = () => true;   // true once we're IN the hunt zone — formation gates on this so a puller never parties in a city / en-route hub
         public (float x, float z)? MeetSpot;   // formation anchor: SHOUT ONLY REACHES 180y (server), so everyone converges here first
+        public Func<CancellationToken, Task<bool>>? Defend;   // fight off an attacker mid-walk (true = fought); null = walk on
         public Func<CancellationToken, Task> SoloGrind = _ => Task.CompletedTask;      // the brain's normal loop
         public Func<PartyCombat.PullPlan, CancellationToken, Task> PartyGrind = (_, _) => Task.CompletedTask;
         public Func<CancellationToken, Task>? Upkeep;                                   // null = idle the short day
@@ -52,27 +53,42 @@ public static class FleetDay
                 // 30+ min of overland hops just to arrive, so the formation budget must NOT start until we're
                 // there (user 2026-09-26). Keep travelling as long as we make zone progress; only SOLO if the
                 // zone is unreachable (no route) or we're genuinely stuck (no zone change over many attempts).
-                ushort lastZone = 0; int noProgress = 0;
-                while (!ct.IsCancellationRequested && !hooks.AtHuntZone())
+                // Arrive = travel to the hunt zone, then walk to the camp. Re-run whenever we end up outside the
+                // zone (a death on the walk-in home-points us to town: Nutha then recruited from Windurst Woods,
+                // 2026-10-07). False = no route / stuck: solo for the day.
+                async Task<bool> Arrive()
                 {
-                    if (!await hooks.GoToHuntZone(ct))
+                    ushort lastZone = 0; int noProgress = 0;
+                    while (!ct.IsCancellationRequested && !hooks.AtHuntZone())
                     {
-                        Log.Always($"[{hooks.Tag}] no route to the hunt zone — SOLO grind for the day (never partying in a city)");
-                        await hooks.SoloGrind(ct); return;
+                        if (combat.Dead) { await Task.Delay(2000, ct); continue; }   // the core death rule homepoints us first
+                        if (!await hooks.GoToHuntZone(ct))
+                        {
+                            Log.Always($"[{hooks.Tag}] no route to the hunt zone — SOLO grind for the day (never partying in a city)");
+                            return false;
+                        }
+                        if (hooks.AtHuntZone()) break;
+                        if (p.World.ZoneId == lastZone) noProgress++; else { noProgress = 0; lastZone = p.World.ZoneId; }
+                        if (noProgress >= 6)   // 6 full travel attempts with zero zone change = stuck en route, not slow
+                        {
+                            Log.Always($"[{hooks.Tag}] stuck en route to the hunt zone (no zone progress) — SOLO grind for the day");
+                            return false;
+                        }
+                        await Task.Delay(5000, ct);
                     }
-                    if (hooks.AtHuntZone()) break;
-                    if (p.World.ZoneId == lastZone) noProgress++; else { noProgress = 0; lastZone = p.World.ZoneId; }
-                    if (noProgress >= 6)   // 6 full travel attempts with zero zone change = stuck en route, not slow
+                    if (hooks.MeetSpot is { } meet)   // converge into shout range (180y) before recruiting
                     {
-                        Log.Always($"[{hooks.Tag}] stuck en route to the hunt zone (no zone progress) — SOLO grind for the day");
-                        await hooks.SoloGrind(ct); return;
+                        // Keep walking until we ARRIVE: one 120s leg covered ~500y on foot, and a zone-in can sit
+                        // 1000y from the camp (Meriphataud's south edge), so members recruited wherever the leg ran
+                        // out, 300-500y apart, out of each other's 180y shout range (live, 2026-10-07).
+                        nav.TryMount();
+                        await NavRoutines.WalkTo(nav, p, meet.x, meet.z, within: 3f, ct, legs: 8, legTimeoutMs: 120_000,
+                            defend: hooks.Defend);
                     }
-                    await Task.Delay(5000, ct);
+                    return true;
                 }
-                if (hooks.MeetSpot is { } meet)   // converge into shout range (180y) before recruiting
-                {
-                    await NavRoutines.WalkTo(nav, p, meet.x, meet.z, within: 3f, ct, legTimeoutMs: 120_000);
-                }
+                do { if (!await Arrive()) { await hooks.SoloGrind(ct); return; } }
+                while (!ct.IsCancellationRequested && !hooks.AtHuntZone());
                 var finder = new PartyFinder(p, party, chat, nav, hooks.Tag);
                 long jobAnnounceMs = 0;
                 // FORMATION BUDGET (user spec: SOLO BACKUP after 30 minutes). The whole form phase — seeking
@@ -84,6 +100,13 @@ public static class FleetDay
                 // (the brain's solo loop would wander us away from responders).
                 while (!ct.IsCancellationRequested && !finder.Step())
                 {
+                    if (!hooks.AtHuntZone())
+                    {
+                        long away = Environment.TickCount64;
+                        if (!await Arrive()) { await hooks.SoloGrind(ct); return; }
+                        formDeadline += Environment.TickCount64 - away;   // travel never burns the formation budget
+                        continue;
+                    }
                     if (Environment.TickCount64 > formDeadline)
                     {
                         Log.Always($"[{hooks.Tag}] no party after 30 min — SOLO fallback for the rest of the day");
@@ -96,6 +119,7 @@ public static class FleetDay
                 // — or the budget expires and we play with whoever joined.
                 while (!ct.IsCancellationRequested && finder.Recruiting && !finder.MinimumMet())
                 {
+                    if (PartyUnderAttack(p)) { Log.Always($"[{hooks.Tag}] party is already fighting — starting below minimum comp"); break; }
                     if (Environment.TickCount64 > formDeadline)
                     {
                         if (party.MemberCount > 0) { Log.Always($"[{hooks.Tag}] 30-min budget: starting with {party.MemberCount + 1} (below minimum comp)"); break; }
@@ -107,6 +131,12 @@ public static class FleetDay
                     finder.TopUp();
                     await Task.Delay(3000, ct);
                 }
+                // The START gate is the PARTY's, not just the recruiter's: the recruiter announces START when
+                // its gate passes, and a joiner holds until it hears one. Without this the joiner skipped the
+                // gate, voted itself puller and pulled while the recruiter sat in the comp wait and never
+                // swung at the camp mob (Drusho/Nutha live test, 2026-10-07).
+                if (finder.Recruiting) chat.Party(StartWord);
+                else await AwaitPartyStart(p, chat, hooks.Tag, formDeadline, ct);
                 Log.Always($"[{hooks.Tag}] party up ({party.MemberCount + 1} incl. me) — waiting for the JOB roster before the puller vote");
                 var plan2 = await VoteWhenRosterComplete(p, party, chat, hooks.Tag, ct);
                 Log.Always($"[{hooks.Tag}] puller vote: puller={plan2.Puller} style={plan2.Style} tank={plan2.Tank ?? "?"}");
@@ -122,6 +152,16 @@ public static class FleetDay
                 int lastSize = party.MemberCount;
                 while (!ct.IsCancellationRequested)
                 {
+                    // REUNITE after a death: the home point warps us to town, but the party is at camp. Travel
+                    // back before playing the role (live: a homepointed BRD puller kept "pulling" and recruiting
+                    // from Windurst Woods while its party waited in Meriphataud, 2026-10-07). Runs FIRST so TopUp
+                    // never recruits from a city.
+                    if (!hooks.AtHuntZone())
+                    {
+                        Log.Info($"[{hooks.Tag}] away from the hunt zone — travelling back to the party");
+                        if (!await Arrive()) { await hooks.SoloGrind(ct); return; }
+                        continue;
+                    }
                     PartyCombat.AnnounceJob(chat, p, ref jobAnnounceMs);
                     finder.TopUp();                                    // keep filling toward the full 6
                     if (party.MemberCount != lastSize && party.MemberCount > 0)
@@ -129,6 +169,7 @@ public static class FleetDay
                         // Membership changed -> the whole party re-announces + RE-VOTES on a complete roster
                         // (user rule: no puller decision until every member's job is known).
                         lastSize = party.MemberCount;
+                        chat.Party(StartWord);   // a member who joined after the first START hears the party is running
                         plan2 = await VoteWhenRosterComplete(p, party, chat, hooks.Tag, ct);
                         Log.Always($"[{hooks.Tag}] re-vote ({lastSize + 1} incl. me): puller={plan2.Puller} style={plan2.Style} tank={plan2.Tank ?? "?"}");
                     }
@@ -143,6 +184,37 @@ public static class FleetDay
                 }
                 return;
         }
+    }
+
+    const string StartWord = "START";
+
+    // A joiner's half of the START gate: hold until any member announces START (on party chat, after we joined),
+    // the shared 30-min formation deadline passes, or something is already attacking the party (a human-led
+    // party never says START; it just fights).
+    static async Task AwaitPartyStart(IPerception p, IChat chat, string tag, long deadline, CancellationToken ct)
+    {
+        long jobAnnounceMs = 0;
+        long since = p.World.NowMs - 60_000;   // a START sent while our join was landing still counts
+        Log.Info($"[{tag}] joined — holding for the party's START");
+        while (!ct.IsCancellationRequested && Environment.TickCount64 < deadline)
+        {
+            ChatLine[] log;
+            try { log = p.World.ChatLog.ToArray(); } catch (ArgumentException) { log = []; }   // receive thread appends
+            if (log.Any(c => c.Kind is 4 or 15 && c.Ms >= since && c.Message.Trim().Equals(StartWord, StringComparison.OrdinalIgnoreCase)))
+            { Log.Info($"[{tag}] party START heard"); return; }
+            if (PartyUnderAttack(p)) { Log.Info($"[{tag}] party is already fighting — starting"); return; }
+            PartyCombat.AnnounceJob(chat, p, ref jobAnnounceMs);
+            await Task.Delay(3000, ct);
+        }
+        Log.Info($"[{tag}] no START before the formation deadline — starting with the party as is");
+    }
+
+    // Something is hitting us or a party member right now: the party is effectively running, so a START wait ends.
+    static bool PartyUnderAttack(IPerception p)
+    {
+        var w = p.World;
+        return w.Attackers.ToArray().Any(a => w.NowMs - a.Value.ms < 10_000
+            && (a.Value.target == w.MyId || w.PartyMembers.ContainsKey(a.Value.target)));
     }
 
     static async Task IdleUntilLogout(CancellationToken ct)

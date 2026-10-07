@@ -11,10 +11,12 @@ public sealed class PartyGrind(IPerception p, ICombat combat, IMagic? magic, INa
                                IChat chat, LevelGrind.Config g, string tag)
 {
     (float x, float z)? _camp;    // the announcer's own anchor (first-beat position = the meet spot)
-    readonly HashSet<uint> _pullInvalid = new();   // targets that con'd -1 (no /check reply — object or out of
-                                                   // range): INVALID, never re-pick. Without this the puller
-                                                   // fixated on one -1 mob and re-con'd it thousands of times
-                                                   // (Grabu/Kougrou party days = 0 kills, user 2026-08-30).
+    // The shared per-entity con cache (cleared on level-up): a mob judged out of band (-1 no reply, too weak,
+    // too tough) is never re-picked until we level. Without it the puller re-/checked the NEAREST mob every
+    // beat: -1 objects thousands of times (Grabu/Kougrou, 2026-08-30), then a con-5 Goblin_Gambler 6,000x
+    // in one party day while the in-band cranes behind it got 0 kills (Gamae, 2026-10-05).
+    readonly Dictionary<uint, long> _grabFailMs = new();   // mob -> when a pull grab on it failed (3-min cool-off)
+    readonly RoamController _cons = new(nav, p, combat, new RoamController.Config { ConMin = 1, ConMax = g.ConMax, Tag = tag });
     long _dryPullMs, _gateLogMs, _scanLogMs;  // dry-pull log throttle; gate log throttle
     int _pullHeading;             // rotating roam-out heading (deg) for finding mobs beyond view range
     ((float x, float z) camp, (float x, float z) casters)? _myStations;   // announcer's SELF-VIEW: a bot
@@ -29,7 +31,7 @@ public sealed class PartyGrind(IPerception p, ICombat combat, IMagic? magic, INa
         if (combat.Dead) { await Task.Delay(2000, ct); return; }   // the core death rule owns recovery
         var w = p.World;
         bool iAmPuller = plan.Puller.Equals(w.MyName, StringComparison.OrdinalIgnoreCase);
-        var role = PartyRoles.PrimaryOf(w.MainJob);
+        var role = MyRole(plan);
 
         // Stations: the PULLER owns the geometry and announces on a strict cadence; everyone (announcer
         // included) reads back ONE source — the announced camp — falling back to the announcer's memory.
@@ -49,10 +51,29 @@ public sealed class PartyGrind(IPerception p, ICombat combat, IMagic? magic, INa
         // A mob at camp fighting the party -> play the role on it.
         if (CampMob(camp) is { } mob)
         {
-            if (role == PartyRoles.Role.Healer && await HealPass(ct)) return;   // cures outrank swings
+            if (role == PartyRoles.Role.Healer)
+            {
+                if (await HealPass(ct)) return;   // cures outrank swings
+                // Healers don't melee: swinging plus curing pulls hate off the tank. The RDM healer engaged
+                // the first Rolanberry pull, took the wasp's hate and died (2026-10-07). Hold the station and
+                // only fight what is actually hitting us.
+                if (KillRoutine.AttackerOnMe(p)?.Id != mob.Id)
+                {
+                    var post = MyStation(role, camp, st);
+                    if (p.DistanceTo(post.x, post.z) > 5f)
+                        await NavRoutines.WalkTo(nav, p, post.x, post.z, within: 3f, ct, legTimeoutMs: 10_000, defend: Defend);
+                    await Task.Delay(1000, ct);
+                    return;
+                }
+            }
             await KillRoutine.Fight(combat, p, nav, gear, mob, fightCon: 3, new KillRoutine.Hooks
             {
-                UseAbilities = g.UseAbilities, EmergencyHeal = g.EmergencyHeal,
+                // The party's TANK holds hate: Provoke whenever it's up, then the job kit. Provoke lived only in
+                // the PLD kit, so a voted NIN tank pulled, then let the RNG eat the wasp to 13% (2026-10-07).
+                UseAbilities = role == PartyRoles.Role.Tank
+                    ? async (m, c2, t) => { if (!await combat.UseAbility(Ability.Provoke, m, t)) await g.UseAbilities(m, c2, t); }
+                    : g.UseAbilities,
+                EmergencyHeal = g.EmergencyHeal,
                 WepSkillForLevel = g.WepSkillForLevel, Tag = tag,
             }, breakOffHpp: 0, ct);
             return;
@@ -64,12 +85,40 @@ public sealed class PartyGrind(IPerception p, ICombat combat, IMagic? magic, INa
 
         var mine = MyStation(role, camp, st);
         if (p.DistanceTo(mine.x, mine.z) > 5f)
-            await NavRoutines.WalkTo(nav, p, mine.x, mine.z, within: 3f, ct, legTimeoutMs: 20_000);
+            await NavRoutines.WalkTo(nav, p, mine.x, mine.z, within: 3f, ct, legTimeoutMs: 20_000, defend: Defend);
         else if (w.Hpp <= PartyCombat.ReadyHpp || w.Hpp < g.RestHpTrigger || (g.RestMpPct > 0 && w.Mpp < g.RestMpPct))
             await combat.Rest(Math.Max(g.RestHpTarget, PartyCombat.ReadyHpp + 10), g.RestMpPct,
                 () => p.AttackersOn(w.MyId, 8000) > 0, ct);   // members rest ABOVE the ready line — never park under the puller's gate
         await Task.Delay(1500, ct);
     }
+
+    // The role THIS member plays in THIS party, the same staffing the comp gate and puller vote use: the voted
+    // tank tanks; the party's healer is its WHM, else the first healer-capable member (RDM/SCH) by name. A job's
+    // primary role alone made the party's only healer (a RDM, primary DD) melee the camp mob.
+    PartyRoles.Role _role; long _roleMs = -1;
+    PartyRoles.Role MyRole(PartyCombat.PullPlan plan)
+    {
+        var w = p.World;
+        if (_roleMs >= 0 && w.NowMs - _roleMs < 15_000) return _role;
+        _roleMs = w.NowMs;
+        var roster = PartyCombat.Roster(p);
+        var healer = roster.Where(kv => PartyRoles.PrimaryOf(kv.Value) == PartyRoles.Role.Healer)
+                           .Concat(roster.Where(kv => PartyRoles.CanFillOf(kv.Value).HasFlag(PartyRoles.Role.Healer))
+                                         .OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase))
+                           .Select(kv => kv.Key).FirstOrDefault();
+        var primary = PartyRoles.PrimaryOf(w.MainJob);
+        _role = plan.Tank is { } t && t.Equals(w.MyName, StringComparison.OrdinalIgnoreCase) ? PartyRoles.Role.Tank
+              : primary == PartyRoles.Role.Healer || (healer?.Equals(w.MyName, StringComparison.OrdinalIgnoreCase) ?? false) ? PartyRoles.Role.Healer
+              : primary == PartyRoles.Role.Tank ? PartyRoles.Role.Dps   // a second tank who wasn't voted swings as DD
+              : primary;
+        return _role;
+    }
+
+    // Fight back if jumped mid-walk (members heading to station): the one shared KillRoutine defense.
+    Task<bool> Defend(CancellationToken ct) => KillRoutine.DefendSelf(combat, p, nav, gear, new KillRoutine.Hooks
+    {
+        UseAbilities = g.UseAbilities, EmergencyHeal = g.EmergencyHeal, WepSkillForLevel = g.WepSkillForLevel, Tag = tag,
+    }, ct);
 
     // Casters + healers sit at the announced caster camp; everyone else holds the melee camp.
     static (float x, float z) MyStation(PartyRoles.Role role, (float x, float z) camp,
@@ -85,7 +134,7 @@ public sealed class PartyGrind(IPerception p, ICombat combat, IMagic? magic, INa
             // (its own 20s stale guard) -> a party DD re-engaged one dead hare 23,664x, 0 kills (2026-08-03).
             && p.World.NowMs - e.LastSeenMs < 15_000
             && Geometry.Dist2D(e.X, e.Z, camp.x, camp.z) < 15f
-            && (e.Hpp < 100 || (p.World.Attackers.TryGetValue(e.Id, out var a)
+            && (e.Hpp < 100 || PartyCombat.ClaimedByParty(p, e) || (p.World.Attackers.TryGetValue(e.Id, out var a)
                 && p.World.NowMs - a.ms < 15_000
                 && (a.target == p.World.MyId || p.World.PartyMembers.ContainsKey(a.target)))));
 
@@ -122,10 +171,38 @@ public sealed class PartyGrind(IPerception p, ICombat combat, IMagic? magic, INa
                 await NavRoutines.WalkTo(nav, p, camp.x, camp.z, within: 3f, ct, legTimeoutMs: 15_000); await Task.Delay(2000, ct); return;
             }
 
+        // Jumped away from camp (roaming aggro, a link): that mob IS the next pull. Drag it home to the party
+        // rather than fighting it alone in the field; the camp fight takes it from there.
+        if (KillRoutine.AttackerOnMe(p) is { } jumped && Geometry.Dist2D(jumped.X, jumped.Z, camp.x, camp.z) >= 15f)
+        {
+            Log.Info($"[{tag}] '{jumped.Name}' jumped me {p.DistanceTo(camp.x, camp.z):F0}y out — dragging it to camp");
+            await NavRoutines.WalkTo(nav, p, camp.x, camp.z, within: 4f, ct, legTimeoutMs: 60_000);
+            return;
+        }
+        // The puller is a member too: never pull hurt or dry (live: a BLU puller at 19% HP pulled a goblin).
+        if (p.World.Hpp < PartyCombat.ReadyHpp || (g.RestMpPct > 0 && p.World.Mpp < g.RestMpPct))
+        {
+            await NavRoutines.WalkTo(nav, p, camp.x, camp.z, within: 3f, ct, legTimeoutMs: 15_000);
+            await combat.Rest(Math.Max(g.RestHpTarget, PartyCombat.ReadyHpp + 10), g.RestMpPct,
+                () => p.AttackersOn(p.World.MyId, 8000) > 0, ct);
+            return;
+        }
+        // ...and never pull before every member in the zone is AT camp (user rule: "in range"). A member still
+        // walking in from the zone line or back from a home point would otherwise watch the puller fight the
+        // pull alone (live: the BRD puller died solo on a crane while the BLU was still on the roster wait).
+        foreach (var (id, m) in p.World.PartyMembers.ToArray())
+            if (m.Zone == 0 && p.World.NowMs - m.LastSeenMs < 30_000 && m.Hpp > 0
+                && !(p.World.Entities.TryGetValue(id, out var me) && Geometry.Dist2D(me.X, me.Z, camp.x, camp.z) <= 25f))
+            {
+                if (p.World.NowMs - _gateLogMs > 60_000) { _gateLogMs = p.World.NowMs; Log.Info($"[{tag}] holding pulls — a member isn't at camp yet"); }
+                await NavRoutines.WalkTo(nav, p, camp.x, camp.z, within: 3f, ct, legTimeoutMs: 15_000); await Task.Delay(2000, ct); return;
+            }
         if (p.World.MainJob == Job.Brd && magic is not null) await SongPass(camp, st, ct);
 
         var target = p.Nearest(e => e.IsMob && e.Hpp == 100 && CombatRoutines.NotObject(e)
-            && !_pullInvalid.Contains(e.Id)                           // con=-1 invalid targets never re-picked
+            && e.ClaimId == 0                                          // someone else's claim can't be pulled
+            && (_cons.KnownCon(e.Id) is not int kc || (kc >= 1 && kc <= g.ConMax))   // out-of-band never re-picked this level
+            && (!_grabFailMs.TryGetValue(e.Id, out var gf) || p.World.NowMs - gf > 180_000)   // failed grab: retry later, not every beat
             && !CombatRoutines.SleepLockMobs.Any(n => e.Name.Contains(n, StringComparison.OrdinalIgnoreCase))
             && Geometry.Dist2D(e.X, e.Z, camp.x, camp.z) > 16f      // never the camp bubble; no outer cap —
             && nav.CanReach(e.X, e.Y, e.Z));                          // the puller walks out and drags it home
@@ -167,16 +244,11 @@ public sealed class PartyGrind(IPerception p, ICombat combat, IMagic? magic, INa
             return;
         }
         _dryPullMs = 0;
-        int con = await combat.Consider(target.Id, ct);
+        int con = await _cons.ConsiderCached(target.Id, ct);
         if (con < 1 || con > g.ConMax)
         {
             Log.Info($"[{tag}] pull candidate '{target.Name}' rejected: con={con} (want 1-{g.ConMax})");
-            // con=-1 = no /check reply (object like 'HomePoint#1'/'Signpost', or out of range): INVALID, drop it
-            // permanently so the puller stops re-picking the same one thousands of times (the party-day 0-kill
-            // storm — Daevou 'Valkeng' 4584x, Gedru '' 3785x, Laegru 'HomePoint#1' 1219x). Out-of-band cons
-            // (0/too-tough) are NOT cached — they re-judge as the party levels.
-            if (con == -1) _pullInvalid.Add(target.Id);
-            await Task.Delay(1000, ct); return;   // con is the sole arbiter
+            return;   // con is the sole arbiter; the cache keeps it out of selection until we level
         }
 
         Log.Info($"[{tag}] pulling '{target.Name}' (con {con}) at {p.DistanceTo(target.X, target.Z):F0}y from me, {Geometry.Dist2D(target.X, target.Z, camp.x, camp.z):F0}y from camp");
@@ -184,8 +256,8 @@ public sealed class PartyGrind(IPerception p, ICombat combat, IMagic? magic, INa
             await NavRoutines.WalkTo(nav, p, target.X, target.Z, within: 13f, ct, legTimeoutMs: 60_000);   // into Provoke/song range
         if (p.World.MainJob == Job.Brd && magic is not null)
             await PartyCombat.BardPull(magic, p, nav, target.Id, camp, ct);
-        else
-            await PartyCombat.RangedPull(combat, p, nav, target.Id, camp, ct);
+        else if (!await PartyCombat.RangedPull(combat, p, nav, target.Id, camp, ct))
+            _grabFailMs[target.Id] = p.World.NowMs;   // unreachable/ungrabbable right now: try another for a while
         await NavRoutines.WalkTo(nav, p, camp.x, camp.z, within: 4f, ct, legTimeoutMs: 30_000);
     }
 

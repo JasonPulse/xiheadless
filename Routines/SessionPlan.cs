@@ -33,6 +33,8 @@ public static class SessionPlan
 
         int roll = rng.Next(100);
         var mode = roll < PartyPct ? DayMode.Party : roll < PartyPct + SoloPct ? DayMode.Solo : DayMode.Upkeep;
+        // DEV ONLY (local live-party scenarios via runbot.sh): force today's mode. The fleet never sets it.
+        if (Enum.TryParse<DayMode>(Environment.GetEnvironmentVariable("XIBOT_DEV_DAYMODE"), true, out var forced)) mode = forced;
 
         (int lo, int hi) = mode == DayMode.Upkeep ? (UpkeepMinMinutes, UpkeepMaxMinutes) : (MinMinutes, MaxMinutes);
         int sessionMin = lo + rng.Next(hi - lo + 1);

@@ -74,8 +74,9 @@ public static class BotHost
         // server is back). Success is judged ONLY at the map 0x00A zone-in — the lobby is a separate
         // process that stays up when the map dies, so a lobby answer proves nothing.
         using var stop = new ManualResetEventSlim(false);
-        using var onTerm = PosixSignalRegistration.Create(PosixSignal.SIGTERM, c => { c.Cancel = true; stop.Set(); });
-        using var onInt = PosixSignalRegistration.Create(PosixSignal.SIGINT, c => { c.Cancel = true; stop.Set(); });
+        bool signalled = false;   // SIGTERM/SIGINT (k8s gives 90s before SIGKILL) vs. our own session cap (no clock)
+        using var onTerm = PosixSignalRegistration.Create(PosixSignal.SIGTERM, c => { c.Cancel = true; signalled = true; stop.Set(); });
+        using var onInt = PosixSignalRegistration.Create(PosixSignal.SIGINT, c => { c.Cancel = true; signalled = true; stop.Set(); });
         Timer? sessionCap = null;
         bool everConnected = false;
 
@@ -226,34 +227,63 @@ public static class BotHost
         Log.Always("stopping -> cancel brain + graceful logout");
         runner.Stop();
         autoCts.Cancel();   // stop the event auto-completer so it isn't finishing events mid-logout
-        // Never log out while KO'd — a dead logout re-strands the char in zone-0 limbo on next login.
-        // Revive at the home point first (home point must be set; see EnsureNewCharSetup).
+        // LOGOUT SAFELY. A hit during the ~30s countdown cancels the logout server-side (LEAVEGAME is removed on
+        // damage), so a blind hold left the char link-dead in the field and a mob killed it: 16 of 96 fleet
+        // sessions logged in dead. Like a player: revive if KO'd, kill whatever is on us, step away from the
+        // nearest mob, start the logout, and if a hit cancels it, deal with the attacker and start again.
+        // Budget: k8s SIGKILLs 90s after SIGTERM, so a signalled stop only retries while a full 40s hold fits.
+        long shutdownStart = Environment.TickCount64;
+        long budgetMs = signalled ? 85_000 : 300_000;
+        for (int attempt = 1; ; attempt++)
+        {
+            PrepareForLogout(caps, shutdownStart + budgetMs);
+            bool lastTry = attempt >= 4 || Environment.TickCount64 + 40_000 + 15_000 > shutdownStart + budgetMs;
+            if (conn.TryLogout(abortOnHit: !lastTry)) break;
+            Log.Always($"[logout] attempt {attempt} interrupted — clearing the attacker and starting the logout again");
+        }
+        conn.Stop();   // logout already done above; this just stops the send/recv loops
+        Log.Always("session ended cleanly.");
+        return 0;
+    }
+
+    // Before each logout attempt: never log out KO'd (a dead logout re-strands the char in zone-0 limbo on next
+    // login, so home-point first), fight off anything attacking us (one shared KillRoutine), then step ~35y
+    // away from the nearest mob so nothing walks into aggro range during the countdown.
+    static void PrepareForLogout(CapabilitySet caps, long deadlineTick)
+    {
+        var p = caps.Perception;
         if (caps.Combat.Dead)
         {
             Log.Always("stopping while KO'd -> homepoint-revive before logout");
             caps.Combat.Homepoint().GetAwaiter().GetResult();
             Thread.Sleep(8000);   // let the warp/revive land before we log out
+            return;
         }
-        // RETREAT BEFORE LOGOUT: the ~40s logout hold leaves the char standing defenseless, and several
-        // logout-window deaths came from mobs within aggro range at SIGTERM time (a goblin killed the WHM
-        // standing still, live-observed). Step away from the nearest mob for up to ~12s before starting it.
-        else
+        for (int fights = 0; fights < 3 && Environment.TickCount64 + 55_000 < deadlineTick; fights++)
         {
-            var st = caps.Perception.World;
-            var near = caps.Perception.Nearest(e => e.IsMob && e.Hpp > 0 && caps.Perception.DistanceTo(e.X, e.Z) < 30f);
-            if (near is not null)
+            if (KillRoutine.AttackerOnMe(p) is not { } attacker) break;
+            Log.Always($"stopping while '{attacker.Name}' is on us -> fighting it before the logout");
+            using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(Math.Max(5_000, deadlineTick - 55_000 - Environment.TickCount64)));
+            try
             {
-                float dx = st.X - near.X, dz = st.Z - near.Z;
-                float len = MathF.Max(0.5f, MathF.Sqrt(dx * dx + dz * dz));
-                Log.Info($"stopping near '{near.Name}' ({caps.Perception.DistanceTo(near.X, near.Z):F0}y) -> retreating before the logout hold");
-                caps.Nav.MoveTo(st.X + dx / len * 35f, st.Z + dz / len * 35f);
-                for (int t = 0; t < 12000 && caps.Nav.IsMoving; t += 400) Thread.Sleep(400);
-                caps.Nav.Stop();
+                KillRoutine.Fight(caps.Combat, p, caps.Nav, caps.Gear, attacker, fightCon: 3,
+                    new KillRoutine.Hooks { Tag = "logout" }, breakOffHpp: 0, cts.Token).GetAwaiter().GetResult();
             }
+            catch (OperationCanceledException) { }
+            if (caps.Combat.Engaged) caps.Combat.Disengage();
+            if (caps.Combat.Dead) { PrepareForLogout(caps, deadlineTick); return; }
         }
-        conn.Stop();   // sends 0x0E7 and holds ~40s for the server to complete the logout
-        Log.Always("session ended cleanly.");
-        return 0;
+        var st = p.World;
+        var near = p.Nearest(e => e.IsMob && e.Hpp > 0 && p.DistanceTo(e.X, e.Z) < 30f);
+        if (near is not null)
+        {
+            float dx = st.X - near.X, dz = st.Z - near.Z;
+            float len = MathF.Max(0.5f, MathF.Sqrt(dx * dx + dz * dz));
+            Log.Info($"stopping near '{near.Name}' ({p.DistanceTo(near.X, near.Z):F0}y) -> retreating before the logout hold");
+            caps.Nav.MoveTo(st.X + dx / len * 35f, st.Z + dz / len * 35f);
+            for (int t = 0; t < 12000 && caps.Nav.IsMoving; t += 400) Thread.Sleep(400);
+            caps.Nav.Stop();
+        }
     }
 
     // Continuously auto-complete any event the server pushes that the brain isn't deliberately driving.
