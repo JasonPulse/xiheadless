@@ -7,8 +7,8 @@ namespace XiHeadless.Routines;
 /// AH items; keep a stock (a crossing may outlast one application). USES the 0x037 USE_ITEM capability.
 public static class StealthRoutines
 {
-    public const ushort SilentOil = 4165;    // -> Sneak  (sound aggro)
-    public const ushort PrismPowder = 4164;  // -> Invisible (sight aggro)
+    public const ushort SilentOil = Game.Items.SilentOil;      // -> Sneak  (sound aggro)
+    public const ushort PrismPowder = Game.Items.PrismPowder;  // -> Invisible (sight aggro)
 
     public static bool HasPowders(IInventory inv) => inv.Has(SilentOil) && inv.Has(PrismPowder);
 
@@ -47,6 +47,28 @@ public static class StealthRoutines
         var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         _ = Maintain(inv, p, cts.Token);
         return cts;
+    }
+
+    /// TRAVEL PROTECTION for every walk across hostile ground (user 2026-10-07: all travel, chocobos too): ride if
+    /// we can (mounted travel isn't aggroed, and it's faster), else Sneak + Invisible from the powder stock, applied
+    /// standing still. Cheap when already covered (mounted, or both effects up), so it runs before every route leg
+    /// (BotHost wires it as the zoning BeforeLeg default) and before long in-zone walks. Without it the fleet
+    /// walked bare: a SAM19 and a NIN27 died to goblins/Quadavs walking to their party camp (2026-10-07).
+    public static async Task PrepareTravel(INavigation nav, IInventory inv, IPerception p, CancellationToken ct)
+    {
+        var w = p.World;
+        if (w.IsMounted) return;
+        if (nav.TryMount())   // eligible (lv20+, outdoor, off recast): give the server a moment to seat us
+            for (int t = 0; t < 3000 && !w.IsMounted && !ct.IsCancellationRequested; t += 250) await Task.Delay(250, ct);
+        // Use whatever stock we have: a broke bot that afforded only oils still gets Sneak (sound aggro).
+        bool needSneak = !w.IsSneaked && inv.Has(SilentOil), needInvis = !w.IsInvisible && inv.Has(PrismPowder);
+        if (w.IsMounted || (!needSneak && !needInvis)) return;
+        nav.Stop();
+        await Task.Delay(400, ct);   // settle: item use is interrupted by movement
+        Log.Info($"[travel] on foot — {(needSneak && needInvis ? "Sneak + Invisible" : needSneak ? "Sneak" : "Invisible")} for the walk");
+        await Apply(inv, p, ct);
+        for (int t = 0; t < 2000 && !((!needSneak || w.IsSneaked) && (!needInvis || w.IsInvisible)); t += 250) await Task.Delay(250, ct);
+        Log.Info($"[travel] stealth status: sneak={w.IsSneaked} invisible={w.IsInvisible}");   // used != landed
     }
 
     /// Apply Sneak + Invisible once (use both powders, spaced by the item recast). Returns true if both used.

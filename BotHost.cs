@@ -183,6 +183,8 @@ public static class BotHost
             // onLogout = the same stop signal SIGTERM uses, so a brain can end its own session (ILifecycle).
             caps = new CapabilitySet(conn, LoadZoneMesh(conn.State.ZoneId), stop.Set);
             conn.ZoneChanged += zid => caps.SwapMesh(LoadZoneMesh(zid));
+            // CORE: every route leg of every brain is protected travel (ride, else Sneak + Invisible).
+            caps.Zoning.BeforeLeg = c => Routines.StealthRoutines.PrepareTravel(caps.Nav, caps.Inventory, caps.Perception, c);
 
             autoCts = new CancellationTokenSource();
             var autoEvents = AutoCompleteEvents(caps, autoCts.Token);

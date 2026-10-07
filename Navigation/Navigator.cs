@@ -42,14 +42,15 @@ public sealed class Navigator : INavigation
         _s.Enqueue(Capabilities.ActionPacket.Build(Capabilities.ActionPacket.Dismount, st.MyId, st.MyIndex));
     }
 
-    public void TryMount()
+    public bool TryMount()
     {
         var st = _s.State;
-        if (st.IsMounted || st.MainJobLevel < 20 || !Game.Zonelines.HasMount(st.ZoneId)) return;
-        if (st.NowMs - _lastMountMs < 62_000) return;   // 60s server mount recast + margin
+        if (st.IsMounted || st.MainJobLevel < 20 || !Game.Zonelines.HasMount(st.ZoneId)) return false;
+        if (st.NowMs - _lastMountMs < 62_000) return false;   // 60s server mount recast + margin
         _lastMountMs = st.NowMs;
         Log.Info("[nav] mounting chocobo for travel");
         _s.Enqueue(Capabilities.ActionPacket.Build(Capabilities.ActionPacket.Mount, st.MyId, st.MyIndex));
+        return true;
     }
 
     /// Swap in the navmesh for the current zone (called after a zone change). Drops any

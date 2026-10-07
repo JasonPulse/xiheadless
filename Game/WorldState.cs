@@ -38,6 +38,8 @@ public sealed class WorldState
     // right when both halves are recombined. 0 = none, 255 = empty slot, as the server writes EFFECT_NONE.
     public ushort[] StatusIcons = new ushort[32];
     public bool IsMounted => System.Array.IndexOf(StatusIcons, (ushort)252) >= 0;   // EFFECT_MOUNTED (252) — on a chocobo
+    public bool IsSneaked => System.Array.IndexOf(StatusIcons, (ushort)71) >= 0;    // EFFECT_SNEAK (71)
+    public bool IsInvisible => System.Array.IndexOf(StatusIcons, (ushort)69) >= 0;  // EFFECT_INVISIBLE (69)
     public byte[] KnownSpellBits = System.Array.Empty<byte>(); // 0x0AA bitmap; bit N = spell N known
     public uint CurrentTargetId; // last target we engaged/acted on (for disengage etc.)
     public bool InZone;         // true once 0x00A zone-in parsed

@@ -164,7 +164,7 @@ public sealed class Inventory(ISession s) : IInventory
     public bool HasSellable(IReadOnlySet<ushort> keep)
     {
         foreach (var ((c, slot), id) in s.State.Inventory.ToArray())
-            if (c == 0 && slot != 0 && id != 0 && !keep.Contains(id) && !_stuck.Contains((c, slot)))
+            if (c == 0 && slot != 0 && id != 0 && !keep.Contains(id) && !Game.Items.NeverSell.Contains(id) && !_stuck.Contains((c, slot)))
                 return true;
         return false;
     }
@@ -182,7 +182,7 @@ public sealed class Inventory(ISession s) : IInventory
             (byte c, byte slot, ushort id, ushort qty)? pick = null;
             foreach (var ((c, slot), id) in s.State.Inventory.ToArray())   // snapshot — same mutation guard as every scan above
             {
-                if (c != 0 || slot == 0 || id == 0 || keep.Contains(id) || _stuck.Contains((c, slot))) continue;
+                if (c != 0 || slot == 0 || id == 0 || keep.Contains(id) || Game.Items.NeverSell.Contains(id) || _stuck.Contains((c, slot))) continue;
                 ushort q = s.State.InventoryQty.TryGetValue((c, slot), out var qq) && qq > 0 ? qq : (ushort)1;
                 pick = (c, slot, id, q);
                 break;

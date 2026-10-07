@@ -344,6 +344,7 @@ public sealed class JobLifecycle(
                     // Without this the party camped where the traveler landed (~700y off the mobs in Konschtat)
                     // and roamed empty all session (user 2026-08-27). Null leg-camp -> old behavior (form where we stand).
                     MeetSpot = huntTarget is (string mz, ushort _) ? Game.HuntZones.CampFor(g.HomeNation, mz) : null,
+                    PrepareTravel = c => StealthRoutines.PrepareTravel(nav, inv, p, c),
                     Defend = c => KillRoutine.DefendSelf(combat, p, nav, gear, new KillRoutine.Hooks
                     {
                         UseAbilities = g.UseAbilities, EmergencyHeal = g.EmergencyHeal,
@@ -433,12 +434,8 @@ public sealed class JobLifecycle(
 
         if (cfg.BeforeUnlock is { } bu) await bu(ct);
 
-        // Keep stealth on for the QUEST-INTERNAL treks too, not just the trek to the quest city. The PLD
-        // quest sends the char San d'Oria -> Ordelle's THROUGH La Theine (lv30-40 aggro); that leg was bare
-        // and a WAR 32 got ganged to death there mid-quest (status=3), looping the whole quest. BeforeLeg
-        // re-applies Sneak/Invis standing-still at every zone line for the duration of the quest.
-        if (cfg.StealthUnlock)
-            zoning.BeforeLeg = c2 => StealthRoutines.HasPowders(inv) ? StealthRoutines.Apply(inv, p, c2) : Task.CompletedTask;
+        // Quest-internal treks are protected like all travel: BotHost's BeforeLeg default rides or applies
+        // Sneak/Invis at every zone line (the PLD quest's bare La Theine leg got a WAR 32 ganged to death).
 
         // RESUME MID-CHAIN: QuestRunner replays from step 0 (it has no quest-state awareness), so a death
         // mid-unlock re-walked already-done quests. When the brain supplies UnlockChain metadata, drop the
@@ -458,12 +455,8 @@ public sealed class JobLifecycle(
         else steps = cfg.UnlockSteps ?? (IReadOnlyList<QuestStep>)System.Array.Empty<QuestStep>();
 
         // quests/trade/events are non-null on any Advanced brain (the ones that reach TryUnlock).
-        try
-        {
-            if (steps.Count > 0)
-                await new QuestRunner(p, nav, zoning, quests!, trade!, combat, gear, events!, inv).Run(steps, cfg.Tag, ct);
-        }
-        finally { zoning.BeforeLeg = null; }
+        if (steps.Count > 0)
+            await new QuestRunner(p, nav, zoning, quests!, trade!, combat, gear, events!, inv).Run(steps, cfg.Tag, ct);
 
         // Post-quest: the quest ends far from town — route to the NEAREST Mog House city to apply the change
         // (ChangeJobViaMogHouse picks the closest city itself; unlockCity is just the fallback hint).

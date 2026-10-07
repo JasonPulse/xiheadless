@@ -70,7 +70,6 @@ public sealed class LevelGrind(
         public bool CommitDropperTreks = false;                     // opt-in: dropper steers MARCH (no ordinary pulls until arrival)
         public bool PreferredOnly = false;                          // opt-in farm endgame: engage ONLY preferred targets (droppers);
                                                                     // ordinary exp mobs are ignored entirely (forced fights still happen)
-        public bool StealthTravel = false;                          // opt-in fragile bots: Sneak/Invis (consumables permitting) on zone-travel legs
         public ushort TravelVia;                                    // opt-in: route hunt-zone returns THROUGH this zone (0 = direct). Which zone line you enter by decides which mobs you spawn next to — a lvl-1 entering West Saruta by the east gate walks the goblin belt; entering from Windurst lands on the bee ground.
         public Func<CancellationToken, Task>? RecoveryTravel;       // opt-in: brain OWNS the hunt-zone return (revive far away, cross hostile ground). Called instead of the default travel; must leave the bot IN the hunt zone. For a baby whose home point is unreachable-safely (crystal relocation is unreliable) — e.g. switch to a strong job, walk, switch back.
         public Func<bool>? Done;                                    // optional exit condition (e.g. all farm items collected)
@@ -154,6 +153,8 @@ public sealed class LevelGrind(
             // came online and it died 36x (Mesae, user 2026-09-16). Same BuyAtLeast path as ammo.
             if (cfg.ToolStack != 0 && cfg.ToolCount > 0)
                 await ShopRoutines.BuyAtLeast(ah, p, inv, cfg.ToolStack, cfg.ToolCount, cfg.Keep, SellJunk, ct);
+            // Travel stock for every bot (ride if possible, else these): Sneak + Invisible powders, topped to 12.
+            await StealthRoutines.EnsureStock(ah, p, inv, 12, cfg.Keep, SellJunk, ct);
         }
 
         // 2) Reach the hunt zone. Path mode travels solo; fixed-zone mode with a Reunion defers entry to the
@@ -291,7 +292,7 @@ public sealed class LevelGrind(
                     await recov(ct);
                     _tooWeak = 0;
                     await cfg.Equip(ct);
-                    if (hunter != null && zoning.CurrentZone == ZoneNow()) await hunter.GoToCamp(ct);
+                    if (hunter != null && zoning.CurrentZone == ZoneNow()) await hunter.GoToCamp(ct, c => StealthRoutines.PrepareTravel(nav, inv, p, c));
                     continue;
                 }
                 // TravelVia: enter the hunt zone from the SAFE side. This leg goes to the waypoint zone;
@@ -299,36 +300,18 @@ public sealed class LevelGrind(
                 ushort dest = cfg.TravelVia != 0 && zoning.CurrentZone != cfg.TravelVia ? cfg.TravelVia : ZoneNow();
                 Log(dest == ZoneNow() ? $"traveling to hunt zone {ZoneNowName()} ({ZoneNow()})"
                                       : $"traveling to hunt zone {ZoneNowName()} via zone {dest} (safe-side entry)");
-                // StealthTravel bots that run out of powders must NOT cross unstealthed (the silent
-                // HasPowders fallthrough was a level-1 death loop: revive at Mhaura -> bare crossing -> die).
-                // The revive town has an AH — restock there before the leg.
-                if (cfg.StealthTravel && !StealthRoutines.HasPowders(inv) && Game.Zonelines.HasAuctionHouse(zoning.CurrentZone))
+                // Every leg is protected travel (BotHost's BeforeLeg: ride, else Sneak/Invis standing still at each
+                // zone line). Restock the powders first if we're out and the revive town has an AH: a bare crossing
+                // from a far home point was a level-1 death loop (revive at Mhaura -> cross Buburimu -> die).
+                if (!StealthRoutines.HasPowders(inv) && Game.Zonelines.HasAuctionHouse(zoning.CurrentZone))
                 {
                     Log("stealth stock empty — restocking at the local AH before the crossing");
                     await StealthRoutines.EnsureStock(ah, p, inv, 12, cfg.Keep, SellJunk, ct);
                 }
-                if (cfg.StealthTravel && !StealthRoutines.HasPowders(inv)) Log("NO stealth stock and no AH here — crossing bare (dangerous)");
-                if (cfg.StealthTravel && StealthRoutines.HasPowders(inv))
-                {
-                    // Opt-in for fragile bots: a lvl-1 whose HOME POINT sits across a hostile zone died on
-                    // every post-revive return leg. APPLY WHILE STANDING STILL FIRST — item use is
-                    // interrupted by movement, so the old walk-concurrent apply never landed (bot died in
-                    // ~30s "stealthed"). The background maintainer is best-effort top-up only.
-                    Log("stealth travel leg (applying before moving)");
-                    nav.Stop();
-                    await StealthRoutines.Apply(inv, p, ct);
-                    // Re-apply at EVERY zone line via BeforeLeg (standing still) — the old background
-                    // Maintain re-applied mid-walk, movement interrupted the item use, and stealth lapsed
-                    // partway through every multi-zone crossing (the level-1 death loop).
-                    zoning.BeforeLeg = c2 => StealthRoutines.HasPowders(inv) ? StealthRoutines.Apply(inv, p, c2) : Task.CompletedTask;
-                    try { await zoning.ToZone(dest, ct); }
-                    finally { zoning.BeforeLeg = null; }
-                    await Task.Delay(2000, ct);
-                }
-                else await zoning.ToZone(dest, ct);
+                await zoning.ToZone(dest, ct);
                 _tooWeak = 0;
                 await cfg.Equip(ct);
-                if (hunter != null) await hunter.GoToCamp(ct);
+                if (hunter != null) await hunter.GoToCamp(ct, c => StealthRoutines.PrepareTravel(nav, inv, p, c));
                 continue;
             }
 

@@ -54,9 +54,10 @@ public sealed class Hunter(INavigation nav, IPerception p, Nation nation)
     /// Walk to this leg's camp anchor and stop near it. Call on zone ARRIVAL: the zone-line often drops the
     /// bot on a ledge ~300y from the spawns where it can con mobs but never close to melee — so go to the
     /// dense ground-level cluster first. No-op if the leg has no camp or we're already there.
-    public async Task GoToCamp(CancellationToken ct)
+    public async Task GoToCamp(CancellationToken ct, Func<CancellationToken, Task>? prepareTravel = null)
     {
         if (Camp() is not { } c || p.DistanceTo(c.x, c.z) <= 15f) return;
+        if (prepareTravel is not null && p.DistanceTo(c.x, c.z) > 50f) await prepareTravel(ct);   // a real walk: ride / stealth
         // WalkTo aborts if we die en route (never walk the corpse the full ~90s to the anchor).
         await NavRoutines.WalkTo(nav, p, c.x, c.z, within: 15f, ct, y: c.y);
     }

@@ -18,7 +18,8 @@ public static class FleetDay
         public Func<CancellationToken, Task<bool>> GoToHuntZone = _ => Task.FromResult(true);   // travel per the leveling guide; returns false ONLY if the zone is unreachable (no route)
         public Func<bool> AtHuntZone = () => true;   // true once we're IN the hunt zone — formation gates on this so a puller never parties in a city / en-route hub
         public (float x, float z)? MeetSpot;   // formation anchor: SHOUT ONLY REACHES 180y (server), so everyone converges here first
-        public Func<CancellationToken, Task<bool>>? Defend;   // fight off an attacker mid-walk (true = fought); null = walk on
+        public Func<CancellationToken, Task<bool>>? Defend;
+        public Func<CancellationToken, Task>? PrepareTravel;   // before the walk to camp: ride, else Sneak/Invis (null = just try to mount)   // fight off an attacker mid-walk (true = fought); null = walk on
         public Func<CancellationToken, Task> SoloGrind = _ => Task.CompletedTask;      // the brain's normal loop
         public Func<PartyCombat.PullPlan, CancellationToken, Task> PartyGrind = (_, _) => Task.CompletedTask;
         public Func<CancellationToken, Task>? Upkeep;                                   // null = idle the short day
@@ -81,7 +82,7 @@ public static class FleetDay
                         // Keep walking until we ARRIVE: one 120s leg covered ~500y on foot, and a zone-in can sit
                         // 1000y from the camp (Meriphataud's south edge), so members recruited wherever the leg ran
                         // out, 300-500y apart, out of each other's 180y shout range (live, 2026-10-07).
-                        nav.TryMount();
+                        if (hooks.PrepareTravel is { } prep) await prep(ct); else nav.TryMount();
                         await NavRoutines.WalkTo(nav, p, meet.x, meet.z, within: 3f, ct, legs: 8, legTimeoutMs: 120_000,
                             defend: hooks.Defend);
                     }

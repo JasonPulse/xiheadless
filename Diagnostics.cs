@@ -478,6 +478,6 @@ sealed class StubNav : INavigation
     public void Follow(uint entityId) { }
     public void Face(uint entityId) { }
     public void Stop() { }
-    public void TryMount() { }
+    public bool TryMount() => false;
     public void Dismount() { }
 }
