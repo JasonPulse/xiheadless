@@ -20,3 +20,11 @@ with open(dst,'w') as f:
         f.write(f"        new({z}, \"{n}\", {min(lo,255)}, {min(hi,255)}, {cx:.0f}f, {cz:.0f}f, {min(c,255)}),\n")
     f.write("    };\n}\n")
 print(f"wrote {len(out)} clusters -> {dst}")
+
+# Raw spawn POINTS (zone,x,z), one per spawn row: the party camp is placed CLEAR of spawn ground (doctrine:
+# nothing may pop on top of the party), and 80y centroids are far too coarse to measure a 25y clearance.
+pts_dst=os.path.join(os.path.dirname(__file__),'..','res','spawn_points.csv')
+with open(pts_dst,'w') as f:
+    for z,n,lo,hi,x,zz in sorted(rows): f.write(f"{z},{x:.0f},{zz:.0f}\n")
+print(f"wrote {len(rows)} spawn points -> {pts_dst}")
+

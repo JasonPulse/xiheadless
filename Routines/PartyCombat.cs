@@ -190,6 +190,30 @@ public static class PartyCombat
         return true;
     }
 
+    /// THE CAMP SITS OUTSIDE SPAWN GROUND (user doctrine, 2026-07-17): nothing may pop on top of the party.
+    /// From `meet`, the nearest point (rings of 15y out to 120y) with no spawn point within CampClearYalms that
+    /// `reachable` accepts; `meet` itself if it's already clear or nothing qualifies. Returns the spot and its
+    /// clearance. The curated meet spots are dense hunting ground (spawns 2-12y away at every one; Death_Wasps
+    /// 6y and 10y from the Rolanberry camp piled three onto the PLD tank, 2026-10-07).
+    public const float CampClearYalms = 25f;
+    public static ((float x, float z) spot, float clear) SafeCampSpot(ushort zone, (float x, float z) meet,
+                                                                    Func<float, float, bool> reachable)
+    {
+        var pts = SpawnClusters.PointsIn(zone);
+        float Clear((float x, float z) c) => pts.Count == 0 ? float.MaxValue : pts.Min(s => Geometry.Dist2D(s.x, s.z, c.x, c.z));
+        float here = Clear(meet);
+        if (here >= CampClearYalms) return (meet, here);
+        for (float r = 15f; r <= 120f; r += 15f)
+            for (int deg = 0; deg < 360; deg += 30)
+            {
+                float rad = deg * MathF.PI / 180f;
+                var c = (x: meet.x + MathF.Sin(rad) * r, z: meet.z + MathF.Cos(rad) * r);
+                float cl = Clear(c);
+                if (cl >= CampClearYalms && reachable(c.x, c.z)) return (c, cl);
+            }
+        return (meet, here);
+    }
+
     /// The mob's server claim owner is us or a party member (0x00E @0x2C). Ground truth for "the pull landed"
     /// and for "this camp mob is ours", where hate packets and HP% are only indirect hints.
     public static bool ClaimedByParty(IPerception p, Entity e) =>

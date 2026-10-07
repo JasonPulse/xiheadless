@@ -44,4 +44,25 @@ public static class SpawnClusters
         if (n != all.Length) Array.Resize(ref all, n);
         return all;
     }
+
+    /// Every raw spawn POINT in `zone` (res/spawn_points.csv: zone,x,z; tools/gen_spawn_clusters.py), loaded on
+    /// first use. For clearance checks (where the party camps), where 80y centroids are far too coarse.
+    public static IReadOnlyList<(float x, float z)> PointsIn(ushort zone) =>
+        (_points ??= LoadPoints()).TryGetValue(zone, out var pts) ? pts : Array.Empty<(float, float)>();
+
+    static Dictionary<ushort, (float x, float z)[]>? _points;
+
+    static Dictionary<ushort, (float x, float z)[]> LoadPoints()
+    {
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        var byZone = new Dictionary<ushort, List<(float, float)>>();
+        foreach (var line in File.ReadLines(Path.Combine(AppContext.BaseDirectory, "res", "spawn_points.csv")))
+        {
+            var f = line.Split(',');
+            if (f.Length != 3 || !ushort.TryParse(f[0], out var z)) continue;
+            if (!byZone.TryGetValue(z, out var l)) byZone[z] = l = new();
+            l.Add((float.Parse(f[1], inv), float.Parse(f[2], inv)));
+        }
+        return byZone.ToDictionary(kv => kv.Key, kv => kv.Value.ToArray());
+    }
 }

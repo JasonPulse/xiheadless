@@ -141,6 +141,31 @@ public static class Diagnostics
             return 0;
         }
 
+        // camp-check: where SafeCampSpot puts every curated hunt camp (spawn clearance + navmesh reachability
+        // from the meet spot), the same search the live puller runs. Usage: camp-check [navmesh-dir]
+        if (args.Length >= 1 && args[0] == "camp-check")
+        {
+            var dir = args.Length >= 2 ? args[1] : Environment.GetEnvironmentVariable("XIBOT_NAVMESH_DIR")
+                ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Code/Lua/personal/temp/server/navmeshes");
+            foreach (var (nation, legs) in XiHeadless.Game.HuntZones.Paths)
+                foreach (var leg in legs.Where(l => l.CampX != 0 || l.CampZ != 0))
+                {
+                    if (XiHeadless.Game.Zonelines.Resolve(leg.Zone) is not ushort zid) { Console.WriteLine($"{nation} {leg.Zone}: unknown zone"); continue; }
+                    var meshPath = Path.Combine(dir, leg.Zone + ".nav");
+                    var mesh = File.Exists(meshPath) ? XiHeadless.Navigation.NavMesh.Load(meshPath) : null;
+                    bool Reach(float x, float z)
+                    {
+                        if (mesh is null) return true;
+                        var path = mesh.FindPath(leg.CampX, leg.CampY, leg.CampZ, x, leg.CampY, z);
+                        return path.Count > 0 && Geometry.Dist2D(path[^1].x, path[^1].z, x, z) <= 8f;
+                    }
+                    var (spot, clear) = XiHeadless.Routines.PartyCombat.SafeCampSpot(zid, (leg.CampX, leg.CampZ), Reach);
+                    float moved = Geometry.Dist2D(spot.x, spot.z, leg.CampX, leg.CampZ);
+                    Console.WriteLine($"{nation,-9} {leg.Zone,-22} meet ({leg.CampX:F0},{leg.CampZ:F0}) -> camp ({spot.x:F0},{spot.z:F0}) moved {moved:F0}y, {clear:F0}y clear{(mesh is null ? " [no navmesh]" : "")}");
+                }
+            return 0;
+        }
+
         if (args.Length >= 2 && args[0] == "nav-test")
         {
             var nav = XiHeadless.Navigation.NavMesh.Load(args[1]);

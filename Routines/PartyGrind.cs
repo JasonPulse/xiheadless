@@ -38,7 +38,7 @@ public sealed class PartyGrind(IPerception p, ICombat combat, IMagic? magic, INa
         var st = PartyCombat.Stations(p) ?? _myStations;
         if (iAmPuller && w.NowMs - _annMs > PartyCombat.StationAnnounceEveryMs)
         {
-            _camp ??= (w.X, w.Z);
+            _camp ??= SafeCamp((w.X, w.Z));
             var casters = PartyCombat.DeriveCasterStation(_camp.Value, PullLaneProbe(_camp.Value));
             PartyCombat.AnnounceStations(chat, _camp.Value, casters);
             _annMs = w.NowMs;
@@ -98,6 +98,15 @@ public sealed class PartyGrind(IPerception p, ICombat combat, IMagic? magic, INa
             await combat.Rest(Math.Max(g.RestHpTarget, PartyCombat.ReadyHpp + 10), g.RestMpPct,
                 () => p.AttackersOn(w.MyId, 8000) > 0, ct);   // members rest ABOVE the ready line — never park under the puller's gate
         await Task.Delay(1500, ct);
+    }
+
+    // The puller's camp: the meet spot moved off spawn ground (PartyCombat.SafeCampSpot), reachability by the navmesh.
+    (float x, float z) SafeCamp((float x, float z) meet)
+    {
+        var (spot, clear) = PartyCombat.SafeCampSpot(p.World.ZoneId, meet, (x, z) => nav.CanReach(x, p.World.Y, z));
+        if (spot != meet) Log.Info($"[{tag}] meet spot is spawn ground — camping at ({spot.x:F0},{spot.z:F0}), {Geometry.Dist2D(spot.x, spot.z, meet.x, meet.z):F0}y away, {clear:F0}y clear of spawns");
+        else if (clear < PartyCombat.CampClearYalms) Log.Info($"[{tag}] no spawn-clear camp within 120y of the meet spot — camping on it ({clear:F0}y from a spawn)");
+        return spot;
     }
 
     // A mob within Provoke range (~16y) that is hitting a party member other than us: the tank's peel target.
