@@ -9,6 +9,8 @@ public sealed class Magic(ISession s) : IMagic
         // WorldState.TargidOf resolves self (MyIndex) / tracked-entity index / &0xFFF fallback in one place.
         ushort idx = s.State.TargidOf(target);
         s.State.CurrentTargetId = target;
+        // A mounted char can't cast (a RDM healer arrived at camp on its chocobo and every Cure fizzled). Get off first.
+        if (s.State.IsMounted) s.Enqueue(ActionPacket.Build(ActionPacket.Dismount, s.State.MyId, s.State.MyIndex));
         s.Enqueue(ActionPacket.Build(ActionPacket.CastMagic, target, idx, (uint)spell));
     }
     public bool Known(Spell spell) => s.State.KnowsSpell((ushort)spell);

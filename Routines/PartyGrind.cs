@@ -15,7 +15,7 @@ public sealed class PartyGrind(IPerception p, ICombat combat, IMagic? magic, INa
     // too tough) is never re-picked until we level. Without it the puller re-/checked the NEAREST mob every
     // beat: -1 objects thousands of times (Grabu/Kougrou, 2026-08-30), then a con-5 Goblin_Gambler 6,000x
     // in one party day while the in-band cranes behind it got 0 kills (Gamae, 2026-10-05).
-    readonly Dictionary<uint, long> _grabFailMs = new();   // mob -> when a pull grab on it failed (3-min cool-off)
+    readonly Dictionary<uint, long> _grabFailMs = new();   // mob -> when a pull on it failed or was dirty (3-min cool-off)
     readonly RoamController _cons = new(nav, p, combat, new RoamController.Config { ConMin = 1, ConMax = g.ConMax, Tag = tag });
     long _dryPullMs, _gateLogMs, _scanLogMs;  // dry-pull log throttle; gate log throttle
     int _pullHeading;             // rotating roam-out heading (deg) for finding mobs beyond view range
@@ -70,8 +70,16 @@ public sealed class PartyGrind(IPerception p, ICombat combat, IMagic? magic, INa
             {
                 // The party's TANK holds hate: Provoke whenever it's up, then the job kit. Provoke lived only in
                 // the PLD kit, so a voted NIN tank pulled, then let the RNG eat the wasp to 13% (2026-10-07).
+                // PEEL first: a mob hitting a party member gets the Provoke, not our own target (the PLD
+                // provoked its bat while a Midnight_Wings killed the RDM healer, 2026-10-07).
                 UseAbilities = role == PartyRoles.Role.Tank
-                    ? async (m, c2, t) => { if (!await combat.UseAbility(Ability.Provoke, m, t)) await g.UseAbilities(m, c2, t); }
+                    ? async (m, c2, t) =>
+                    {
+                        var loose = LooseOnMember();
+                        if (await combat.UseAbility(Ability.Provoke, loose?.Id ?? m, t))
+                        { Log.Info($"[{tag}] Provoke {(loose is null ? "(hold)" : $"peels '{loose.Name}' off a member")}"); return; }
+                        await g.UseAbilities(m, c2, t);
+                    }
                     : g.UseAbilities,
                 EmergencyHeal = g.EmergencyHeal,
                 WepSkillForLevel = g.WepSkillForLevel, Tag = tag,
@@ -90,6 +98,15 @@ public sealed class PartyGrind(IPerception p, ICombat combat, IMagic? magic, INa
             await combat.Rest(Math.Max(g.RestHpTarget, PartyCombat.ReadyHpp + 10), g.RestMpPct,
                 () => p.AttackersOn(w.MyId, 8000) > 0, ct);   // members rest ABOVE the ready line — never park under the puller's gate
         await Task.Delay(1500, ct);
+    }
+
+    // A mob within Provoke range (~16y) that is hitting a party member other than us: the tank's peel target.
+    Entity? LooseOnMember()
+    {
+        var w = p.World;
+        return p.Nearest(e => e.IsMob && e.Hpp > 0 && p.DistanceTo(e.X, e.Z) <= 16f
+            && w.Attackers.TryGetValue(e.Id, out var a) && w.NowMs - a.ms < 6000
+            && a.target != w.MyId && w.PartyMembers.ContainsKey(a.target));
     }
 
     // The role THIS member plays in THIS party, the same staffing the comp gate and puller vote use: the voted
@@ -250,6 +267,11 @@ public sealed class PartyGrind(IPerception p, ICombat combat, IMagic? magic, INa
             Log.Info($"[{tag}] pull candidate '{target.Name}' rejected: con={con} (want 1-{g.ConMax})");
             return;   // con is the sole arbiter; the cache keeps it out of selection until we level
         }
+
+        // CLEAN PULL (the shared RoamController gate): no in-band-or-tougher neighbor within 16y of the target.
+        // A Moon_Bat pull brought two linked bats and killed the PLD tank under three attackers (2026-10-07).
+        if (!await _cons.CleanPull(target, null, ct, dirtyCon: g.ConMax))
+        { _grabFailMs[target.Id] = p.World.NowMs; return; }
 
         Log.Info($"[{tag}] pulling '{target.Name}' (con {con}) at {p.DistanceTo(target.X, target.Z):F0}y from me, {Geometry.Dist2D(target.X, target.Z, camp.x, camp.z):F0}y from camp");
         if (p.DistanceTo(target.X, target.Z) > 14f)

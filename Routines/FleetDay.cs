@@ -85,6 +85,7 @@ public static class FleetDay
                         await NavRoutines.WalkTo(nav, p, meet.x, meet.z, within: 3f, ct, legs: 8, legTimeoutMs: 120_000,
                             defend: hooks.Defend);
                     }
+                    nav.Dismount();   // at camp: on foot to cast, rest and fight
                     return true;
                 }
                 do { if (!await Arrive()) { await hooks.SoloGrind(ct); return; } }

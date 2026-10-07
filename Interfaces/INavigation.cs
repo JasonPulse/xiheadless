@@ -12,4 +12,5 @@ public interface INavigation
     void Face(uint entityId);                  // turn to face an entity (server rejects attacks if not facing)
     void Stop();
     void TryMount();                            // mount a chocobo for long overland travel (no-op unless eligible); engaging dismounts
+    void Dismount();                            // get off the chocobo (casting/resting need it); no-op when not mounted
 }

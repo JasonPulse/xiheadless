@@ -32,6 +32,16 @@ public sealed class Navigator : INavigation
     /// mounted, level >= 20, in an outdoor MISC_MOUNT zone, and past the 60s recast. Needs the CHOCOBO_COMPANION
     /// key item (GM-granted); without it the server silently rejects and we stay on foot. The speed gain is the
     /// mounted branch in the step loop. Engaging/acting dismounts server-side, so no explicit dismount is needed.
+    /// Get off the chocobo (0x1A action 0x12). Travel mounts, but a mounted char can't cast or rest: a RDM healer
+    /// arrived at camp mounted and every Cure fizzled (2026-10-07). No-op when not mounted.
+    public void Dismount()
+    {
+        var st = _s.State;
+        if (!st.IsMounted) return;
+        Log.Info("[nav] dismounting");
+        _s.Enqueue(Capabilities.ActionPacket.Build(Capabilities.ActionPacket.Dismount, st.MyId, st.MyIndex));
+    }
+
     public void TryMount()
     {
         var st = _s.State;

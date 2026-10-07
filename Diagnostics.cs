@@ -454,4 +454,5 @@ sealed class StubNav : INavigation
     public void Face(uint entityId) { }
     public void Stop() { }
     public void TryMount() { }
+    public void Dismount() { }
 }
