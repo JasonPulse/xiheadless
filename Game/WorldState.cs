@@ -43,6 +43,14 @@ public sealed class WorldState
     public byte[] KnownSpellBits = System.Array.Empty<byte>(); // 0x0AA bitmap; bit N = spell N known
     public uint CurrentTargetId; // last target we engaged/acted on (for disengage etc.)
     public bool InZone;         // true once 0x00A zone-in parsed
+    // Every worn piece: equip slot kind -> (container, inventory slot), from 0x050 (cleared by 0x04F). The junk
+    // seller skips worn pieces instead of marking them unsellable forever.
+    public readonly Dictionary<byte, (byte container, byte slot)> Equipped = new();
+    public bool IsEquipped(byte container, byte slot)
+    {
+        foreach (var v in Equipped.Values.ToArray()) if (v.container == container && v.slot == slot) return true;
+        return false;
+    }
     public bool MainHandEquipped;   // 0x050 equip_list, EquipKind 0: inventory slot != 0 = a weapon is on
 
     // Job-ability recast tracking (client-side): NowMs when each ability was last fired. Combat.AbilityReady
@@ -143,6 +151,7 @@ public sealed class WorldState
     public readonly int[] SkillGains = new int[64];
     // Inventory: (container,slot) -> itemId (from 0x01F item list). Lets us find an item to equip.
     public readonly Dictionary<(byte container, byte slot), ushort> Inventory = new();
+    public int InventoryMax;   // usable main-bag slots (0x01C ItemNum2[0] - 1); 0 = not yet received
     // Parallel (container,slot) -> stack quantity, so we can drop a whole stack to free a slot.
     public readonly Dictionary<(byte container, byte slot), ushort> InventoryQty = new();
 

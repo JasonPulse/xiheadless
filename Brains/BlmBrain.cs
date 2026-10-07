@@ -94,10 +94,10 @@ public sealed class BlmBrain(
 
     // In-fight nuking — BLM's actual damage. Without it the bot MELEED every fight (hp 100->0 while the mob
     // sat at 79% and MP never left 100%). Called every kill-loop tick; keep an MP floor so the last nukes can
-    // still finish a low mob. CastLowest = cheapest ready Stone tier (MP economy while grinding).
+    // still finish a low mob. The STRONGEST ready nuke (shared selector): Stone I at lv23 lost even-match fights.
     async Task Nuke(uint mob, int con, CancellationToken ct)
     {
-        if (p.World.Mpp < 10 || !magic.CastLowest(SpellLine.Stone, mob)) return;
+        if (p.World.Mpp < 10 || !MagicRoutines.CastBestNuke(magic, p, mob)) return;
         await Task.Delay(4000, ct);   // cast time + a swing between nukes; the recast gate is server-side
     }
 }

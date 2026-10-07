@@ -66,12 +66,14 @@ public static class ShopRoutines
     public static async Task<bool> BuyItem(IAuctionHouse ah, IPerception p, IInventory inv, ushort itemId,
                                            IReadOnlySet<ushort> keep,
                                            Func<CancellationToken, Task<int>>? freeSpace = null,
-                                           CancellationToken ct = default)
+                                           CancellationToken ct = default, uint maxBid = uint.MaxValue)
     {
+        // maxBid: the most this purchase may spend (the caller's gil-reserve budget); higher rungs aren't bid.
         if (inv.Has(itemId)) return true;
         bool soldForGil = false;
         foreach (var bid in BidLadder)
         {
+            if (bid > maxBid) { Log.Info($"[ah] {itemId}: next bid {bid} would cut into the gil reserve — waiting"); break; }
             // BROKE-PLAYER RULE: short on gil with junk in the bag = sell FIRST, then bid. Without this the
             // funding loop deadlocks — junk-selling waited for a full bag while every bid read "out of
             // budget" (Gibra: 10 gil + 156 failed bids + a bag of unsold drops = a songless BRD all session).

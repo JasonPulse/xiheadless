@@ -104,8 +104,11 @@ public static class PacketParsers
             case 0x037: CharStatus(sub, w); break; // CCharStatusPacket (HP%, status, effect icons)
             // 0x050 equip_list: PropertyItemIndex@4 (inventory slot; 0 = unequipped), EquipKind@5 (0 = main
             // hand), Category@6. Tracks armed/naked — a weaponless non-h2h char must hunt prey-only (con<=1).
-            case 0x050: if (sub[5] == 0) w.MainHandEquipped = sub[4] != 0; break;
-            case 0x04F: w.MainHandEquipped = false; break; // equip_clear: everything off (zone/job change)
+            case 0x050:
+                if (sub[5] == 0) w.MainHandEquipped = sub[4] != 0;
+                if (sub.Length > 6) { if (sub[4] == 0) w.Equipped.Remove(sub[5]); else w.Equipped[sub[5]] = (sub[6], sub[4]); }
+                break;
+            case 0x04F: w.MainHandEquipped = false; w.Equipped.Clear(); break; // equip_clear: everything off (zone/job change)
             case 0x0AA: MagicData(sub, w); break;  // GP_SERV_COMMAND_MAGIC_DATA (known-spell bitmap)
             case 0x0DD: GroupMember(sub, w, isAttr: false); break; // group_list: Hpp@body25 (b[29])
             case 0x0DF: GroupMember(sub, w, isAttr: true);  break; // group_attr: NO GAttr field -> Hpp@body18 (b[22])
@@ -119,6 +122,7 @@ public static class PacketParsers
             case 0x033: EventStart(sub, w, false); break; // GP_SERV_COMMAND_EVENTSTR (event with string params)
             case 0x034: EventStart(sub, w, true); break;  // GP_SERV_COMMAND_EVENTNUM (event with numeric params)
             case 0x062: Skills2(sub, w); break;           // GP_SERV_COMMAND_CLISTATUS2 (skill levels)
+            case 0x01C: ItemMax(sub, w); break;           // GP_SERV_COMMAND_ITEM_MAX (container sizes)
             case 0x01E: ItemNum(sub, w); break;           // GP_SERV_COMMAND_ITEM_NUM (quantity-only update; how gil grants arrive)
             case 0x01F: ItemList(sub, w); break;          // GP_SERV_COMMAND_ITEM_LIST (one inventory item)
             case 0x020: ItemAttr(sub, w); break;          // GP_SERV_COMMAND_ITEM_ATTR (item w/ extdata; different layout)
@@ -464,6 +468,14 @@ public static class PacketParsers
 
     // 0x01E GP_SERV_COMMAND_ITEM_NUM: ItemNum(qty)@4, Category(container)@8, ItemIndex(slot)@9. Quantity-only
     // update (no item id) — gil grants and stack-count changes arrive here. (container 0, slot 0) is gil.
+    // 0x01C ITEM_MAX (s2c/0x01c_item_max.h): ItemNum[18]@4 (size+1), pad[14], ItemNum2[18] u16 @36 = the USABLE
+    // size+1 per container. Main bag = container 0. The sell trigger needs it to know how full the bag really is.
+    static void ItemMax(ReadOnlySpan<byte> b, WorldState w)
+    {
+        if (b.Length >= 38 && U16(b, 36) > 1) w.InventoryMax = U16(b, 36) - 1;
+        else if (b.Length > 4 && b[4] > 1) w.InventoryMax = b[4] - 1;
+    }
+
     static void ItemNum(ReadOnlySpan<byte> b, WorldState w)
     {
         if (b.Length < 10) return;

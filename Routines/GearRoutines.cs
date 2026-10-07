@@ -72,7 +72,9 @@ public static class GearRoutines
         foreach (var slotGroup in table.GroupBy(g => g.slot))
         {
             var wearable = slotGroup.Where(g => g.lvl <= charLvl).ToList();
-            if (wearable.Count > 0) keep.Add(wearable.MaxBy(g => g.lvl).item);   // current best for this slot
+            // current best for this slot; on a level TIE the LAST listed wins, matching the equip pass (later
+            // pieces override earlier ones), so the worn piece is never the one marked sellable
+            if (wearable.Count > 0) { var top = wearable.Max(g => g.lvl); keep.Add(wearable.Last(g => g.lvl == top).item); }
             foreach (var g in slotGroup.Where(g => g.lvl > charLvl)) keep.Add(g.item);   // future pieces
         }
         return keep;

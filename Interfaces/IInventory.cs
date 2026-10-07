@@ -48,6 +48,7 @@ public interface IInventory
     /// only keep-set gear + equipped pieces — mirrors SellAllJunk's own per-slot skip logic exactly, so it
     /// never claims "nothing to sell" where SellAllJunk would in fact sell something.
     bool HasSellable(IReadOnlySet<ushort> keep);
+    int CountSellable(IReadOnlySet<ushort> keep);   // main-bag slots the junk seller would sell
 
     /// Move `qty` from main-inventory `fromSlot` into another container (0x029 ITEM_MOVE; server picks the
     /// destination slot). Mog Case (7) is movable-to from ANYWHERE and accepts EX items — the pressure valve

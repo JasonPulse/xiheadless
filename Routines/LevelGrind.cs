@@ -139,11 +139,21 @@ public sealed class LevelGrind(
                 Log($"traveling to {cfg.AhZone} for gear");
                 await zoning.GoTo(cfg.AhZone, ct);
             }
+            // GIL RESERVE (user 2026-10-07: a player in their 20s counts as broke yet still has 10,000g+): armor
+            // and accessories only spend gil ABOVE the reserve. The main-hand weapon (the biggest power step),
+            // spell scrolls and consumables are exempt. Bots used to spend every gil on gear the moment they
+            // had it (Raedra: 9,934 -> 94 on one buy pass), leaving the fleet at a few hundred gil.
+            long reserve = GilReserve(p.World.MainJobLevel);
             foreach (var item in cfg.BuyItems)
             {
                 if (ct.IsCancellationRequested) return;
-                await ShopRoutines.BuyItem(ah, p, inv, item, cfg.Keep, SellJunk, ct);
+                bool armor = cfg.GearTable?.Any(g => g.item == item && g.slot != EquipSlot.Main) ?? false;
+                uint budget = armor ? (uint)Math.Max(0L, (long)p.World.Gil - reserve) : uint.MaxValue;
+                await ShopRoutines.BuyItem(ah, p, inv, item, cfg.Keep, SellJunk, ct, budget);
             }
+            // Put the new pieces ON now, before anything sells: the funding sale that follows (powders) ran
+            // while the old leather was still worn, so the superseded set couldn't be sold.
+            await cfg.Equip(ct);
             // Ranged jobs: buy a full 12-stack of quivers (each opens to 99 arrows = ~1,188/session, ~1 bag
             // slot until opened). AmmoRoutines opens them on demand in the loop. Reuses BuyAtLeast (powders).
             if (cfg.AmmoQuiver != 0)
@@ -320,7 +330,14 @@ public sealed class LevelGrind(
             // Only trek/clear when the bag has grown BEYOND a known-unsellable floor — a bag full of Keep gear
             // (nothing sellable) otherwise re-triggers forever, selling 0 each time (the stuck-MNK loop). If a
             // clear frees nothing, record this fill as the floor; new drops (slot count rises past it) re-arm it.
-            bool bagFull = CountItems() >= cfg.SellAtItems && CountItems() > _noSellFloor;
+            // SELL IN BATCHES: count what would actually SELL, not every item. The old total-item count was
+            // mostly keep-gear, so each new drop re-crossed the line and sent the bot to town to sell ONE
+            // item (Griasha: 47 vendor trips in one session, 1-2 items each). Go when a batch has built up,
+            // or when the bag is genuinely nearly full (usable size from 0x01C).
+            int sellable = inv.CountSellable(SellKeep());
+            int free = p.World.InventoryMax > 0 ? p.World.InventoryMax - CountItems() : int.MaxValue;
+            bool bagFull = sellable > 0 && CountItems() > _noSellFloor
+                && (sellable >= SellBatch || free <= 3 || (p.World.InventoryMax == 0 && CountItems() >= cfg.SellAtItems));
             if (cfg.OnBagFull is { } clearInPlace && bagFull && p.World.NowMs - _lastBagClearMs > 60_000)
             {
                 int before = CountItems();
@@ -612,4 +629,8 @@ public sealed class LevelGrind(
 
     // Occupied main-inventory (container 0) slots, gil-slot 0 excluded — drives the "bag full, go sell" trip.
     int CountItems() => inv.CountSlots();
+    const int SellBatch = 10;   // sellable items worth one vendor trip
+
+    /// Gil a character keeps in hand rather than spend on armor: ramps 1,000 per level from 10, 10,000 from 20.
+    public static long GilReserve(int lvl) => lvl <= 10 ? 0 : Math.Min(10_000L, (lvl - 10) * 1_000L);
 }

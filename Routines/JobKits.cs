@@ -23,6 +23,7 @@ public static class JobKits
         (4608, Spell.Cure, false), (4606, Spell.Dia, false), (4607, Spell.Stone, false),
         (4609, Spell.Cure, true), (4631, Spell.Dia, true), (4636, Spell.Banish, true), (4666, Spell.Paralyze, true),
         (4767, Spell.Stone, true), (4777, Spell.Water, true), (4762, Spell.Aero, true), (4862, Spell.Blind, true),
+        (4752, Spell.Fire, true), (4757, Spell.Blizzard, true), (4772, Spell.Thunder, true),   // BLM 13/17/21 nukes
         // BRD songs ARE its spells (user: lvl-1s with no songs were red flags) — SpellLevels filters to BRD.
         (4976, Spell.FoeRequiem, true), (4986, Spell.ArmysPaeon, true),
         (5002, Spell.ValorMinuet, true), (5007, Spell.SwordMadrigal, true),
@@ -35,8 +36,9 @@ public static class JobKits
     public static bool CastsPrimary(byte job) =>
         job is Job.Whm or Job.Blm or Job.Rdm or Job.Sch or Job.Geo or Job.Smn;
 
-    static (ushort scroll, Spell spell, bool buyable)[] EssentialScrolls(byte job) =>
-        ScrollKit.Where(s => SpellLevels.For((ushort)s.spell, job) is { } lvl && lvl <= 12).ToArray();
+    // Every kit scroll this job can use by its CURRENT level (at least the lv-12 starter book, bought ahead).
+    static (ushort scroll, Spell spell, bool buyable)[] EssentialScrolls(byte job, int charLvl) =>
+        ScrollKit.Where(s => SpellLevels.For((ushort)s.spell, job) is { } lvl && lvl <= Math.Max(12, charLvl)).ToArray();
 
     /// Wire the generic kit into a grind config IF the brain left the defaults in place.
     public static void Apply(LevelGrind.Config g, byte job, ICombat combat, IMagic? magic, IPerception p, string tag,
@@ -55,7 +57,7 @@ public static class JobKits
         if (!g.SellJunkWhenFull && g.OnBagFull is null) { g.SellJunkWhenFull = true; g.SellAtItems = Math.Min(g.SellAtItems, 22); }
         // Essential scrolls for this phase's job: buy (via the standard buy phase) + learn (in the Equip
         // pass). Applies to EVERY brain's mage phases — scroll learning is engine duty, not brain config.
-        if (magic is not null && inv is not null && EssentialScrolls(job) is { Length: > 0 } scrolls)
+        if (magic is not null && inv is not null && EssentialScrolls(job, p.World.MainJobLevel) is { Length: > 0 } scrolls)
         {
             g.BuyItems = scrolls.Where(s => s.buyable).Select(s => s.scroll).Where(s => !g.BuyItems.Contains(s)).Concat(g.BuyItems).ToArray();
             foreach (var (scroll, _, _) in scrolls) g.Keep.Add(scroll);
@@ -140,7 +142,8 @@ public static class JobKits
                     // Nukes repeat; the DoTs (Dia/Bio) are ONE per fight — recasting them wastes MP (user
                     // 2026-07-31). Dia LAST: it's also all a lvl-1-3 RDM has (Stone is RDM 4), so a baby RDM
                     // lands one Dia then melees instead of spamming it dry.
-                    foreach (var line in new[] { SpellLine.Stone, SpellLine.Water, SpellLine.Aero, SpellLine.Bio, SpellLine.Banish, SpellLine.Dia })
+                    if (MagicRoutines.CastBestNuke(magic, p, mob)) { await Task.Delay(3000, ct); return; }   // strongest known nuke
+                    foreach (var line in new[] { SpellLine.Bio, SpellLine.Banish, SpellLine.Dia })
                     {
                         if (line is SpellLine.Dia or SpellLine.Bio && diaDone) continue;
                         if (magic.CastLowest(line, mob))   // tier selector: cheapest ready tier of the line

@@ -38,6 +38,20 @@ public sealed class ThfBrain(
                 GrindCfgFor = GrindCfg, Tag = "thf",
             }, lifecycle: lifecycle, chat: chat, magic: magic, party: party).RunAsync(ct);
 
+    // The THF set with levels, in EQUIP order (later pieces override earlier ones in a slot): drives the
+    // level-aware sell so outgrown daggers/leather are sold instead of hoarded (Fiabre, lv32, carried ~7k gil
+    // of superseded gear). The Onion Sword stays kept as a starter weapon.
+    static readonly (ushort item, byte slot, byte lvl)[] ThfGear =
+        new (ushort item, byte slot, byte lvl)[]
+        {
+            (BronzeKnife, EquipSlot.Main, 1), (BlindDagger, EquipSlot.Main, 7), (BrassDagger, EquipSlot.Main, 9),
+            (Dagger, EquipSlot.Main, 12), (Baselard, EquipSlot.Main, 18),
+        }
+        .Concat(WarBrain.Armor)
+        .Concat(new (ushort item, byte slot, byte lvl)[] { (FeatherCollar, EquipSlot.Neck, 7), (BoneEarring, EquipSlot.Ear1, 16) })
+        .Concat(WarBrain.Armor21)
+        .Concat(new (ushort item, byte slot, byte lvl)[] { (EmpressHairpin, EquipSlot.Head, 24) }).ToArray();
+
     LevelGrind.Config GrindCfg(byte job)
     {
         // THF pops its kit (Sneak Attack/Steal); the MNK sub phase just melees hand-to-hand.
@@ -54,6 +68,7 @@ public sealed class ThfBrain(
                     FeatherCollar, BoneEarring, EmpressHairpin, OnionSword, 1126, 1127 }
                 .Concat(WarBrain.Armor.Select(g => g.item))
                 .Concat(WarBrain.Armor21.Select(g => g.item))),
+            GearTable = ThfGear,
             Equip = Equip,
             // WS follows the weapon we actually WEAR: MNK sub = hand-to-hand (1); THF = sword on the creation
             // Onion Sword, dagger once bought.

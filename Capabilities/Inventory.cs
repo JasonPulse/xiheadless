@@ -161,12 +161,16 @@ public sealed class Inventory(ISession s) : IInventory
         return false;
     }
 
-    public bool HasSellable(IReadOnlySet<ushort> keep)
+    public bool HasSellable(IReadOnlySet<ushort> keep) => CountSellable(keep) > 0;
+
+    public int CountSellable(IReadOnlySet<ushort> keep)
     {
+        int n = 0;
         foreach (var ((c, slot), id) in s.State.Inventory.ToArray())
-            if (c == 0 && slot != 0 && id != 0 && !keep.Contains(id) && !Game.Items.NeverSell.Contains(id) && !_stuck.Contains((c, slot)))
-                return true;
-        return false;
+            if (c == 0 && slot != 0 && id != 0 && !keep.Contains(id) && !Game.Items.NeverSell.Contains(id)
+                && !s.State.IsEquipped(c, slot) && !_stuck.Contains((c, slot)))
+                n++;
+        return n;
     }
 
     public async Task<int> SellAllJunk(IReadOnlySet<ushort> keep, CancellationToken ct = default)
@@ -175,6 +179,10 @@ public sealed class Inventory(ISession s) : IInventory
         // to 1) — consolidating before counting/selling keeps "bag full" meaning actually full.
         Sort(0);
         await Task.Delay(1500, ct);   // server rate-limits sorts to ~1/s and pushes 0x01D updates back
+        // Re-test last run's refusals: "stuck" was permanent, so leather that was WORN during one sell run was
+        // never offered again after the Beetle set replaced it (Raedra, 2026-10-07). Worn pieces are skipped
+        // up front now (0x050), so this only re-tries the genuinely odd ones once per run.
+        _stuck.Clear();
         int sold = 0;
         while (!ct.IsCancellationRequested)
         {
@@ -182,7 +190,8 @@ public sealed class Inventory(ISession s) : IInventory
             (byte c, byte slot, ushort id, ushort qty)? pick = null;
             foreach (var ((c, slot), id) in s.State.Inventory.ToArray())   // snapshot — same mutation guard as every scan above
             {
-                if (c != 0 || slot == 0 || id == 0 || keep.Contains(id) || Game.Items.NeverSell.Contains(id) || _stuck.Contains((c, slot))) continue;
+                if (c != 0 || slot == 0 || id == 0 || keep.Contains(id) || Game.Items.NeverSell.Contains(id)
+                    || s.State.IsEquipped(c, slot) || _stuck.Contains((c, slot))) continue;
                 ushort q = s.State.InventoryQty.TryGetValue((c, slot), out var qq) && qq > 0 ? qq : (ushort)1;
                 pick = (c, slot, id, q);
                 break;

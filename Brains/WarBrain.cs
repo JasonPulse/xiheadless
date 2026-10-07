@@ -12,33 +12,41 @@ public sealed class WarBrain(IPerception p, INavigation nav, ICombat combat, IMa
     public const ushort EarlyWeapon = 16534;         // Onion Sword (lv1) — used until we can wield the axe at lv5
     public const ushort Weapon20 = 16714;            // Neckchopper (Great Axe, lv20 on this server) — the 21/24-bracket weapon
 
-    // Non-weapon gear (item id, slot). The main-hand weapon is chosen by level in Equip() so we never send
+    // Non-weapon gear (item id, slot, level — levels verified against item_equipment.sql; the level lets the
+    // sell path offload superseded tiers). The main-hand weapon is chosen by level in Equip() so we never send
     // two main-hand equips in one pass. EquipSet applies each piece; the server ignores any above our level.
-    public static readonly (ushort item, byte slot)[] Armor =
+    public static readonly (ushort item, byte slot, byte lvl)[] Armor =
     {
-        (12440, EquipSlot.Head),   // Leather Bandana (lv7)
-        (12568, EquipSlot.Body),   // Leather Vest    (lv7)
-        (12696, EquipSlot.Hands),  // Leather Gloves  (lv7)
-        (12824, EquipSlot.Legs),   // Leather Trousers(lv7)
-        (13081, EquipSlot.Neck),   // Leather Gorget  (lv7)
-        (13014, EquipSlot.Feet),   // Leaping Boots   (lv7)
-        (17280, EquipSlot.Ranged), // Boomerang       (lv14)
-        (13380, EquipSlot.Ear1),   // Hope Earring    (lv10)
-        (13194, EquipSlot.Waist),  // Warrior's Belt  (lv15)
-        (13522, EquipSlot.Ring1),  // Courage Ring    (lv14)
+        (12440, EquipSlot.Head, 7),   // Leather Bandana (lv7)
+        (12568, EquipSlot.Body, 7),   // Leather Vest    (lv7)
+        (12696, EquipSlot.Hands, 7),  // Leather Gloves  (lv7)
+        (12824, EquipSlot.Legs, 7),   // Leather Trousers(lv7)
+        (13081, EquipSlot.Neck, 7),   // Leather Gorget  (lv7)
+        (13014, EquipSlot.Feet, 7),   // Leaping Boots   (lv7)
+        (17280, EquipSlot.Ranged, 14), // Boomerang       (lv14)
+        (13380, EquipSlot.Ear1, 10),   // Hope Earring    (lv10)
+        (13194, EquipSlot.Waist, 15),  // Warrior's Belt  (lv15)
+        (13522, EquipSlot.Ring1, 14),  // Courage Ring    (lv14)
     };
 
     // The 21-bracket set (levels VERIFIED against this server's item_equipment.sql — Beetle is lv21 here).
     // Listed after Armor in the equip pass so these replace the lv7 pieces the moment they're wearable.
-    public static readonly (ushort item, byte slot)[] Armor21 =
+    public static readonly (ushort item, byte slot, byte lvl)[] Armor21 =
     {
-        (12455, EquipSlot.Head),   // Beetle Mask     (lv21)
-        (12583, EquipSlot.Body),   // Beetle Harness  (lv21)
-        (12711, EquipSlot.Hands),  // Beetle Mittens  (lv21)
-        (12835, EquipSlot.Legs),   // Beetle Subligar (lv21)
-        (12967, EquipSlot.Feet),   // Beetle Leggings (lv21)
-        (13061, EquipSlot.Neck),   // Spike Necklace  (lv21)
+        (12455, EquipSlot.Head, 21),   // Beetle Mask     (lv21)
+        (12583, EquipSlot.Body, 21),   // Beetle Harness  (lv21)
+        (12711, EquipSlot.Hands, 21),  // Beetle Mittens  (lv21)
+        (12835, EquipSlot.Legs, 21),   // Beetle Subligar (lv21)
+        (12967, EquipSlot.Feet, 21),   // Beetle Leggings (lv21)
+        (13061, EquipSlot.Neck, 21),   // Spike Necklace  (lv21)
     };
+
+    /// The WHOLE WAR set with levels (weapons by level + Armor + Armor21): drives the buy list, the keep set and
+    /// the level-aware sell (superseded tiers become sellable). The buy list used to stop at the lv7 leather, so
+    /// a WAR 32 never bought the Beetle set or the Neckchopper its own equip pass wears.
+    public static readonly (ushort item, byte slot, byte lvl)[] WarGear =
+        new (ushort item, byte slot, byte lvl)[] { (EarlyWeapon, EquipSlot.Main, 1), (Weapon, EquipSlot.Main, 5), (Weapon20, EquipSlot.Main, 20) }
+            .Concat(Armor).Concat(Armor21).OrderBy(g => g.lvl).ToArray();
 
     // Full arc via the shared JobLifecycle: WAR is a basic job (no unlock) — level it from 1 with a MNK sub
     // kept at half via the seesaw (MNK = hand-to-hand, so the sub needs no extra weapon). The level-gated
@@ -59,8 +67,9 @@ public sealed class WarBrain(IPerception p, INavigation nav, ICombat combat, IMa
         {
             HomeNation = HomeNation,
             AhZone = AhZone,
-            BuyItems = new ushort[] { EarlyWeapon, Weapon }.Concat(Armor.Select(g => g.item)).ToArray(),
-            Keep = new HashSet<ushort>(new ushort[] { EarlyWeapon, Weapon }.Concat(Armor.Select(g => (ushort)g.item))),
+            BuyItems = GearRoutines.BuyList(WarGear).ToArray(),   // cheap-first (ascending by level)
+            Keep = GearRoutines.KeepSet(WarGear, 1126, 1127),
+            GearTable = WarGear,
             Equip = Equip,
             // WS off the ACTUALLY-equipped weapon's skill: MNK sub = hand-to-hand (1); WAR = Onion Sword
             // (sword, 3) until lv5, then Butterfly Axe (Great Axe, 6) once it's on.

@@ -32,6 +32,28 @@ public static class MagicRoutines
         return true;
     }
 
+    /// The single-target elemental nukes, in no particular order: the selector ranks them by spell level.
+    static readonly SpellLine[] NukeLines =
+        { SpellLine.Stone, SpellLine.Water, SpellLine.Aero, SpellLine.Fire, SpellLine.Blizzard, SpellLine.Thunder };
+
+    /// Cast the STRONGEST ready nuke: the best ready tier of every elemental line, ranked by the level the
+    /// spell is learned at (Thunder 21 > Blizzard 17 > Fire 13 > Aero 9 > Water 5 > Stone 1, tier II above
+    /// all tier I). Casters used to pick the CHEAPEST ready tier of Stone first, so a BLM 23 chipped an even-
+    /// match lizard with Stone I while it was beaten to death (Droben: 58 deaths, 0 kills in one session).
+    public static bool CastBestNuke(IMagic magic, IPerception p, uint mobId)
+    {
+        Spell? best = null; int bestLvl = -1;
+        foreach (var line in NukeLines)
+            if (magic.BestReady(line) is { } sp)
+            {
+                int lvl = SpellLevels.For((ushort)sp, p.World.MainJob) ?? SpellLevels.For((ushort)sp, p.World.SubJob) ?? 0;
+                if (lvl > bestLvl) { best = sp; bestLvl = lvl; }
+            }
+        if (best is not { } cast) return false;
+        magic.Cast(cast, mobId);
+        return true;
+    }
+
     /// Self-cure below `hppBelow` with the best affordable Cure tier (level-gated selector). The single
     /// emergency-heal used by JobKits and the caster brains — thresholds are the only per-brain config.
     public static async Task<bool> EmergencyCure(IMagic magic, IPerception p, CancellationToken ct,

@@ -66,6 +66,7 @@ public sealed class DrgBrain(
             .Concat(WarBrain.Armor.Select(g => g.item))
             .Concat(WarBrain.Armor21.Select(g => g.item))
             .Concat(new ushort[] { 1126, 1127, Pickaxe, WyvernEgg })),
+        GearTable = WarBrain.Armor.Concat(WarBrain.Armor21).Concat(Gear).ToArray(),   // level-aware sell, equip order
         Equip = Equip,
         WepSkillForLevel = _ => job == Job.War ? GreatAxeSkill : PolearmSkill,
         ConMin = 1, ConMax = 3,
