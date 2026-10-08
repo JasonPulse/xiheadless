@@ -18,11 +18,17 @@ public static class StealthRoutines
     /// AH) and pass their own free-space callback (vendor sell vs no-op).
     public static async Task EnsureStock(IAuctionHouse ah, IPerception p, IInventory inv, int to,
                                          IReadOnlySet<ushort> keep, Func<CancellationToken, Task<int>>? freeSpace,
-                                         CancellationToken ct)
+                                         CancellationToken ct, long keepGil = 0)
     {
-        await ShopRoutines.BuyAtLeast(ah, p, inv, SilentOil, to, keep, freeSpace, ct);
-        await ShopRoutines.BuyAtLeast(ah, p, inv, PrismPowder, to, keep, freeSpace, ct);
+        await ShopRoutines.BuyAtLeast(ah, p, inv, SilentOil, to, keep, freeSpace, ct, keepGil);
+        await ShopRoutines.BuyAtLeast(ah, p, inv, PrismPowder, to, keep, freeSpace, ct, keepGil);
     }
+
+    /// The fleet's travel stock: only a character that CAN'T ride (below the lv-20 mount) needs powders, and only
+    /// a few. They cost 300-350 gil EACH here: topping every bot up to 12 of each drained the broke ones (Thifae,
+    /// a mount-eligible SAM 27, spent ~1,100 gil on oils it never needed, 2026-10-08). Bought within the reserve.
+    public const int TravelStock = 3;
+    public static bool NeedsTravelStock(IPerception p) => p.World.MainJobLevel < 20;
 
     /// The full stealth-crossing: apply standing still, walk the zone route, drop stealth on arrival.
     /// (JobLifecycle and HomePointBrain carried copies; HomePointBrain's also leaked the maintainer —
@@ -58,6 +64,8 @@ public static class StealthRoutines
     {
         var w = p.World;
         if (w.IsMounted) return;
+        // Nothing spawns in this zone (a town): no aggro to hide from, so no powders burned on the walk out.
+        if (Game.SpawnClusters.PointsIn(w.ZoneId).Count == 0) { nav.TryMount(); return; }
         if (nav.TryMount())   // eligible (lv20+, outdoor, off recast): give the server a moment to seat us
             for (int t = 0; t < 3000 && !w.IsMounted && !ct.IsCancellationRequested; t += 250) await Task.Delay(250, ct);
         // Use whatever stock we have: a broke bot that afforded only oils still gets Sneak (sound aggro).
@@ -66,9 +74,18 @@ public static class StealthRoutines
         nav.Stop();
         await Task.Delay(400, ct);   // settle: item use is interrupted by movement
         Log.Info($"[travel] on foot — {(needSneak && needInvis ? "Sneak + Invisible" : needSneak ? "Sneak" : "Invisible")} for the walk");
-        await Apply(inv, p, ct);
-        for (int t = 0; t < 2000 && !((!needSneak || w.IsSneaked) && (!needInvis || w.IsInvisible)); t += 250) await Task.Delay(250, ct);
-        Log.Info($"[travel] stealth status: sneak={w.IsSneaked} invisible={w.IsInvisible}");   // used != landed
+        int oil0 = inv.CountOf(SilentOil), prism0 = inv.CountOf(PrismPowder);
+        bool Landed() => (!needSneak || w.IsSneaked) && (!needInvis || w.IsInvisible);
+        for (int attempt = 0; attempt < 2 && !Landed(); attempt++)
+        {
+            // A use the server ignores consumes nothing and changes no status (live: a lone Prism Powder sent ~3s
+            // after login never landed, 16 -> 16). Pause and try once more before walking out bare.
+            if (attempt > 0) { Log.Info("[travel] stealth didn't take — retrying"); await Task.Delay(3000, ct); }
+            await Apply(inv, p, ct);
+            for (int t = 0; t < 2000 && !Landed(); t += 250) await Task.Delay(250, ct);
+        }
+        // used != landed: the counts show whether the server consumed the item at all
+        Log.Info($"[travel] stealth status: sneak={w.IsSneaked} invisible={w.IsInvisible} (oil {oil0}->{inv.CountOf(SilentOil)}, prism {prism0}->{inv.CountOf(PrismPowder)})");
     }
 
     /// Apply Sneak + Invisible once (use both powders, spaced by the item recast). Returns true if both used.

@@ -114,8 +114,9 @@ public static class ShopRoutines
     public static async Task<bool> BuyAtLeast(IAuctionHouse ah, IPerception p, IInventory inv, ushort itemId, int count,
                                               IReadOnlySet<ushort> keep,
                                               Func<CancellationToken, Task<int>>? freeSpace = null,
-                                              CancellationToken ct = default)
+                                              CancellationToken ct = default, long keepGil = 0)
     {
+        // keepGil: never let a bid take gil below this (the caller's reserve).
         int CountOf() => inv.CountOf(itemId);
         bool soldForGil = false;
         while (CountOf() < count && !ct.IsCancellationRequested)
@@ -132,6 +133,7 @@ public static class ShopRoutines
                     await freeSpace(ct);
                 }
                 if (bid > p.World.Gil) { Log.Info($"[ah] bid {bid} > gil {p.World.Gil} — stop ({CountOf()}/{count} of {itemId})"); return CountOf() >= count; }
+                if (p.World.Gil - bid < keepGil) { Log.Info($"[ah] {itemId}: bid {bid} would cut into the gil reserve — stop ({CountOf()}/{count})"); return CountOf() >= count; }
                 foreach (var single in new[] { false, true })   // stack first (efficient), then single
                 {
                     p.World.AucResult = 0;

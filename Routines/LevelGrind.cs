@@ -163,8 +163,9 @@ public sealed class LevelGrind(
             // came online and it died 36x (Mesae, user 2026-09-16). Same BuyAtLeast path as ammo.
             if (cfg.ToolStack != 0 && cfg.ToolCount > 0)
                 await ShopRoutines.BuyAtLeast(ah, p, inv, cfg.ToolStack, cfg.ToolCount, cfg.Keep, SellJunk, ct);
-            // Travel stock for every bot (ride if possible, else these): Sneak + Invisible powders, topped to 12.
-            await StealthRoutines.EnsureStock(ah, p, inv, 12, cfg.Keep, SellJunk, ct);
+            // Travel stock (powders) only for characters that can't ride yet; a few, within the reserve.
+            if (StealthRoutines.NeedsTravelStock(p))
+                await StealthRoutines.EnsureStock(ah, p, inv, StealthRoutines.TravelStock, cfg.Keep, SellJunk, ct, reserve);
         }
 
         // 2) Reach the hunt zone. Path mode travels solo; fixed-zone mode with a Reunion defers entry to the
@@ -313,10 +314,10 @@ public sealed class LevelGrind(
                 // Every leg is protected travel (BotHost's BeforeLeg: ride, else Sneak/Invis standing still at each
                 // zone line). Restock the powders first if we're out and the revive town has an AH: a bare crossing
                 // from a far home point was a level-1 death loop (revive at Mhaura -> cross Buburimu -> die).
-                if (!StealthRoutines.HasPowders(inv) && Game.Zonelines.HasAuctionHouse(zoning.CurrentZone))
+                if (StealthRoutines.NeedsTravelStock(p) && !StealthRoutines.HasPowders(inv) && Game.Zonelines.HasAuctionHouse(zoning.CurrentZone))
                 {
                     Log("stealth stock empty — restocking at the local AH before the crossing");
-                    await StealthRoutines.EnsureStock(ah, p, inv, 12, cfg.Keep, SellJunk, ct);
+                    await StealthRoutines.EnsureStock(ah, p, inv, StealthRoutines.TravelStock, cfg.Keep, SellJunk, ct, GilReserve(p.World.MainJobLevel));
                 }
                 await zoning.ToZone(dest, ct);
                 _tooWeak = 0;
