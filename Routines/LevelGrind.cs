@@ -143,10 +143,14 @@ public sealed class LevelGrind(
             // and accessories only spend gil ABOVE the reserve. The main-hand weapon (the biggest power step),
             // spell scrolls and consumables are exempt. Bots used to spend every gil on gear the moment they
             // had it (Raedra: 9,934 -> 94 on one buy pass), leaving the fleet at a few hundred gil.
-            long reserve = GilReserve(p.World.MainJobLevel);
+            long reserve = GilReserve(CharLevel());
             foreach (var item in cfg.BuyItems)
             {
                 if (ct.IsCancellationRequested) return;
+                // Never re-buy a piece we've outgrown: the level-aware keep (current best + future tiers) is the
+                // buy filter too. Raedra sold its leather after the Beetle upgrade and its buy list asked for the
+                // leather again the next session (2026-10-16).
+                if (cfg.GearTable?.Any(g => g.item == item) == true && !SellKeep().Contains(item)) continue;
                 bool armor = cfg.GearTable?.Any(g => g.item == item && g.slot != EquipSlot.Main) ?? false;
                 uint budget = armor ? (uint)Math.Max(0L, (long)p.World.Gil - reserve) : uint.MaxValue;
                 await ShopRoutines.BuyItem(ah, p, inv, item, cfg.Keep, SellJunk, ct, budget);
@@ -184,13 +188,14 @@ public sealed class LevelGrind(
         // Free-roam controller: shares its con cache with target selection, steers hops away from known
         // con>=5 mobs and toward in-band prey. This replaces camp anchors entirely. Prey memory persists
         // per zone across sessions (learned at runtime — the anti-hardcoding way to "know the camps").
-        var roam = new RoamController(nav, p, combat, new RoamController.Config
+        var roamCfg = new RoamController.Config
         {
-            HopLength = cfg.RoamHop, ConMin = cfg.ConMin, ConMax = cfg.ConMax, Tag = cfg.Tag,
+            HopLength = cfg.RoamHop, ConMin = cfg.ConMin, ConMax = SoloConMax(), Tag = cfg.Tag,
             MemoryFile = $"/tmp/xibot_prey_{ZoneNow()}.mem",
             CommitPriorityTreks = cfg.CommitDropperTreks,
             AvoidNames = cfg.SkipMobNames,   // sleep-lock mobs: steer around their aggro radius, don't just skip-target
-        });
+        };
+        var roam = new RoamController(nav, p, combat, roamCfg);
 
         var killHooks = new KillRoutine.Hooks
         {
@@ -272,6 +277,7 @@ public sealed class LevelGrind(
             if (p.World.MainJobLevel > lastLevel)
             {
                 Log($"LEVEL UP -> {p.World.MainJobLevel}, re-equipping");
+                roamCfg.ConMax = SoloConMax();   // the solo ceiling drops to Decent Challenge at 20
                 lastLevel = p.World.MainJobLevel;
                 _skip.Clear();   // re-judge everything by con at the new level
                 await cfg.Equip(ct);
@@ -317,7 +323,7 @@ public sealed class LevelGrind(
                 if (StealthRoutines.NeedsTravelStock(p) && !StealthRoutines.HasPowders(inv) && Game.Zonelines.HasAuctionHouse(zoning.CurrentZone))
                 {
                     Log("stealth stock empty — restocking at the local AH before the crossing");
-                    await StealthRoutines.EnsureStock(ah, p, inv, StealthRoutines.TravelStock, cfg.Keep, SellJunk, ct, GilReserve(p.World.MainJobLevel));
+                    await StealthRoutines.EnsureStock(ah, p, inv, StealthRoutines.TravelStock, cfg.Keep, SellJunk, ct, GilReserve(CharLevel()));
                 }
                 await zoning.ToZone(dest, ct);
                 _tooWeak = 0;
@@ -546,9 +552,9 @@ public sealed class LevelGrind(
                 // cap is an EMPTY band for a fresh char (no mob can be below level 1, so a lvl-1 sees
                 // everything at con>=3) — three mages stood targetless a whole session under it. Unhittable
                 // INDIVIDUALS are handled downstream (zero-damage kite -> unkillable give-up -> entity skip).
-                if (fightCon < floor || fightCon > cfg.ConMax)
+                if (fightCon < floor || fightCon > SoloConMax())
                 {
-                    Log($"skip 0x{mob.Id:X} '{mob.Name}' con={fightCon} (want {floor}-{cfg.ConMax}{(preferred ? ", dropper" : "")})");
+                    Log($"skip 0x{mob.Id:X} '{mob.Name}' con={fightCon} (want {floor}-{SoloConMax()}{(preferred ? ", dropper" : "")})");
                     _skip.Add(mob.Id);
                     // Sustained TOO-WEAK cons = we've out-levelled this zone -> advance a leg (path mode only).
                     if (!preferred && fightCon >= 0 && fightCon < cfg.ConMin)
@@ -631,6 +637,16 @@ public sealed class LevelGrind(
     // Occupied main-inventory (container 0) slots, gil-slot 0 excluded — drives the "bag full, go sell" trip.
     int CountItems() => inv.CountSlots();
     const int SellBatch = 10;   // sellable items worth one vendor trip
+
+    // SOLO CON CEILING (user 2026-10-16): from about lv20 an Even Match is a losing solo fight without massive gear,
+    // so a solo grinder tops out at Decent Challenge there. Server scale (charutils EMobDifficulty): 0 TooWeak,
+    // 1 IncrediblyEasyPrey, 2 EasyPrey, 3 DecentChallenge, 4 EvenMatch, 5 Tough. Party pulls keep the brain's band.
+    const int DecentChallenge = 3;
+    int SoloConMax() => p.World.MainJobLevel >= 20 ? Math.Min(cfg.ConMax, DecentChallenge) : cfg.ConMax;
+
+    /// The CHARACTER's level for wealth purposes: its highest job, not the job it's playing right now. A SMN 37
+    /// levelling its sub as BLM 1 had a reserve of 0 and spent 14,814 -> 4,056 gil (Grobro, week of 2026-10-09).
+    int CharLevel() => Math.Max((int)p.World.MainJobLevel, p.World.JobLevels.Values.DefaultIfEmpty(0).Max());
 
     /// Gil a character keeps in hand rather than spend on armor: ramps 1,000 per level from 10, 10,000 from 20.
     public static long GilReserve(int lvl) => lvl <= 10 ? 0 : Math.Min(10_000L, (lvl - 10) * 1_000L);

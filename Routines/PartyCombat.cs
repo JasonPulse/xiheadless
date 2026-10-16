@@ -125,8 +125,11 @@ public static class PartyCombat
     /// members then hold the plain camp.
     public static ((float x, float z) camp, (float x, float z) casters)? Stations(IPerception p)
     {
+        // Reads the chat HISTORY, not each sender's last party line: the puller's next line (JOB/ENDAT/START)
+        // replaced its CAMP line, members fell back to camping where they stood, then re-mounted when the next
+        // CAMP arrived, cycling mount/dismount at the forming spot instead of riding to camp (2026-10-16).
         ((float, float), (float, float))? best = null; long bestMs = -1;
-        foreach (var (_, (msg, ms)) in p.World.PartyChat.ToArray())
+        void Take(string msg, long ms)
         {
             var m = msg.Split(' ', StringSplitOptions.RemoveEmptyEntries);
             if (m.Length >= 6 && m[0].Equals("CAMP", StringComparison.OrdinalIgnoreCase)
@@ -136,6 +139,10 @@ public static class PartyCombat
                 && ms > bestMs)
             { best = ((cx, cz), (kx, kz)); bestMs = ms; }
         }
+        ChatLine[] log;
+        try { log = p.World.ChatLog.ToArray(); } catch (ArgumentException) { log = []; }   // receive thread appends
+        foreach (var c in log) if (c.Kind is 4 or 15) Take(c.Message, c.Ms);
+        foreach (var (_, (msg, ms)) in p.World.PartyChat.ToArray()) Take(msg, ms);
         return best;
     }
 

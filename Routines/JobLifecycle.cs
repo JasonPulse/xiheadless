@@ -328,6 +328,8 @@ public sealed class JobLifecycle(
                 (string name, ushort id)? huntTarget;
                 if (plan is (string pz0, ushort pid0)) huntTarget = (pz0, pid0);
                 else { var zn = Game.HuntZones.ZoneFor(g.HomeNation, p.World.MainJobLevel); huntTarget = Game.Zonelines.Resolve(zn) is { } zid ? (zn, zid) : null; }
+                pg.CampHint = huntTarget is (string cz, ushort _) ? Game.HuntZones.CampFor(g.HomeNation, cz) : null;
+                pg.PrepareTravel = c => StealthRoutines.PrepareTravel(nav, inv, p, c);
                 await FleetDay.Run(p, combat, party, chat, magic, nav, lifecycle, new FleetDay.Hooks
                 {
                     GoToHuntZone = async c =>
@@ -343,7 +345,11 @@ public sealed class JobLifecycle(
                     // Anchor formation on the leg's CURATED camp (dense spawn ground), NOT the zone-in edge.
                     // Without this the party camped where the traveler landed (~700y off the mobs in Konschtat)
                     // and roamed empty all session (user 2026-08-27). Null leg-camp -> old behavior (form where we stand).
-                    MeetSpot = huntTarget is (string mz, ushort _) ? Game.HuntZones.CampFor(g.HomeNation, mz) : null,
+                    // FORM at the hunt zone's Survival Guide (nearest the hunting ground), never at a camp: bots waited
+                    // up to 30 min ON the curated camp, which is spawn ground, and died there without a fight logged
+                    // (Bithou: 104 such deaths in a week). The curated camp only seeds the party's fighting camp.
+                    MeetSpot = huntTarget is (string mz, ushort mid) && Game.HuntZones.CampFor(g.HomeNation, mz) is var hint
+                        && Game.SurvivalGuides.Nearest(mid, hint?.x ?? 0, hint?.z ?? 0) is { } sg ? (sg.x, sg.z) : null,
                     PrepareTravel = c => StealthRoutines.PrepareTravel(nav, inv, p, c),
                     Defend = c => KillRoutine.DefendSelf(combat, p, nav, gear, new KillRoutine.Hooks
                     {

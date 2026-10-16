@@ -10,7 +10,24 @@ namespace XiHeadless.Routines;
 public sealed class PartyGrind(IPerception p, ICombat combat, IMagic? magic, INavigation nav, IGear gear,
                                IChat chat, LevelGrind.Config g, string tag)
 {
-    (float x, float z)? _camp;    // the announcer's own anchor (first-beat position = the meet spot)
+    (float x, float z)? _camp;    // the announcer's own anchor, chosen on its first beat
+    /// The hunting ground the camp should sit beside (the curated leg camp). The group FORMS elsewhere (a Survival
+    /// Guide); the puller then camps off spawn ground near this. Null = camp near wherever the puller stands.
+    public (float x, float z)? CampHint { get; set; }
+    /// Travel protection for long walks inside the zone (ride, else Sneak/Invis): the same hook every route leg
+    /// uses. The walk from the forming spot (a Survival Guide) to the camp can be 700y of hunting ground; a party
+    /// that walked it on foot through Quadav/Goobbue ground in Rolanberry was wiped en route (2026-10-16).
+    public Func<CancellationToken, Task>? PrepareTravel { get; set; }
+    const float LongWalkYalms = 60f;
+
+    // Walk to a station: ride/stealth first when it's a real trip, fight back on the way, get off on arrival.
+    async Task GoTo((float x, float z) dest, float within, int legTimeoutMs, CancellationToken ct)
+    {
+        if (p.DistanceTo(dest.x, dest.z) > LongWalkYalms && PrepareTravel is { } prep) await prep(ct);
+        await NavRoutines.WalkTo(nav, p, dest.x, dest.z, within, ct, legs: p.DistanceTo(dest.x, dest.z) > LongWalkYalms ? 6 : 1,
+            legTimeoutMs: legTimeoutMs, defend: Defend);
+        if (p.DistanceTo(dest.x, dest.z) <= within + 2f) nav.Dismount();   // on foot at the station: cast, rest, pull
+    }
     // The shared per-entity con cache (cleared on level-up): a mob judged out of band (-1 no reply, too weak,
     // too tough) is never re-picked until we level. Without it the puller re-/checked the NEAREST mob every
     // beat: -1 objects thousands of times (Grabu/Kougrou, 2026-08-30), then a con-5 Goblin_Gambler 6,000x
@@ -38,7 +55,7 @@ public sealed class PartyGrind(IPerception p, ICombat combat, IMagic? magic, INa
         var st = PartyCombat.Stations(p) ?? _myStations;
         if (iAmPuller && w.NowMs - _annMs > PartyCombat.StationAnnounceEveryMs)
         {
-            _camp ??= SafeCamp((w.X, w.Z));
+            _camp ??= SafeCamp(CampHint ?? (w.X, w.Z));
             var casters = PartyCombat.DeriveCasterStation(_camp.Value, PullLaneProbe(_camp.Value));
             PartyCombat.AnnounceStations(chat, _camp.Value, casters);
             _annMs = w.NowMs;
@@ -93,7 +110,7 @@ public sealed class PartyGrind(IPerception p, ICombat combat, IMagic? magic, INa
 
         var mine = MyStation(role, camp, st);
         if (p.DistanceTo(mine.x, mine.z) > 5f)
-            await NavRoutines.WalkTo(nav, p, mine.x, mine.z, within: 3f, ct, legTimeoutMs: 20_000, defend: Defend);
+            await GoTo(mine, within: 3f, legTimeoutMs: 20_000, ct);
         else if (w.Hpp <= PartyCombat.ReadyHpp || w.Hpp < g.RestHpTrigger || (g.RestMpPct > 0 && w.Mpp < g.RestMpPct))
             await combat.Rest(Math.Max(g.RestHpTarget, PartyCombat.ReadyHpp + 10), g.RestMpPct,
                 () => p.AttackersOn(w.MyId, 8000) > 0, ct);   // members rest ABOVE the ready line — never park under the puller's gate
@@ -194,7 +211,7 @@ public sealed class PartyGrind(IPerception p, ICombat combat, IMagic? magic, INa
                 && m.Hpp > 0 && m.Hpp < PartyCombat.ReadyHpp)
             {
                 if (p.World.NowMs - _gateLogMs > 60_000) { _gateLogMs = p.World.NowMs; Log.Info($"[{tag}] holding pulls — a member is at {m.Hpp}%"); }
-                await NavRoutines.WalkTo(nav, p, camp.x, camp.z, within: 3f, ct, legTimeoutMs: 15_000); await Task.Delay(2000, ct); return;
+                await GoTo(camp, within: 3f, legTimeoutMs: 15_000, ct); await Task.Delay(2000, ct); return;
             }
 
         // Jumped away from camp (roaming aggro, a link): that mob IS the next pull. Drag it home to the party
@@ -208,7 +225,7 @@ public sealed class PartyGrind(IPerception p, ICombat combat, IMagic? magic, INa
         // The puller is a member too: never pull hurt or dry (live: a BLU puller at 19% HP pulled a goblin).
         if (p.World.Hpp < PartyCombat.ReadyHpp || (g.RestMpPct > 0 && p.World.Mpp < g.RestMpPct))
         {
-            await NavRoutines.WalkTo(nav, p, camp.x, camp.z, within: 3f, ct, legTimeoutMs: 15_000);
+            await GoTo(camp, within: 3f, legTimeoutMs: 15_000, ct);
             await combat.Rest(Math.Max(g.RestHpTarget, PartyCombat.ReadyHpp + 10), g.RestMpPct,
                 () => p.AttackersOn(p.World.MyId, 8000) > 0, ct);
             return;
@@ -221,7 +238,7 @@ public sealed class PartyGrind(IPerception p, ICombat combat, IMagic? magic, INa
                 && !(p.World.Entities.TryGetValue(id, out var me) && Geometry.Dist2D(me.X, me.Z, camp.x, camp.z) <= 25f))
             {
                 if (p.World.NowMs - _gateLogMs > 60_000) { _gateLogMs = p.World.NowMs; Log.Info($"[{tag}] holding pulls — a member isn't at camp yet"); }
-                await NavRoutines.WalkTo(nav, p, camp.x, camp.z, within: 3f, ct, legTimeoutMs: 15_000); await Task.Delay(2000, ct); return;
+                await GoTo(camp, within: 3f, legTimeoutMs: 15_000, ct); await Task.Delay(2000, ct); return;
             }
         if (p.World.MainJob == Job.Brd && magic is not null) await SongPass(camp, st, ct);
 
@@ -260,7 +277,7 @@ public sealed class PartyGrind(IPerception p, ICombat combat, IMagic? magic, INa
             {
                 // This heading came up empty — walk home and fan to the next spoke.
                 _pullHeading = (_pullHeading + 60) % 360;
-                await NavRoutines.WalkTo(nav, p, camp.x, camp.z, within: 5f, ct, legTimeoutMs: 90_000);
+                await GoTo(camp, within: 5f, legTimeoutMs: 90_000, ct);
                 return;
             }
             float rad = _pullHeading * MathF.PI / 180f;
