@@ -16,6 +16,9 @@ public sealed class JobLeveling(IPerception p, IJobChange jobs, IZoning zoning)
         public Func<byte, CancellationToken, Task> RunGrind = null!; // runs one LevelGrind session for the given job until its Done
         public string HomeCity = "Windurst_Woods";            // Mog House city for job changes (fleet is Windurst-nation)
         public string Tag = "joblevel";
+        // UPKEEP (user 2026-10-27): true = play the MAIN regardless of sub lag, farming gil on the job that earns it
+        // (an Upkeep day, or a caster phase that can't afford its spells). Re-read every decision.
+        public Func<bool> FarmMain = () => false;
     }
 
     void Log(Config c, string m) => XiHeadless.Log.Auto($"[{c.Tag}] {m}");
@@ -29,6 +32,7 @@ public sealed class JobLeveling(IPerception p, IJobChange jobs, IZoning zoning)
     /// One seesaw decision: returns the job that should be MAIN right now.
     public byte PickPhase(Config c)
     {
+        if (c.FarmMain()) return c.MainJob;
         int main = LevelOf(c.MainJob), sub = LevelOf(c.SubJob);
         // The sub must keep up with where the main IS (not where it's going): grind the sub whenever it's
         // below half of the CURRENT main level; hysteresis of +1 so we don't flip every single main level.

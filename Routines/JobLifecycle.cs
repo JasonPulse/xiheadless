@@ -132,6 +132,9 @@ public sealed class JobLifecycle(
         // Every travel leg fights back when jumped (the one shared KillRoutine), instead of walking on to a KO.
         zoning.Defend = c => KillRoutine.DefendSelf(combat, p, nav, gear, new KillRoutine.Hooks { Tag = cfg.Tag }, c);
         var seesaw = new JobLeveling(p, jobs, zoning);
+        // UPKEEP day (user 2026-10-27): farm gil on the MAIN job, the one that earns, instead of leveling the sub.
+        _upkeep = SessionPlan.ForToday(p.World.MyId).Mode == SessionPlan.DayMode.Upkeep;
+        if (_upkeep) Log($"UPKEEP day — farming gil on {JN(cfg.MainJob)}");
         Log($"lifecycle start: {(cfg.Advanced ? "ADVANCED" : "basic")} main={JN(cfg.MainJob)} sub={JN(cfg.SubJob)} " +
             $"(now {JN(p.World.MainJob)} {p.World.MainJobLevel} / levels {JN(cfg.MainJob)}={LevelOf(cfg.MainJob)} {JN(cfg.SubJob)}={LevelOf(cfg.SubJob)})");
 
@@ -174,15 +177,18 @@ public sealed class JobLifecycle(
             {
                 MainJob = cfg.MainJob, SubJob = cfg.SubJob, MainTarget = cfg.MainTarget,
                 HomeCity = cfg.HomeCity, Tag = cfg.Tag,
+                FarmMain = () => _upkeep,
                 RunGrind = async (job, c) =>
                 {
                     int startMain = LevelOf(cfg.MainJob);
+                    if (job != cfg.MainJob && !await EnsureAttackSpell(job, c)) return;   // can't afford its spells -> upkeep on the main
                     await RunGrindStint(job, () => job == cfg.SubJob
                         // sub stint: grind until the sub reaches half of the main
                         ? LevelOf(cfg.SubJob) >= JobLeveling.SubNeededFor(LevelOf(cfg.MainJob))
-                        // main stint: stop at the target, or when the sub falls behind, or after +5 levels (re-decide)
+                        // main stint: stop at the target, or when the sub falls behind (not while farming upkeep),
+                        // or after +5 levels (re-decide)
                         : (cfg.MainTarget > 0 && LevelOf(cfg.MainJob) >= cfg.MainTarget)
-                          || LevelOf(cfg.SubJob) < JobLeveling.SubNeededFor(LevelOf(cfg.MainJob))
+                          || (!_upkeep && LevelOf(cfg.SubJob) < JobLeveling.SubNeededFor(LevelOf(cfg.MainJob)))
                           || LevelOf(cfg.MainJob) >= startMain + 5, c);
                 },
             }, ct);
@@ -218,6 +224,32 @@ public sealed class JobLifecycle(
     }
 
     Nation? _detectedNation;   // non-null when ApplyDetectedNation swapped away from the Windurst defaults
+
+    bool _upkeep;   // farming gil on the main for the rest of the session (Upkeep day, or a caster phase too broke for its spells)
+
+    // A caster phase (WHM/BLM/RDM/SCH/GEO) fights with its spells; with no attack spell it melees and dies (user
+    // 2026-10-27). Called with the char already switched to `job`: if it knows no usable attack spell, buy + learn
+    // one from the kit scrolls at the AH. Still none = it can't afford them: switch to UPKEEP (farm gil on the main
+    // for the rest of the session) and return false. Non-caster phases always pass.
+    async Task<bool> EnsureAttackSpell(byte job, CancellationToken ct)
+    {
+        if (magic is null || !JobKits.FightsWithSpells(job) || JobKits.KnowsAttackSpell(job, LevelOf(job), magic)) return true;
+        var g = cfg.GrindCfgFor(job);
+        string ahZone = _detectedNation is null ? g.AhZone : cfg.HomeCity;
+        Log($"{JN(job)} {LevelOf(job)} knows no attack spell — buying one at the AH ({ahZone})");
+        if (!Game.Zonelines.HasAuctionHouse(zoning.CurrentZone)) await zoning.GoTo(ahZone, ct);
+        var keep = g.Keep;
+        foreach (var (scroll, spell) in JobKits.AttackScrolls(job, LevelOf(job)))
+        {
+            if (!await ShopRoutines.BuyItem(ah, p, inv, scroll, keep,
+                    c => ShopRoutines.SellNearby(shop, nav, zoning, inv, p, keep, c), ct)) continue;
+            if (await MagicRoutines.LearnFromScroll(inv, magic, p, scroll, spell, ct, cfg.Tag)) break;
+        }
+        if (JobKits.KnowsAttackSpell(job, LevelOf(job), magic)) return true;
+        Log($"can't afford a {JN(job)} attack spell (gil {p.World.Gil}) — UPKEEP: farming gil on {JN(cfg.MainJob)} for the rest of the session");
+        _upkeep = true;
+        return false;
+    }
 
     // Off the main loop: once the bot is level 20 (the mount requirement), ask the GM once for the Chocobo
     // Companion key item (3072) so travel legs ride instead of walk. Idempotent server-side; GmGrant retries
@@ -307,7 +339,7 @@ public sealed class JobLifecycle(
             // zone shout (PartyFinder), play its ROLE at camp (PartyGrind — stations, puller doctrine, the
             // one shared KillRoutine), group-safe logout (FleetSchedule). Solo/Upkeep days = the grind below.
             if (party is not null && chat is not null && magic is not null && lifecycle is not null
-                && p.World.MainJobLevel > 10
+                && p.World.MainJobLevel > 10 && !_upkeep   // an upkeep session farms gil solo
                 && SessionPlan.ForToday(p.World.MyId).Mode == SessionPlan.DayMode.Party)
             {
                 Log($"PARTY day (lvl {p.World.MainJobLevel}) — grouping up in the hunt zone");

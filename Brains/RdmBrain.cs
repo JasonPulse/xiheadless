@@ -55,11 +55,12 @@ public sealed class RdmBrain(
     {
         HomeNation = Nation.Windurst,
         AhZone = AhZone,
-        BuyItems = GearRoutines.BuyList(Gear).ToArray(),   // cheap-first: the array is ascending by level
+        BuyItems = GearRoutines.BuyList(Gear)   // cheap-first: the array is ascending by level
+            .Concat(job == Job.Blm && BlmClubFor(p.World.MainJobLevel) is ushort club ? new[] { club } : Array.Empty<ushort>()).ToArray(),
         GearTable = Gear,
-        Keep = GearRoutines.KeepSet(Gear, 1126, 1127),
+        Keep = GearRoutines.KeepSet(Gear, BlmBrain.Gear.Where(g => g.slot == EquipSlot.Main).Select(g => g.item).Append((ushort)1126).Append((ushort)1127).ToArray()),
         Equip = Equip,
-        WepSkillForLevel = _ => job == Job.Mnk ? (byte)1 : SwordSkill,   // MNK sub melees hand-to-hand
+        WepSkillForLevel = _ => job == Job.Mnk ? (byte)1 : job == Job.Blm ? BlmBrain.ClubSkill : SwordSkill,   // BLM phase swings a club
         ConMin = 1, ConMax = 3,
         CleanPullNeighborCon = 3,
         RestHpTrigger = 70, RestHpTarget = 90,
@@ -69,7 +70,14 @@ public sealed class RdmBrain(
 
     async Task Equip(CancellationToken ct)
     {
-        var (n, total) = await GearRoutines.EquipByLevel(gear, p, Gear, ct);
-        Log.Info($"[rdm] equipped {n}/{total} (lvl {p.World.MainJobLevel}, sword={gear.SkillLevel(SwordSkill)})");
+        // BLM can't hold a sword: its phase swings the best club from BlmBrain's own ladder (Viko's BLM 15 fought
+        // bare-handed behind an RDM sword it couldn't equip). Same phase-weapon shape as CorBrain's RDM phase.
+        (byte slot, ushort item)? phase = p.World.MainJob == Job.Blm && BlmClubFor(p.World.MainJobLevel) is ushort club
+            ? (EquipSlot.Main, club) : null;
+        var (n, total) = await GearRoutines.EquipByLevel(gear, p, Gear, ct, phase);
+        Log.Info($"[rdm] equipped {n}/{total} (job {p.World.MainJob} lvl {p.World.MainJobLevel}, sword={gear.SkillLevel(SwordSkill)}, club={gear.SkillLevel(BlmBrain.ClubSkill)})");
     }
+
+    static ushort? BlmClubFor(int lvl) =>
+        BlmBrain.Gear.Where(g => g.slot == EquipSlot.Main && g.lvl <= lvl).Select(g => (ushort?)g.item).LastOrDefault();
 }

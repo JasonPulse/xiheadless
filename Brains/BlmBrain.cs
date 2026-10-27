@@ -5,7 +5,7 @@ namespace XiHeadless.Brains;
 /// A basic job (no unlock), leveled as BLM/WHM through the shared JobLifecycle:
 ///   * SubJob = WHM so the mage can self-Cure in a fight (BLM can't cast Cure alone) AND so a post-death
 ///     recovery travels back AS the WHM (aggro-free above the mobs) — both hard-won BlmBrain patterns, now
-///     provided generically by JobLifecycle (self-heal via the brain's EmergencyHeal; safe-job recovery via
+///     provided generically by JobLifecycle (self-heal via the shared JobKits EmergencyCure; safe-job recovery via
 ///     SafeTravelJobFor picking the leveled WHM). The old Mhaura home-point flag / stealth-trek band-aids are
 ///     gone: in the fresh-start model the level-gated Windurst nursery + safe recovery handle the return.
 ///   * Stone is the ranged pull + in-fight nuke (BLM's real damage — without it the bot meleed and died).
@@ -17,7 +17,7 @@ public sealed class BlmBrain(
     IAuctionHouse ah, IDelivery delivery, IInventory inv, IShop shop, IJobChange jobs, ILifecycle lifecycle,
     IEvents events, IChat chat, IParty party) : IBrain
 {
-    const byte ClubSkill = 11;
+    internal const byte ClubSkill = 11;
     const string AhZone = "Windurst Woods";   // home-nation AH (Windurst-default fleet chars)
 
     // Mage gear ladder — INT/MP cloth + wands (Club skill, matching WepSkillForLevel). Every (item, slot, lvl)
@@ -25,7 +25,7 @@ public sealed class BlmBrain(
     // BLM-wearable against the server item_equipment.sql job-mask (BLM = bit 3). Ascending by level so the best
     // owned piece wins per slot. BLM had NO gear table at all before — Droben grinded to 21 stark naked
     // (0 equipped, user-observed via the char viewer 2026-08-27).
-    static readonly (ushort item, byte slot, byte lvl)[] Gear =
+    internal static readonly (ushort item, byte slot, byte lvl)[] Gear =
     {
         (17024, EquipSlot.Main, 1),    // Ash Club (club, lv1)
         (12526, EquipSlot.Head, 1),    // Copper Hairpin +1
@@ -74,8 +74,9 @@ public sealed class BlmBrain(
                          // got ganged there (died to a con-2 crow amid 3 threats). Shorter hops stay local.
         RestHpTrigger = 60, RestHpTarget = 90, RestMpPct = 40,
         Pull = Pull,                                       // Stone from range: DoT-free nuke opener
-        UseAbilities = Nuke,                               // keep nuking through the fight (BLM's real damage)
-        EmergencyHeal = EmergencyHeal,                     // self-Cure via the WHM sub cuts nursery deaths
+        // No UseAbilities/EmergencyHeal here: JobLifecycle injects the generic JobKits rotation for the job being
+        // PLAYED (BLM nukes; the WHM phase Dia + Banish) and the shared self-Cure. A BLM-only Nuke wired here ran
+        // in the WHM phase too, so Drarven's WHM 12 never cast Dia or Banish (0 kills, 104 deaths in a week).
         Tag = "blm",
     };
 
@@ -85,19 +86,6 @@ public sealed class BlmBrain(
         Log.Info($"[blm] equipped {n}/{total} (lvl {p.World.MainJobLevel}, club={gear.SkillLevel(ClubSkill)})");
     }
 
-    // Self-Cure via the WHM sub (BLM/WHM). Nursery deaths are frequent and each recovery is a long round-trip,
-    // so healing through a fight is a big net win — the shared selector-driven EmergencyCure.
-    Task<bool> EmergencyHeal(CancellationToken ct) => MagicRoutines.EmergencyCure(magic, p, ct, tag: "blm");
-
     // Pull with the cheapest ready Stone tier (shared selector pull — no-op on the WHM phase, Ready gates it).
     Task Pull(uint mobId, CancellationToken ct) => MagicRoutines.SpellPull(magic, p, SpellLine.Stone, mobId, ct, tag: "blm");
-
-    // In-fight nuking — BLM's actual damage. Without it the bot MELEED every fight (hp 100->0 while the mob
-    // sat at 79% and MP never left 100%). Called every kill-loop tick; keep an MP floor so the last nukes can
-    // still finish a low mob. The STRONGEST ready nuke (shared selector): Stone I at lv23 lost even-match fights.
-    async Task Nuke(uint mob, int con, CancellationToken ct)
-    {
-        if (p.World.Mpp < 10 || !MagicRoutines.CastBestNuke(magic, p, mob)) return;
-        await Task.Delay(4000, ct);   // cast time + a swing between nukes; the recast gate is server-side
-    }
 }

@@ -322,7 +322,9 @@ public static class PacketParsers
         var lev = b.Length >= 72 + 0x18 ? b.Slice(72, 0x18) : b.Slice(16, 16);
         for (byte j = 1; j < lev.Length; j++) w.JobLevels[j] = lev[j];   // full per-job table (seesaw leveling reads it)
         if (w.MainJob < lev.Length) w.MainJobLevel = lev[w.MainJob];
-        if (w.SubJob < lev.Length) w.SubJobLevel = lev[w.SubJob];
+        // SubJobLevel is NOT the sub job's table level: the server caps a sub at half the main, and that capped
+        // level only arrives in 0x061 (CliStatus). Reading it here made a BLM15/RDM sub think it was RDM 31, so
+        // the spell selector picked Thunder every beat and the server refused it (Viko: 0 nukes in a week).
         for (int i = 0; i < 7; i++) w.Stats[i] = U16(b, 32 + i * 2);
         w.MaxHp = (int)U32(b, 60);
         w.MaxMp = (int)U32(b, 64);
@@ -654,6 +656,7 @@ public static class PacketParsers
         w.MaxMp = (int)U32(b, 8);
         w.MainJob = b[12];
         w.MainJobLevel = b[13];
+        if (b.Length >= 16) { w.SubJob = b[14]; w.SubJobLevel = b[15]; }   // sjob_lv = GetSLevel(): the capped, usable sub level
         if (b.Length >= 20)
         {
             w.ExpNow = U16(b, 16);

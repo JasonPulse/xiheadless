@@ -36,6 +36,28 @@ public static class JobKits
     public static bool CastsPrimary(byte job) =>
         job is Job.Whm or Job.Blm or Job.Rdm or Job.Sch or Job.Geo or Job.Smn;
 
+    // The lines a caster phase does its damage with (the For() caster/WHM branches): nukes, then Dia/Bio/Banish.
+    static readonly SpellLine[] AttackLines =
+    {
+        SpellLine.Stone, SpellLine.Water, SpellLine.Aero, SpellLine.Fire, SpellLine.Blizzard, SpellLine.Thunder,
+        SpellLine.Dia, SpellLine.Bio, SpellLine.Banish,
+    };
+
+    /// The jobs whose kit kills with AttackLines spells (SMN fights through its avatar, BRD through songs + melee).
+    public static bool FightsWithSpells(byte job) => job is Job.Whm or Job.Blm or Job.Rdm or Job.Sch or Job.Geo;
+
+    /// True if `job` at `lvl` has at least one learned attack spell it can cast. Without one a caster phase only
+    /// melees (user 2026-10-27: "never nuking/casting on a spell caster job is the problem").
+    public static bool KnowsAttackSpell(byte job, int lvl, IMagic magic) =>
+        AttackLines.Any(line => Spells.Tiers.TryGetValue(line, out var tiers)
+            && tiers.Any(sp => magic.Known(sp) && SpellLevels.For((ushort)sp, job) is { } need && need <= lvl));
+
+    /// Buyable kit scrolls for `job`'s attack spells usable at `lvl`, cheapest (lowest level) first.
+    public static IEnumerable<(ushort scroll, Spell spell)> AttackScrolls(byte job, int lvl) =>
+        ScrollKit.Where(s => s.buyable && Spells.Info.TryGetValue(s.spell, out var i) && AttackLines.Contains(i.Line)
+                             && SpellLevels.For((ushort)s.spell, job) is { } need && need <= lvl)
+                 .Select(s => (s.scroll, s.spell));
+
     // Every kit scroll this job can use by its CURRENT level (at least the lv-12 starter book, bought ahead).
     static (ushort scroll, Spell spell, bool buyable)[] EssentialScrolls(byte job, int charLvl) =>
         ScrollKit.Where(s => SpellLevels.For((ushort)s.spell, job) is { } lvl && lvl <= Math.Max(12, charLvl)).ToArray();
@@ -59,7 +81,10 @@ public static class JobKits
         // pass). Applies to EVERY brain's mage phases — scroll learning is engine duty, not brain config.
         if (magic is not null && inv is not null && EssentialScrolls(job, p.World.MainJobLevel) is { Length: > 0 } scrolls)
         {
-            g.BuyItems = scrolls.Where(s => s.buyable).Select(s => s.scroll).Where(s => !g.BuyItems.Contains(s)).Concat(g.BuyItems).ToArray();
+            // Only scrolls for spells not yet LEARNED: the buy checks the bag, not the spell list, so Viko (RDM 31,
+            // knows Cure + Dia) spent its last 150 gil re-buying both scrolls on an upkeep day (2026-10-27).
+            g.BuyItems = scrolls.Where(s => s.buyable && !magic.Known(s.spell)).Select(s => s.scroll)
+                .Where(s => !g.BuyItems.Contains(s)).Concat(g.BuyItems).ToArray();
             foreach (var (scroll, _, _) in scrolls) g.Keep.Add(scroll);
             var innerEquip = g.Equip;
             g.Equip = async ct =>
