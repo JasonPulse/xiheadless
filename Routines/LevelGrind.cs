@@ -44,7 +44,8 @@ public sealed class LevelGrind(
         public Func<CancellationToken, Task> OnRestock = _ => Task.CompletedTask;   // post-sell, at the vendor with fresh gil
         public string[] SkipMobNames = CombatRoutines.SleepLockMobs;   // universal hazards only — the sanctioned sleep-lock pair by default
         public Func<CancellationToken, Task> OnSetup = _ => Task.CompletedTask;     // one-time, after zone-in
-        public Func<uint, CancellationToken, Task> Pull = (_, __) => Task.CompletedTask;   // ranged opener (WHM Dia)
+        public static readonly Func<uint, CancellationToken, Task> NoPull = (_, _) => Task.CompletedTask;
+        public Func<uint, CancellationToken, Task> Pull = NoPull;   // ranged opener (WHM Dia, DRK Bio)
         public Func<CancellationToken, Task<bool>> EmergencyHeal = NoHeal;
         public Func<CancellationToken, Task> PostKillHeal = _ => Task.CompletedTask;
         public Func<uint, CancellationToken, Task<bool>>? LedgePull;   // ranged hate yank for ledge mobs (WAR Provoke)

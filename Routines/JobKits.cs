@@ -25,10 +25,14 @@ public static class JobKits
         (4631, Spell.Dia, true), (4636, Spell.Banish, true), (4666, Spell.Paralyze, true),
         (4767, Spell.Stone, true), (4777, Spell.Water, true), (4762, Spell.Aero, true), (4862, Spell.Blind, true),
         (4752, Spell.Fire, true), (4757, Spell.Blizzard, true), (4772, Spell.Thunder, true),   // BLM 13/17/21 nukes
+        (4838, Spell.Bio, true), (4853, Spell.Drain, true),   // BLM/RDM 10 Bio; DRK pulls with Bio 15, drains at 10
         // BRD songs ARE its spells (user: lvl-1s with no songs were red flags) — SpellLevels filters to BRD.
         (4976, Spell.FoeRequiem, true), (4986, Spell.ArmysPaeon, true),
         (5002, Spell.ValorMinuet, true), (5007, Spell.SwordMadrigal, true),
     };
+
+    // Kit scrolls only one job's kit casts; every other job that could learn them skips the buy.
+    static readonly Dictionary<Spell, byte> OnlyFor = new() { [Spell.Drain] = Job.Drk };
 
     // Spell-primary jobs: they level by CASTING, so their melee weapon skill is irrelevant and permanently
     // lags (they never swing to skill it). The skill-up dropback must NOT gate them onto con-0 melee prey —
@@ -66,7 +70,8 @@ public static class JobKits
 
     // Every kit scroll this job can use by its CURRENT level (at least the lv-12 starter book, bought ahead).
     static (ushort scroll, Spell spell, bool buyable)[] EssentialScrolls(byte job, int charLvl) =>
-        ScrollKit.Where(s => SpellLevels.For((ushort)s.spell, job) is { } lvl && lvl <= Math.Max(12, charLvl)).ToArray();
+        ScrollKit.Where(s => SpellLevels.For((ushort)s.spell, job) is { } lvl && lvl <= Math.Max(12, charLvl)
+                             && (!OnlyFor.TryGetValue(s.spell, out var only) || only == job)).ToArray();
 
     /// Wire the generic kit into a grind config IF the brain left the defaults in place.
     public static void Apply(LevelGrind.Config g, byte job, ICombat combat, IMagic? magic, IPerception p, string tag,
@@ -79,6 +84,9 @@ public static class JobKits
         if (SkipsMeleeSkillup(job, p.World.MainJobLevel, upkeep)) g.SkipMeleeSkillup = true;
         // RNG/COR do their real damage by SHOOTING — the fight loop fires Shoot on cadence (user 2026-07-31).
         if (job is Job.Rng or Job.Cor) g.Ranged = true;
+        // DRK pulls with Bio from range (user 2026-11-19: Laedo, DRK 32, sat at 100% MP all session).
+        if (job == Job.Drk && magic is not null && ReferenceEquals(g.Pull, LevelGrind.Config.NoPull))
+            g.Pull = (mob, ct) => MagicRoutines.SpellPull(magic, p, SpellLine.Bio, mob, ct, range: 20f, tag: tag);
         // Self-funding default: if the brain wired NO bag policy at all, sell junk drops when the bag
         // fills (drops -> gil -> scrolls/gear is the whole broke-bot economy; a bag that silently fills
         // just bounces loot). Brains with an explicit OnBagFull (party farms) are untouched.
@@ -114,6 +122,7 @@ public static class JobKits
         long lastSongMs = 0;
         uint lastMob = 0;
         bool diaDone = false;   // Dia/Bio are ONE-per-fight (recasting a DoT wastes MP)
+        long lastDrainMs = 0;   // Drain's recast is 60s and Magic.Ready doesn't track recasts
         return async (mob, con, ct) =>
         {
             var w = p.World;
@@ -192,6 +201,15 @@ public static class JobKits
                 case Job.Whm:
                     if (magic is null) { await TryMeleeJa(); return; }
                     if (!diaDone && magic.CastLowest(SpellLine.Dia, mob)) { diaDone = true; await Task.Delay(3000, ct); return; }
+                    await TryMeleeJa();
+                    return;
+
+                // ---- DARK KNIGHT: Bio opened the pull (Apply wires it). In a party, Drain on its 60s recast: the
+                // DRK's own HP comes back off the mob instead of out of the healer's MP (user 2026-11-19).
+                case Job.Drk:
+                    if (magic is not null && w.PartyMembers.Count > 0 && w.NowMs - lastDrainMs > 60_000
+                        && magic.CastHighest(SpellLine.Drain, mob))
+                    { lastDrainMs = w.NowMs; Log.Info($"[{tag}] Drain"); await Task.Delay(3000, ct); return; }
                     await TryMeleeJa();
                     return;
 
