@@ -18,7 +18,8 @@ public sealed class WorldState
     public long SelfGroupListMs; // last 0x0DD group_list entry about SELF — the server refreshes the roster on
                                  // leave/disband, so a self entry NOT followed by a member's re-listing means
                                  // that member left the party (disband detection, event-driven)
-    public int MaxHp, MaxMp;    // from 0x01b job_info
+    public int MaxHp, MaxMp;    // from 0x061 clistatus: the real maximum, gear and food included
+    public int BaseMaxHp, BaseMaxMp; // from 0x01b job_info: health.maxhp, the maximum before any bonus
     public uint Hp, Mp, Tp;     // current absolute values (from 0x0DF group_attr); TP 0-3000
     public uint Gil;            // gil balance (from the item-65535 entry in 0x01F/0x020)
     public byte MainJob, MainJobLevel, SubJob, SubJobLevel;

@@ -353,8 +353,14 @@ public static class PacketParsers
         // level only arrives in 0x061 (CliStatus). Reading it here made a BLM15/RDM sub think it was RDM 31, so
         // the spell selector picked Thunder every beat and the server refused it (Viko: 0 nukes in a week).
         for (int i = 0; i < 7; i++) w.Stats[i] = U16(b, 32 + i * 2);
-        w.MaxHp = (int)U32(b, 60);
-        w.MaxMp = (int)U32(b, 64);
+        // The server fills these with health.maxhp/maxmp, the maximum BEFORE gear and food; 0x061 carries
+        // GetMaxHP(), the real one. Writing both into MaxHp let whichever came last win, and a late 0x01B
+        // showed HP above max (459/423).
+        w.BaseMaxHp = (int)U32(b, 60);
+        w.BaseMaxMp = (int)U32(b, 64);
+        // Until a 0x061 arrives, the base is the best maximum there is (a session can run a while first).
+        if (w.MaxHp == 0) w.MaxHp = w.BaseMaxHp;
+        if (w.MaxMp == 0) w.MaxMp = w.BaseMaxMp;
     }
 
     // 0x037 CCharStatusPacket (GP_SERV_SERVERSTATUS, char_status.cpp): BufStatus[32]@4,
