@@ -70,6 +70,7 @@ public static class ShopRoutines
     {
         // maxBid: the most this purchase may spend (the caller's gil-reserve budget); higher rungs aren't bid.
         if (inv.Has(itemId)) return true;
+        if (Unlistable(itemId)) return false;
         bool soldForGil = false;
         foreach (var bid in BidLadder)
         {
@@ -117,6 +118,7 @@ public static class ShopRoutines
                                               CancellationToken ct = default, long keepGil = 0)
     {
         // keepGil: never let a bid take gil below this (the caller's reserve).
+        if (Unlistable(itemId)) return inv.CountOf(itemId) >= count;
         int CountOf() => inv.CountOf(itemId);
         bool soldForGil = false;
         while (CountOf() < count && !ct.IsCancellationRequested)
@@ -147,6 +149,15 @@ public static class ShopRoutines
             if (!progressed) { Log.Info($"[ah] nothing more of {itemId} listed/affordable ({CountOf()}/{count})"); break; }
         }
         return CountOf() >= count;
+    }
+
+    // An item the AH can never hold (Rare/Ex NM drops, aH NONE) is never bid on: every rung comes back "no
+    // listing", and the fleet climbed the whole ladder 112x for an Auriga Xiphos (user 2026-11-19).
+    static bool Unlistable(ushort itemId)
+    {
+        if (!Game.NoAuction.Contains(itemId)) return false;
+        Log.Info($"[ah] {itemId} can't be listed on the AH (Rare/Ex or no AH category), not bidding");
+        return true;
     }
 
     // Wait for the AH result (0x04C) or the item to land in inventory. Returns the result byte
