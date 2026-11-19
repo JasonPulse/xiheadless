@@ -385,8 +385,7 @@ public sealed class JobLifecycle(
                     PrepareTravel = c => StealthRoutines.PrepareTravel(nav, inv, p, c),
                     Defend = c => KillRoutine.DefendSelf(combat, p, nav, gear, new KillRoutine.Hooks
                     {
-                        UseAbilities = g.UseAbilities, EmergencyHeal = g.EmergencyHeal,
-                        WepSkillForLevel = g.WepSkillForLevel, Tag = cfg.Tag,
+                        UseAbilities = g.UseAbilities, EmergencyHeal = g.EmergencyHeal, Tag = cfg.Tag,
                     }, c),
                     SoloGrind = c => new LevelGrind(p, nav, combat, zoning, gear, ah, delivery, inv, shop, g).RunAsync(c),
                     PartyGrind = (pp, c) => pg.Beat(pp, c),

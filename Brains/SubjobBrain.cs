@@ -93,7 +93,6 @@ public sealed class SubjobBrain(
         // Provoke fires at need, not on cooldown: only when a mob has peeled onto the healer.
         UseAbilities = (mob, con, ct) => WarBrain.UseWarAbilities(combat, mob, con, p.World.Hpp,
             provoke: party.MemberCount > 0 && p.AttackersOn(WhmId) > 0, ct),
-        WepSkillForLevel = _ => GreatAxeSkill,
         LedgePull = (id, ct) => combat.UseAbility(Ability.Provoke, id, ct),   // ~16y hate yank for ledge mobs
         Tag = "subjob",
     };
@@ -189,7 +188,7 @@ public sealed class SubjobBrain(
                 BuyItems = BracketBuys(),
                 Keep = Keep.Concat(new[] { WarBrain.Weapon20 }).Concat(WarBrain.Armor21.Select(g => g.item)).ToHashSet(),
                 Equip = EquipWarSet,
-                WepSkillForLevel = hooks.WepSkillForLevel,
+                WepSkillForLevel = _ => GreatAxeSkill,
                 // ConMax 3 (was 4): at WAR 23 the con-4s are lv24-26 (and Bull_Dhalmel is an NM) — one overnight
                 // session lost EVERY logged con-4 fight (Zu, Dhalmel ×2, three KOs) while con ≤3 fights were clean.
                 // Con-4 mobs re-enter the band naturally as we level past them. Con stays the sole arbiter.

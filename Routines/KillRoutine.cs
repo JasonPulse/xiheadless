@@ -21,7 +21,6 @@ public static class KillRoutine
     {
         public Func<uint, int, CancellationToken, Task> UseAbilities = (_, _, _) => Task.CompletedTask;   // (mob, con) — job buffs/JAs
         public Func<CancellationToken, Task<bool>> EmergencyHeal = _ => Task.FromResult(false);            // mage self-cure
-        public Func<byte, byte> WepSkillForLevel = _ => (byte)1;                                           // level -> equipped weapon's skill id
         public Func<uint, CancellationToken, Task<bool>>? LedgePull;                                       // ranged hate yank for 2D-close/3D-far mobs
         public bool NoWeaponSkills;                                                                         // suppress WS use — the killing blow must be plain melee (RNG/DRK unlock quests)
         public bool Ranged;                                                                                 // RNG/COR: Shoot (0x10) every cadence — ranged is their real damage, not melee (user 2026-07-31)
@@ -71,11 +70,10 @@ public static class KillRoutine
             // melee auto-attack below, so it degrades gracefully when arrows run dry).
             if (h.Ranged && p.World.NowMs - lastShotMs > 3000) { combat.RangedAttack(mob.Id); lastShotMs = p.World.NowMs; }
             await h.EmergencyHeal(ct);
-            byte wep = h.WepSkillForLevel(p.World.MainJobLevel);
-            var ws = h.NoWeaponSkills ? null : CombatRoutines.BestWeaponSkill(wep, gear.SkillLevel(wep));
+            var ws = h.NoWeaponSkills ? null : CombatRoutines.BestWeaponSkill(p.World, h.Ranged);
             if (ws is not null && p.World.ServerStatus == 1 && combat.CanWeaponSkill && mob.Hpp is > 10 and < 100)
             {
-                Log($"{ws} (tp={combat.Tp} skill{wep}={gear.SkillLevel(wep)}) on mob hpp={mob.Hpp}");
+                Log($"{ws} (tp={combat.Tp}) on mob hpp={mob.Hpp}");
                 await combat.WeaponSkill(ws.Value, mob.Id, ct);
             }
             await Task.Delay(600, ct);

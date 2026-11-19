@@ -18,16 +18,17 @@ public static class CombatRoutines
         && !e.Name.Contains("Footprint") && !e.Name.Contains("Casket", StringComparison.OrdinalIgnoreCase)
         && !e.Name.Contains("Hieroglyphics", StringComparison.OrdinalIgnoreCase);
 
-    /// Turn a tracked combat-skill level into an actual weaponskill choice: the strongest WS of
-    /// the given skill type (3=Sword, 5=Axe, 1=H2H, ...) that this skill level has unlocked.
-    /// Returns null if none is unlocked yet (e.g. the first sword WS, Fast Blade, needs skill 5).
-    /// This is how a brain uses its skills data instead of a hardcoded "fire at skill 10".
-    public static WeaponSkill? BestWeaponSkill(byte skillType, int skillLevel) =>
-        Actions.Ws.Values
-            // SkillLevel 0 = merit/relic/mythic WS (e.g. Metatron Torment, King's Justice), NOT unlocked
-            // by skill — exclude them so we pick the highest genuinely skill-unlocked WS (first tier = 5).
-            .Where(w => w.Type == skillType && w.SkillLevel > 0 && w.SkillLevel <= skillLevel)
-            .OrderByDescending(w => w.SkillLevel)
-            .Select(w => (WeaponSkill?)w.Ws)
+    /// The strongest weapon skill the SERVER says we can use right now (0x0AC: built from the weapon actually
+    /// equipped, our skill and job). Not a brain's "which weapon at this level" guess: Mesae (NIN 29, no katana
+    /// on) fired Blade: Teki 34x for nothing, and the logout defense always picked the H2H Combo (2026-11-18).
+    /// Archery/Marksmanship WS only for a shooter with ammo on. Null until the server lists one.
+    public static WeaponSkill? BestWeaponSkill(WorldState w, bool ranged)
+    {
+        bool shoot = ranged && w.Equipped.ContainsKey(EquipSlot.Ammo);
+        return Actions.Ws.Values
+            .Where(ws => w.CanUseWs((ushort)ws.Ws) && (shoot || ws.Type is not (25 or 26)))
+            .OrderByDescending(ws => ws.SkillLevel)
+            .Select(ws => (WeaponSkill?)ws.Ws)
             .FirstOrDefault();
+    }
 }

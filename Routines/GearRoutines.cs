@@ -36,9 +36,9 @@ public static class GearRoutines
         // Onion Sword sat in its bag). If the table yields no main-hand at this level and the job can wield
         // a sword, equip the starter sword; a no-op if it was sold/replaced (EquipSet skips missing items).
         // "Covered" must mean OWNED-and-equipped, not merely listed: the live COR listed a Bronze Knife it
-        // never bought. n==0 = the whole set failed to land (the broke-fresh-bot signature) -> fall back.
-        bool mainCovered = n > 0 && ((phaseWeapon?.slot == EquipSlot.Main)
-                           || table.Any(g => g.lvl <= lvl && g.slot == EquipSlot.Main));
+        // never bought, and Mesae (NIN 29) wore its armor with every listed katana sold (2026-11-18).
+        bool mainCovered = (phaseWeapon is { } pw2 && pw2.slot == EquipSlot.Main && gear.HasItem(pw2.item))
+                           || table.Any(g => g.lvl <= lvl && g.slot == EquipSlot.Main && gear.HasItem(g.item));
         if (!mainCovered)
         {
             // Send EVERY owned starter as a Main candidate: the server rejects job-incompatible equips
@@ -60,21 +60,22 @@ public static class GearRoutines
     public static HashSet<ushort> KeepSet((ushort item, byte slot, byte lvl)[] table, params ushort[] extra) =>
         new HashSet<ushort>(table.Select(g => g.item).Concat(extra).Concat(StarterWeapons));
 
-    /// LEVEL-AWARE never-sell set: keep only the gear that's still USEFUL at charLvl — the best CURRENTLY
-    /// wearable piece per slot (highest lvl <= charLvl) plus every FUTURE piece (lvl > charLvl). SUPERSEDED
-    /// pieces (a lower tier for a slot that now has a wearable higher tier) are NOT kept, so the sell path
-    /// finally offloads old gear on upgrade — the intent the static KeepSet-everything was blocking (the bag
-    /// clogged with 22 Keep items -> the stuck-MNK loop, 2026-08-14). Extras/starters are always kept.
-    public static HashSet<ushort> KeepForLevel((ushort item, byte slot, byte lvl)[] table, int charLvl, IEnumerable<ushort> extra)
+    /// LEVEL-AWARE never-sell set: keep only the gear that's still USEFUL at charLvl — per slot, the best wearable
+    /// piece we OWN, every wearable tier above it (the upgrades to buy), and every FUTURE piece (lvl > charLvl).
+    /// Tiers below the best owned one are SUPERSEDED and sell, so old gear is offloaded on upgrade (the bag clogged
+    /// with 22 Keep items -> the stuck-MNK loop, 2026-08-14). Superseded means by a piece in hand, not by the
+    /// table: Mesae (NIN 29) sold its katanas for a Hibari +1 nobody lists and fought bare-handed (2026-11-18).
+    /// Extras/starters are always kept.
+    public static HashSet<ushort> KeepForLevel((ushort item, byte slot, byte lvl)[] table, int charLvl, IEnumerable<ushort> extra,
+                                               Func<ushort, bool> owned)
     {
         var keep = new HashSet<ushort>(extra);
         keep.UnionWith(StarterWeapons);
         foreach (var slotGroup in table.GroupBy(g => g.slot))
         {
             var wearable = slotGroup.Where(g => g.lvl <= charLvl).ToList();
-            // current best for this slot; on a level TIE the LAST listed wins, matching the equip pass (later
-            // pieces override earlier ones), so the worn piece is never the one marked sellable
-            if (wearable.Count > 0) { var top = wearable.Max(g => g.lvl); keep.Add(wearable.Last(g => g.lvl == top).item); }
+            int bestOwned = wearable.Where(g => owned(g.item)).Select(g => (int)g.lvl).DefaultIfEmpty(0).Max();
+            foreach (var g in wearable.Where(g => g.lvl >= bestOwned)) keep.Add(g.item);
             foreach (var g in slotGroup.Where(g => g.lvl > charLvl)) keep.Add(g.item);   // future pieces
         }
         return keep;

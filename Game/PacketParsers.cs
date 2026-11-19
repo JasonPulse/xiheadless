@@ -113,6 +113,7 @@ public static class PacketParsers
                 break;
             case 0x04F: w.MainHandEquipped = false; w.Equipped.Clear(); break; // equip_clear: everything off (zone/job change)
             case 0x0AA: MagicData(sub, w); break;  // GP_SERV_COMMAND_MAGIC_DATA (known-spell bitmap)
+            case 0x0AC: CommandData(sub, w); break; // GP_SERV_COMMAND_COMMAND_DATA (usable weapon-skill bitmap)
             case 0x0DD: GroupMember(sub, w, isAttr: false); break; // group_list: Hpp@body25 (b[29])
             case 0x0DF: GroupMember(sub, w, isAttr: true);  break; // group_attr: NO GAttr field -> Hpp@body18 (b[22])
             case 0x061: CliStatus(sub, w); break;  // GP_SERV_COMMAND_CLISTATUS (max HP/MP, job)
@@ -267,6 +268,18 @@ public static class PacketParsers
     {
         if (b.Length <= 4) return;
         w.KnownSpellBits = b[4..].ToArray();
+    }
+
+    // 0x0AC GP_SERV_COMMAND_COMMAND_DATA: WeaponSkills[64]@4 is the bitmap of weapon skills the server will accept,
+    // built from the EQUIPPED main/ranged weapon, our skill and job. Resent on every equip change and WS unlock.
+    static void CommandData(ReadOnlySpan<byte> b, WorldState w)
+    {
+        if (b.Length <= 4) return;
+        var bits = b[4..Math.Min(b.Length, 4 + 64)].ToArray();
+        if (bits.AsSpan().SequenceEqual(w.UsableWsBits)) return;
+        w.UsableWsBits = bits;
+        var names = Enumerable.Range(0, bits.Length * 8).Where(i => w.CanUseWs((ushort)i)).Select(i => ((WeaponSkill)i).ToString());
+        Log.Info($"[ws] server lists usable: {string.Join(", ", names.DefaultIfEmpty("none"))}");
     }
 
     // 0x00D/0x00E entity update (entity_update.cpp, GP_SERV_CHAR_NPC): UniqueNo@4, ActIndex@8,

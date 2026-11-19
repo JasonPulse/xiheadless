@@ -19,6 +19,7 @@ public sealed class PartyGrind(IPerception p, ICombat combat, IMagic? magic, INa
     /// that walked it on foot through Quadav/Goobbue ground in Rolanberry was wiped en route (2026-10-16).
     public Func<CancellationToken, Task>? PrepareTravel { get; set; }
     const float LongWalkYalms = 60f;
+    const float PullRoamYalms = 250f;   // how far out the puller roams from camp looking for prey
 
     // Walk to a station: ride/stealth first when it's a real trip, fight back on the way, get off on arrival.
     async Task GoTo((float x, float z) dest, float within, int legTimeoutMs, CancellationToken ct)
@@ -98,8 +99,7 @@ public sealed class PartyGrind(IPerception p, ICombat combat, IMagic? magic, INa
                         await g.UseAbilities(m, c2, t);
                     }
                     : g.UseAbilities,
-                EmergencyHeal = g.EmergencyHeal,
-                WepSkillForLevel = g.WepSkillForLevel, Tag = tag,
+                EmergencyHeal = g.EmergencyHeal, Tag = tag,
             }, breakOffHpp: 0, ct);
             return;
         }
@@ -162,7 +162,7 @@ public sealed class PartyGrind(IPerception p, ICombat combat, IMagic? magic, INa
     // Fight back if jumped mid-walk (members heading to station): the one shared KillRoutine defense.
     Task<bool> Defend(CancellationToken ct) => KillRoutine.DefendSelf(combat, p, nav, gear, new KillRoutine.Hooks
     {
-        UseAbilities = g.UseAbilities, EmergencyHeal = g.EmergencyHeal, WepSkillForLevel = g.WepSkillForLevel, Tag = tag,
+        UseAbilities = g.UseAbilities, EmergencyHeal = g.EmergencyHeal, Tag = tag,
     }, ct);
 
     // Casters + healers sit at the announced caster camp; everyone else holds the melee camp.
@@ -228,6 +228,10 @@ public sealed class PartyGrind(IPerception p, ICombat combat, IMagic? magic, INa
             await NavRoutines.WalkTo(nav, p, camp.x, camp.z, within: 4f, ct, legTimeoutMs: 60_000);
             return;
         }
+        // Past the pull radius (back from a home point at the forming spot): ride home BEFORE pulling. Pulling from
+        // where it stood sent the puller after a Quadav 590y from camp past con-5/7 mobs, and the walk out killed it
+        // with no fight logged: Mesae 16x and Rosia 9x in one evening (2026-11-18).
+        if (p.DistanceTo(camp.x, camp.z) > PullRoamYalms + 50f) { await GoTo(camp, within: 5f, legTimeoutMs: 90_000, ct); return; }
         // The puller is a member too: never pull hurt or dry (live: a BLU puller at 19% HP pulled a goblin).
         if (p.World.Hpp < PartyCombat.ReadyHpp || (g.RestMpPct > 0 && p.World.Mpp < g.RestMpPct))
         {
@@ -279,7 +283,7 @@ public sealed class PartyGrind(IPerception p, ICombat combat, IMagic? magic, INa
             if (_dryPullMs == 0 || p.World.NowMs - _dryPullMs > 120_000)
             { _dryPullMs = p.World.NowMs; Log.Info($"[{tag}] no prey in view — roaming out from camp to find a pull (heading {_pullHeading}°)"); }
             float fromCamp = p.DistanceTo(camp.x, camp.z);
-            if (fromCamp > 250f)
+            if (fromCamp > PullRoamYalms)
             {
                 // This heading came up empty — walk home and fan to the next spoke.
                 _pullHeading = (_pullHeading + 60) % 360;

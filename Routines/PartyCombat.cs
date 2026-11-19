@@ -278,8 +278,8 @@ public static class PartyCombat
 
         await combat.UseAbility(Ability.SneakAttack, mobId, ct);
         await combat.UseAbility(Ability.TrickAttack, mobId, ct);
-        // THF rides daggers (skill type 2); the shared selector picks the strongest unlocked WS.
-        if (combat.CanWeaponSkill && CombatRoutines.BestWeaponSkill(2, p.World.SkillLevel(2)) is { } ws)
+        // The shared selector picks the strongest WS the server lists for the weapon actually equipped.
+        if (combat.CanWeaponSkill && CombatRoutines.BestWeaponSkill(p.World, ranged: false) is { } ws)
             await combat.WeaponSkill(ws, mobId, ct);
         else
             await combat.Engage(mobId, ct);   // SA/TA ride the next swing

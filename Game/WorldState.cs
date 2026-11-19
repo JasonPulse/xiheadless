@@ -41,6 +41,7 @@ public sealed class WorldState
     public bool IsSneaked => System.Array.IndexOf(StatusIcons, (ushort)71) >= 0;    // EFFECT_SNEAK (71)
     public bool IsInvisible => System.Array.IndexOf(StatusIcons, (ushort)69) >= 0;  // EFFECT_INVISIBLE (69)
     public byte[] KnownSpellBits = System.Array.Empty<byte>(); // 0x0AA bitmap; bit N = spell N known
+    public byte[] UsableWsBits = System.Array.Empty<byte>();   // 0x0AC bitmap; bit N = weapon skill N usable now
     public uint CurrentTargetId; // last target we engaged/acted on (for disengage etc.)
     public bool InZone;         // true once 0x00A zone-in parsed
     // Every worn piece: equip slot kind -> (container, inventory slot), from 0x050 (cleared by 0x04F). The junk
@@ -174,6 +175,13 @@ public sealed class WorldState
     {
         int i = spellId >> 3;
         return i < KnownSpellBits.Length && (KnownSpellBits[i] & (1 << (spellId & 7))) != 0;
+    }
+
+    /// True if the server lists this weapon skill as usable right now (from the 0x0AC command-data bitmap).
+    public bool CanUseWs(ushort wsId)
+    {
+        int i = wsId >> 3;
+        return i < UsableWsBits.Length && (UsableWsBits[i] & (1 << (wsId & 7))) != 0;
     }
 
     public readonly Dictionary<uint, Entity> Entities = new();

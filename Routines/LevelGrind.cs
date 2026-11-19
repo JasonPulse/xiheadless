@@ -132,7 +132,7 @@ public sealed class LevelGrind(
         // keepables (seals/quest items) so those always survive. No table -> the static cfg.Keep as before.
         var keepExtras = cfg.GearTable is { } gt ? cfg.Keep.Except(gt.Select(g => g.item)).ToArray() : Array.Empty<ushort>();
         System.Collections.Generic.IReadOnlySet<ushort> SellKeep() => cfg.GearTable is { } t
-            ? GearRoutines.KeepForLevel(t, p.World.MainJobLevel, keepExtras) : cfg.Keep;
+            ? GearRoutines.KeepForLevel(t, p.World.MainJobLevel, keepExtras, inv.Has) : cfg.Keep;
         Task<int> SellJunk(CancellationToken c) => ShopRoutines.SellNearby(shop, nav, zoning, inv, p, SellKeep(), c);
 
         // 1) Optional: gear up from the AH, then carry it to the hunt zone.
@@ -148,7 +148,14 @@ public sealed class LevelGrind(
             // spell scrolls and consumables are exempt. Bots used to spend every gil on gear the moment they
             // had it (Raedra: 9,934 -> 94 on one buy pass), leaving the fleet at a few hundred gil.
             long reserve = GilReserve(CharLevel());
-            foreach (var item in cfg.BuyItems)
+            // Scrolls/consumables first, then the wearable tiers BEST FIRST (once one lands, the tiers below it drop
+            // out of the keep set and are skipped: buy the best piece listed, never climb every tier), then the
+            // future pieces cheapest first.
+            int lvlNow = p.World.MainJobLevel;
+            var tierOf = (cfg.GearTable ?? Array.Empty<(ushort item, byte slot, byte lvl)>())
+                .GroupBy(g => g.item).ToDictionary(g => g.Key, g => (int)g.Min(x => x.lvl));
+            var buyOrder = cfg.BuyItems.OrderBy(i => !tierOf.TryGetValue(i, out var l) ? (0, 0) : l <= lvlNow ? (1, -l) : (2, l));
+            foreach (var item in buyOrder)
             {
                 if (ct.IsCancellationRequested) return;
                 // Never re-buy a piece we've outgrown: the level-aware keep (current best + future tiers) is the
@@ -205,7 +212,6 @@ public sealed class LevelGrind(
         {
             UseAbilities = cfg.UseAbilities,
             EmergencyHeal = cfg.EmergencyHeal,
-            WepSkillForLevel = cfg.WepSkillForLevel,
             LedgePull = cfg.LedgePull,
             Ranged = cfg.Ranged,
             Tag = cfg.Tag,
