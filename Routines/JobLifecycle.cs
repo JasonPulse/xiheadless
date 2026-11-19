@@ -307,6 +307,13 @@ public sealed class JobLifecycle(
                 // skill-worthy), never con-0. As the skill climbs the clamp relaxes back to the real level.
                 return (byte)Math.Clamp(Math.Max(wep / 2, lvl - 3), 1, lvl);
             }
+            // One gear table for both seesaw stints (DrkBrain): keep what EITHER stint wears. Keeping only this
+            // stint's set sold Laedo's scythes at DRK 33 and rebought them on its WAR 16 stint, ~6000 gil a cycle
+            // (2026-11-19).
+            byte other = job == cfg.MainJob ? cfg.SubJob : cfg.MainJob;
+            if (other != 0 && LevelOf(other) > 0 && g.GearTable is { } gt
+                && ReferenceEquals(cfg.GrindCfgFor(other).GearTable, gt))
+                g.GearLevels = () => new[] { (int)p.World.MainJobLevel, LevelOf(other) };
             byte effLvl = EffectiveLevel();
             if (effLvl < p.World.MainJobLevel)
                 Log($"skill-up dropback: hunting at effective lvl {effLvl} (weapon skill lags lvl {p.World.MainJobLevel})");

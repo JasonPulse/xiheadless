@@ -19,6 +19,7 @@ public sealed class LevelGrind(
         public ushort[] BuyItems = Array.Empty<ushort>();   // gear to buy from the AH (empty = skip the buy phase)
         public HashSet<ushort> Keep = new();      // items we never sell when freeing bag space
         public (ushort item, byte slot, byte lvl)[]? GearTable;   // set to the brain's leveling gear table -> the sell-keep is level-aware (superseded tiers become sellable on upgrade)
+        public Func<IEnumerable<int>>? GearLevels;   // every level the char plays GearTable at (null = the current main level)
         public Func<CancellationToken, Task> Equip = _ => Task.CompletedTask;  // re-run on level-up
         public Func<byte, byte> WepSkillForLevel = _ => 1;  // skill id of the weapon equipped at this level
         public int ConMin = 2, ConMax = 2;        // con band to engage
@@ -132,8 +133,14 @@ public sealed class LevelGrind(
         // offloaded on upgrade (else the bag pins every tier -> the stuck-MNK clog). keepExtras = the non-gear
         // keepables (seals/quest items) so those always survive. No table -> the static cfg.Keep as before.
         var keepExtras = cfg.GearTable is { } gt ? cfg.Keep.Except(gt.Select(g => g.item)).ToArray() : Array.Empty<ushort>();
-        System.Collections.Generic.IReadOnlySet<ushort> SellKeep() => cfg.GearTable is { } t
-            ? GearRoutines.KeepForLevel(t, p.World.MainJobLevel, keepExtras, inv.Has) : cfg.Keep;
+        System.Collections.Generic.IReadOnlySet<ushort> SellKeep()
+        {
+            if (cfg.GearTable is not { } t) return cfg.Keep;
+            var keep = new HashSet<ushort>();
+            foreach (int lvl in cfg.GearLevels?.Invoke() ?? new[] { (int)p.World.MainJobLevel })
+                keep.UnionWith(GearRoutines.KeepForLevel(t, lvl, keepExtras, inv.Has));
+            return keep;
+        }
         Task<int> SellJunk(CancellationToken c) => ShopRoutines.SellNearby(shop, nav, zoning, inv, p, SellKeep(), c);
 
         // 1) Optional: gear up from the AH, then carry it to the hunt zone.
