@@ -9,6 +9,16 @@ internal static class ActionPacket
 {
     public const ushort Talk = 0x00, CastMagic = 0x03, Attack = 0x02, AttackOff = 0x04, Weaponskill = 0x07, JobAbility = 0x09, HomepointMenu = 0x0B, Shoot = 0x10, Dismount = 0x12, Mount = 0x1A;
 
+    /// Get off the chocobo (action 0x12) if mounted. The server refuses a mounted char's casts, job abilities and
+    /// /heal ("Character is mounted": a RDM healer's Cures fizzled, 2026-10-07; a BST's every Charm, 2026-11-13).
+    /// The one dismount: every act that needs to be on foot calls this first. True = it was mounted.
+    public static bool GetOffMount(ISession s)
+    {
+        if (!s.State.IsMounted) return false;
+        s.Enqueue(Build(Dismount, s.State.MyId, s.State.MyIndex));
+        return true;
+    }
+
     public static byte[] Build(ushort actionId, uint target, ushort actIndex = 0, uint buf0 = 0)
     {
         var p = new byte[28];

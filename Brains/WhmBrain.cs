@@ -16,8 +16,6 @@ public sealed class WhmBrain(
 
     const ushort AshClub      = 17024; // lv1 club (4 dmg)
     const ushort ChestnutClub = 17025; // lv16 club (9 dmg) — melee upgrade
-    const ushort ScrollDia    = 4631;  // teaches Dia (spell 23), usable lv3
-    const ushort ScrollCure   = 4609;  // teaches Cure (spell 1), usable lv5
     const ushort BrassHairpin = 12529; // head, lv10 (+MP)
     const ushort BattleGloves = 12799; // hands, lv14
 
@@ -36,7 +34,7 @@ public sealed class WhmBrain(
     const ushort PeacockCharm  = 13056; // neck lv33 (acc)
     const ushort HolyMaul      = 17080; // club lv38 (MND+3)
     static readonly HashSet<ushort> Keep = new()
-        { AshClub, ChestnutClub, ScrollDia, ScrollCure, BrassHairpin, BattleGloves,
+        { AshClub, ChestnutClub, BrassHairpin, BattleGloves,
           SilverHairpin, BaronsSaio, BaronsSlops, GarrisonHose, PixieMace, HolyPhial,
           DevoteesMitts, SeersTunic, SeersPumps, MelampusStaff, PeacockCharm, HolyMaul, 1126, 1127,
           // Rare/EX quest items are still droppable — never sell/drop them on solo vendor trips either.
@@ -69,7 +67,7 @@ public sealed class WhmBrain(
     {
         HomeNation = HomeNation,
         AhZone = AhZone,
-        BuyItems = new[] { AshClub, ScrollDia, ScrollCure },   // buy essentials upfront with whatever gil we have
+        BuyItems = new[] { AshClub },   // buy essentials upfront; the spell scrolls are JobKits' (it skips known spells)
         Keep = Keep,
         Equip = Equip,
         WepSkillForLevel = _ => ClubSkill,
@@ -90,8 +88,6 @@ public sealed class WhmBrain(
     {
         if (!Game.Zonelines.HasAuctionHouse(zoning.CurrentZone)) return;   // sold at a non-AH vendor — buy next trip
         await Buy(AshClub, 1, 400, ct);
-        await Buy(ScrollDia, 3, 1500, ct, Spell.Dia);
-        await Buy(ScrollCure, 5, 1500, ct, Spell.Cure);
         await Buy(BrassHairpin, 10, 2500, ct);
         await Buy(BattleGloves, 14, 2000, ct);
         await Buy(ChestnutClub, 16, 2500, ct);
@@ -111,10 +107,10 @@ public sealed class WhmBrain(
         await Equip(ct);
     }
 
-    async Task Buy(ushort id, int minLevel, uint minGil, CancellationToken ct, Spell? learnsSpell = null)
+    async Task Buy(ushort id, int minLevel, uint minGil, CancellationToken ct)
     {
         if (p.World.MainJobLevel < minLevel || p.World.Gil < minGil) return;
-        if (inv.Has(id) || (learnsSpell is { } sp && magic.Known(sp))) return;   // already own / already learned
+        if (inv.Has(id)) return;   // already own
         Log.Info($"[whm] restock: buying {id} (gil {p.World.Gil})");
         await ShopRoutines.BuyItem(ah, p, inv, id, Keep, ShopRoutines.NoFree, ct);
     }
@@ -144,14 +140,6 @@ public sealed class WhmBrain(
     {
         var (n, total) = await GearRoutines.EquipByLevel(gear, p, GearTable, ct);
         Log.Info($"[whm] equipped {n}/{total} (lvl {p.World.MainJobLevel}, club skill {gear.SkillLevel(ClubSkill)})");
-        await LearnIfReady(ScrollDia, Spell.Dia, 3, ct);
-        await LearnIfReady(ScrollCure, Spell.Cure, 5, ct);
-    }
-
-    async Task LearnIfReady(ushort scrollId, Spell spell, int reqLevel, CancellationToken ct)
-    {
-        if (p.World.MainJobLevel < reqLevel) return;
-        await MagicRoutines.LearnFromScroll(inv, magic, p, scrollId, spell, ct, "whm");
     }
 
     // Pull with the Dia line from range (also a DoT) — the shared selector-driven spell pull.

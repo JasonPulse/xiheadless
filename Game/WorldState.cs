@@ -212,6 +212,14 @@ public sealed class WorldState
     // Last CONFIRMED heal from the 0x028 action packet (msg 7 = "<target> recovers <amount> HP") — the ground
     // truth a healer checks after casting, as opposed to its own "I cast Cure" decision log.
     public (uint actor, uint target, int amount, long ms) LastHeal;
+    // Our PET, from 0x068 pet_sync (pushed to the master only, on charm/call, every pet update, and with index 0
+    // when it is released or dies). PetIndex 0 = no pet. PetTarget = the id the pet is attacking (0 = idle).
+    public ushort PetIndex;
+    public byte PetHpp;
+    public uint PetTarget;
+    // Our last Charm's verdict from 0x028 (136 = charmed, 137 = resisted, 127 = can't be charmed: the server
+    // binds it instead), so a BST learns which mobs take a charm.
+    public (uint target, int message, long ms) LastCharm;
 
     // A browsed player-bazaar's inventory (s2c 0x105 per item, after our c2s 0x105 list request):
     // bazaar slot index -> (item id, unit price, stack count). Cleared by the buyer before each Browse.

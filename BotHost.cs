@@ -150,7 +150,7 @@ public static class BotHost
                 everConnected = true;
                 // SESSION CAP (user rules: bots end their own sessions; lengths are RANDOMIZED 2-6h).
                 // Armed ONCE — reconnects resume the SAME day and the same end time.
-                var plan = Routines.SessionPlan.ForToday(client.CharId);
+                var plan = Routines.SessionPlan.ForToday(client.CharId, Game.PartyRoles.ParseJobToken(brainName));
                 var remaining = plan.EndUtc - DateTime.UtcNow;
                 if (remaining < TimeSpan.FromHours(2) || remaining > TimeSpan.FromHours(6))
                 {

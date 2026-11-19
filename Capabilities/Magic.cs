@@ -10,7 +10,7 @@ public sealed class Magic(ISession s) : IMagic
         ushort idx = s.State.TargidOf(target);
         s.State.CurrentTargetId = target;
         // A mounted char can't cast (a RDM healer arrived at camp on its chocobo and every Cure fizzled). Get off first.
-        if (s.State.IsMounted) s.Enqueue(ActionPacket.Build(ActionPacket.Dismount, s.State.MyId, s.State.MyIndex));
+        ActionPacket.GetOffMount(s);
         s.Enqueue(ActionPacket.Build(ActionPacket.CastMagic, target, idx, (uint)spell));
     }
     public bool Known(Spell spell) => s.State.KnowsSpell((ushort)spell);

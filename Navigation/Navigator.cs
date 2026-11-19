@@ -36,10 +36,7 @@ public sealed class Navigator : INavigation
     /// arrived at camp mounted and every Cure fizzled (2026-10-07). No-op when not mounted.
     public void Dismount()
     {
-        var st = _s.State;
-        if (!st.IsMounted) return;
-        Log.Info("[nav] dismounting");
-        _s.Enqueue(Capabilities.ActionPacket.Build(Capabilities.ActionPacket.Dismount, st.MyId, st.MyIndex));
+        if (Capabilities.ActionPacket.GetOffMount(_s)) Log.Info("[nav] dismounting");
     }
 
     public bool TryMount()

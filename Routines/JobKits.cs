@@ -21,7 +21,8 @@ public static class JobKits
     static readonly (ushort scroll, Spell spell, bool buyable)[] ScrollKit =
     {
         (4608, Spell.Cure, false), (4606, Spell.Dia, false), (4607, Spell.Stone, false),
-        (4609, Spell.Cure, true), (4631, Spell.Dia, true), (4636, Spell.Banish, true), (4666, Spell.Paralyze, true),
+        (4609, Spell.Cure, true), (4610, Spell.CureII, true), (4611, Spell.CureIII, true),   // heal tiers: WHM 11/21, RDM 14/26
+        (4631, Spell.Dia, true), (4636, Spell.Banish, true), (4666, Spell.Paralyze, true),
         (4767, Spell.Stone, true), (4777, Spell.Water, true), (4762, Spell.Aero, true), (4862, Spell.Blind, true),
         (4752, Spell.Fire, true), (4757, Spell.Blizzard, true), (4772, Spell.Thunder, true),   // BLM 13/17/21 nukes
         // BRD songs ARE its spells (user: lvl-1s with no songs were red flags) — SpellLevels filters to BRD.
@@ -35,6 +36,11 @@ public static class JobKits
     // casters. (BRD is NOT here — it melees with a dagger it does skill; its songs ride on top.)
     public static bool CastsPrimary(byte job) =>
         job is Job.Whm or Job.Blm or Job.Rdm or Job.Sch or Job.Geo or Job.Smn;
+
+    /// True when `job` at `lvl` is exempt from melee skill-up (hunts the normal band and casts). A WHM's UPKEEP
+    /// day is the exception: that day exists to skill its club (user 2026-11-13), so it takes easy prey.
+    public static bool SkipsMeleeSkillup(byte job, int lvl, bool upkeep) =>
+        CastsPrimary(job) && lvl >= 10 && !(job == Job.Whm && upkeep);
 
     // The lines a caster phase does its damage with (the For() caster/WHM branches): nukes, then Dia/Bio/Banish.
     static readonly SpellLine[] AttackLines =
@@ -64,13 +70,13 @@ public static class JobKits
 
     /// Wire the generic kit into a grind config IF the brain left the defaults in place.
     public static void Apply(LevelGrind.Config g, byte job, ICombat combat, IMagic? magic, IPerception p, string tag,
-                             IInventory? inv = null)
+                             IInventory? inv = null, bool upkeep = false)
     {
         if (ReferenceEquals(g.UseAbilities, LevelGrind.Config.NoAbilities))
             g.UseAbilities = For(job, combat, magic, p, tag);
         // Casters past lv10 don't skill melee — keep the skill-up dropback off them so they hunt the normal
         // con band and cast, instead of stalling on con-0 melee prey forever (GEO: 299 kills, 3 levels).
-        if (CastsPrimary(job) && p.World.MainJobLevel >= 10) g.SkipMeleeSkillup = true;
+        if (SkipsMeleeSkillup(job, p.World.MainJobLevel, upkeep)) g.SkipMeleeSkillup = true;
         // RNG/COR do their real damage by SHOOTING — the fight loop fires Shoot on cadence (user 2026-07-31).
         if (job is Job.Rng or Job.Cor) g.Ranged = true;
         // Self-funding default: if the brain wired NO bag policy at all, sell junk drops when the bag
@@ -107,11 +113,11 @@ public static class JobKits
     {
         long lastSongMs = 0;
         uint lastMob = 0;
-        bool diaDone = false, banishDone = false;   // WHM: Dia/Banish are ONE-per-fight (recasting a DoT wastes MP)
+        bool diaDone = false;   // Dia/Bio are ONE-per-fight (recasting a DoT wastes MP)
         return async (mob, con, ct) =>
         {
             var w = p.World;
-            if (mob != lastMob) { lastMob = mob; diaDone = false; banishDone = false; }   // new fight — reset one-shot casts
+            if (mob != lastMob) { lastMob = mob; diaDone = false; }   // new fight — reset one-shot casts
 
             // Signature melee JAs (each self-gates on job/level/recast). Shared by the melee default AND a
             // SMN with no avatar granted yet (pre-grant fallback), so there's ONE copy.
@@ -180,15 +186,12 @@ public static class JobKits
                     }
                     return;
 
-                // ---- WHM: Dia + Banish ONCE each, then MELEE (user 2026-07-31). A healer's mana is for staying
-                // alive — one cheap DoT (Dia doesn't stack; recasting it is wasted MP) + one Banish + the melee
-                // auto-attack beats spamming Banish every beat into OOM-death (WHM: 36 deaths, 16 at MP<=6%).
-                // Banish keeps an MP floor so there's mana left for EmergencyCure; melee carries the rest.
+                // ---- WHM: Dia ONCE, then MELEE. Mid-fight a WHM casts only fast spells: Dia here, and its heals
+                // through EmergencyCure (user 2026-11-13). Banish is gone: its MP is the heals' MP. Dia doesn't
+                // stack, so one per fight (recasting it is wasted MP).
                 case Job.Whm:
                     if (magic is null) { await TryMeleeJa(); return; }
                     if (!diaDone && magic.CastLowest(SpellLine.Dia, mob)) { diaDone = true; await Task.Delay(3000, ct); return; }
-                    if (!banishDone && w.Mpp >= 40 && magic.CastLowest(SpellLine.Banish, mob)) { banishDone = true; await Task.Delay(3000, ct); return; }
-                    banishDone = true;          // don't re-probe Banish every beat once we've cast it or MP is low
                     await TryMeleeJa();
                     return;
 

@@ -133,7 +133,7 @@ public sealed class JobLifecycle(
         zoning.Defend = c => KillRoutine.DefendSelf(combat, p, nav, gear, new KillRoutine.Hooks { Tag = cfg.Tag }, c);
         var seesaw = new JobLeveling(p, jobs, zoning);
         // UPKEEP day (user 2026-10-27): farm gil on the MAIN job, the one that earns, instead of leveling the sub.
-        _upkeep = SessionPlan.ForToday(p.World.MyId).Mode == SessionPlan.DayMode.Upkeep;
+        _upkeep = SessionPlan.ForToday(p.World.MyId, cfg.MainJob).Mode == SessionPlan.DayMode.Upkeep;
         if (_upkeep) Log($"UPKEEP day — farming gil on {JN(cfg.MainJob)}");
         Log($"lifecycle start: {(cfg.Advanced ? "ADVANCED" : "basic")} main={JN(cfg.MainJob)} sub={JN(cfg.SubJob)} " +
             $"(now {JN(p.World.MainJob)} {p.World.MainJobLevel} / levels {JN(cfg.MainJob)}={LevelOf(cfg.MainJob)} {JN(cfg.SubJob)}={LevelOf(cfg.SubJob)})");
@@ -295,8 +295,8 @@ public sealed class JobLifecycle(
                 byte lvl = p.World.MainJobLevel;
                 // Casters past lv10 level by casting — melee skill never drops their hunt zone (else a mage
                 // with club skill 0 is pinned in the lowest nursery on zero-XP mobs all game). Same rule as
-                // the con-floor skip in JobKits (user 2026-07-31).
-                if (lvl < 5 || (JobKits.CastsPrimary(job) && lvl >= 10)) return lvl;
+                // the con-floor skip in JobKits (user 2026-07-31), except a WHM upkeep day, which skills the club.
+                if (lvl < 5 || JobKits.SkipsMeleeSkillup(job, lvl, _upkeep)) return lvl;
                 int wep = gear.SkillLevel(g.WepSkillForLevel(lvl));
                 // Only drop the zone for SEVERE lag (skill below the character level). The old wep < lvl*2
                 // trigger fired even at skill == level, so Laedo (scythe 18 at lvl 18) was STILL dropped to
@@ -320,7 +320,7 @@ public sealed class JobLifecycle(
             // — they pure-melee'd every fight (live: a lvl-1 BRD never sang, lost to a con-2 rabbit 17x/h).
             // Inject the generic per-job kit when the brain left the sentinels in place; curated brains
             // (WarBrain/BlmBrain) keep their own rotations untouched.
-            JobKits.Apply(g, job, combat, magic, p, cfg.Tag, inv);
+            JobKits.Apply(g, job, combat, magic, p, cfg.Tag, inv, _upkeep);
             // (The 2026-07-12 role-aware con caps were REVERTED: the death-loopers' real defect was fighting
             // with NO JOB KIT — a lvl-1 BRD that actually sings kills far above these caps (user). The kit
             // injection below is the fix; con bands stay as the brains tuned them.)
@@ -340,7 +340,7 @@ public sealed class JobLifecycle(
             // one shared KillRoutine), group-safe logout (FleetSchedule). Solo/Upkeep days = the grind below.
             if (party is not null && chat is not null && magic is not null && lifecycle is not null
                 && p.World.MainJobLevel > 10 && !_upkeep   // an upkeep session farms gil solo
-                && SessionPlan.ForToday(p.World.MyId).Mode == SessionPlan.DayMode.Party)
+                && SessionPlan.ForToday(p.World.MyId, cfg.MainJob).Mode == SessionPlan.DayMode.Party)
             {
                 Log($"PARTY day (lvl {p.World.MainJobLevel}) — grouping up in the hunt zone");
                 var pg = new PartyGrind(p, combat, magic, nav, gear, chat, g, cfg.Tag);
@@ -350,7 +350,7 @@ public sealed class JobLifecycle(
                 // basePlan.EndUtc was the bug: when the seed yields <2h, BotHost re-rolls SessionEndUtc
                 // LONGER, so MIN() picked the SHORT seeded end and FleetSchedule logged the bot out early
                 // (2026-07-26: RDM/BLM/BLU/PUP Party-day bots ran 53-77 min of 196-323-min caps).
-                var basePlan = SessionPlan.ForToday(p.World.MyId);
+                var basePlan = SessionPlan.ForToday(p.World.MyId, cfg.MainJob);
                 var effEnd = BotHost.SessionEndUtc == DateTime.MaxValue ? basePlan.EndUtc : BotHost.SessionEndUtc;
                 var effPlan = new SessionPlan.Plan(basePlan.Mode, basePlan.StartUtc, effEnd);
                 // The party's hunt zone: the nursery plan zone if we're still in the nursery, ELSE the nation

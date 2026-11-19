@@ -65,6 +65,9 @@ public static class PacketParsers
                 // CONFIRMED EFFECTS, not decisions (user rule: a "Cure" log is a decision; the landed heal is
                 // this packet). msg 7 = MAGIC_RECOVERS_HP (<target> recovers <value> HP). Recorded so healers
                 // can verify their cast actually landed; logged only for us/party (mob self-heals are noise).
+                // Our Charm's verdict (beastmaster.lua attemptCharm): 136 charmed, 137 resisted, 127 bound
+                // instead (the mob can't be charmed). The BST reads it right after its own Charm.
+                if (actor == w.MyId && message is 136 or 137 or 127) w.LastCharm = (tgt, message, w.NowMs);
                 if (message == 7)
                 {
                     w.LastHeal = (actor, tgt, value, w.NowMs);
@@ -113,6 +116,7 @@ public static class PacketParsers
             case 0x0DD: GroupMember(sub, w, isAttr: false); break; // group_list: Hpp@body25 (b[29])
             case 0x0DF: GroupMember(sub, w, isAttr: true);  break; // group_attr: NO GAttr field -> Hpp@body18 (b[22])
             case 0x061: CliStatus(sub, w); break;  // GP_SERV_COMMAND_CLISTATUS (max HP/MP, job)
+            case 0x068: PetSync(sub, w); break;   // CPetSyncPacket (our pet: index, HP%, its target)
             case 0x028: Battle2(sub, w); break;    // GP_SERV_COMMAND_BATTLE2 (action packet: actor->targets, melee/WS/JA/spell)
             case 0x029: BattleMessage(sub, w); break; // error/result reason codes (engage rejections etc.)
             case 0x032: EventStart(sub, w, false); break; // GP_SERV_COMMAND_EVENT (npc menu/cutscene)
@@ -146,6 +150,16 @@ public static class PacketParsers
     }
 
     static readonly HashSet<int> _unhandledSeen = new();
+
+    // 0x068 pet_sync (pet_sync.cpp): owner UniqueNo@8, pet ActIndex@12 (0 = no pet: the despawn/release form is
+    // only 0x1C long), pet Hpp@14, the pet's battle target UniqueNo@20 (set only while it is attacking).
+    static void PetSync(ReadOnlySpan<byte> b, WorldState w)
+    {
+        if (b.Length < 14 || U32(b, 8) != w.MyId) return;
+        w.PetIndex = U16(b, 12);
+        w.PetHpp = w.PetIndex != 0 && b.Length > 14 ? b[14] : (byte)0;
+        w.PetTarget = w.PetIndex != 0 && b.Length >= 24 ? U32(b, 20) : 0;
+    }
 
     // 0x0DD/0x0DF group packets: UniqueNo@4, Hp@8, Mp@12, Tp@16, Hpp@22, Mpp@23 (i32/u8).
     // For our own id this is the authoritative source of current absolute HP/MP/TP.
@@ -374,6 +388,7 @@ public static class PacketParsers
     static void ZoneIn(ReadOnlySpan<byte> b, WorldState w)
     {
         w.MyId = U32(b, 4);
+        w.PetIndex = 0; w.PetTarget = 0;              // pets don't cross zones; a live one re-syncs via 0x068
         if (b.Length >= 10) w.MyIndex = U16(b, 8);   // ActIndex = our targid, for self-targeted job abilities
         if (b.Length >= 24)
         {

@@ -106,6 +106,8 @@ public sealed class PartyGrind(IPerception p, ICombat combat, IMagic? magic, INa
 
         // Between fights: heal pass, then puller pulls / members hold station and rest.
         if (role == PartyRoles.Role.Healer && await HealPass(ct)) return;
+        // Pet jobs pet up between fights, from where they stand (no walking off camp).
+        if (g.PetUp is { } petUp && await petUp(0f, ct)) return;
         if (iAmPuller) { await PullNext(camp, st, ct); return; }
 
         var mine = MyStation(role, camp, st);
@@ -218,6 +220,10 @@ public sealed class PartyGrind(IPerception p, ICombat combat, IMagic? magic, INa
         // rather than fighting it alone in the field; the camp fight takes it from there.
         if (KillRoutine.AttackerOnMe(p) is { } jumped && Geometry.Dist2D(jumped.X, jumped.Z, camp.x, camp.z) >= 15f)
         {
+            // Already home and it still won't follow in: the drag is over, so fight it where it is. Re-dragging
+            // to a camp we stand on returned at once, every beat: Bodren logged this line 21k times standing at
+            // camp while a Goblin_Gambler 60y out kept hitting it (2026-11-12).
+            if (p.DistanceTo(camp.x, camp.z) <= 4f) { await Defend(ct); return; }
             Log.Info($"[{tag}] '{jumped.Name}' jumped me {p.DistanceTo(camp.x, camp.z):F0}y out — dragging it to camp");
             await NavRoutines.WalkTo(nav, p, camp.x, camp.z, within: 4f, ct, legTimeoutMs: 60_000);
             return;

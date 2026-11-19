@@ -82,21 +82,56 @@ public sealed class BstBrain(
                 GrindCfgFor = GrindCfg, Tag = "bst",
             }, lifecycle: lifecycle, chat: chat, magic: magic, party: party).RunAsync(ct);
 
-    // CHARM IS BST'S COMBAT (user: "it should have charm already" — a rod-poking BST was the red flag).
-    // Each fight beat: if a second mob stands near, Charm it (Ability 52 self-gates on job/recast; a resist
-    // just retries next beat) and Fight (69) sics whatever pet we hold onto the target. No pet-state packet
-    // is parsed yet, so both fire blind and no-op harmlessly when petless/petful — the server arbitrates.
+    // PET FIRST, THEN KILL (user 2026-11-13: "never ever pet last"). The old rotation charmed a second mob
+    // MID-fight and sent Fight! blind every beat, so the BST fought alone (Leria BST 23: 0 wins, 30 deaths).
+    // Now the pet comes out before the pull (PetUp), and the fight only sics the pet we KNOW we hold (0x068).
     async Task BstRotation(uint mob, int con, CancellationToken ct)
     {
-        if (con < 1) return;
-        var petCand = p.Nearest(e => e.IsMob && e.Hpp == 100 && e.Id != mob
-            && CombatRoutines.NotObject(e)
-            && !CombatRoutines.SleepLockMobs.Any(n => e.Name.Contains(n, StringComparison.OrdinalIgnoreCase))
-            && p.DistanceTo(e.X, e.Z) <= 12f);
-        if (petCand is not null && await combat.UseAbility(Ability.Charm, petCand.Id, ct))
-            Log.Info($"[bst] Charm -> '{petCand.Name}'");
+        if (p.World.PetIndex == 0 || p.World.PetTarget == mob) return;   // no pet: never charm mid-fight
         if (await combat.UseAbility(Ability.Fight, mob, ct))
-            Log.Info("[bst] Fight! (pet on the target)");
+            Log.Info($"[bst] Fight! (pet {p.World.PetHpp}% onto the target)");
+    }
+
+    const float CharmRange = 15f;               // abilities.sql: charm range 16
+    readonly HashSet<string> _uncharmable = new(StringComparer.OrdinalIgnoreCase);   // the server bound them (msg 127) instead
+    readonly HashSet<uint> _notPet = new();     // conned outside the pet band; cleared on level-up
+    int _notPetLvl;
+
+    // A pet the BST out-levels: con 2-3 (Easy Prey, Decent Challenge) costs no level penalty on the charm roll
+    // and charms longest (beastmaster.lua). Never above the grind's own band: a resisted charm puts the mob on
+    // us, and a con-4 Copper_Quadav that bound instead of charming killed Fiazi (2026-11-13). Walks up to `maxWalk` beyond charm range for one. Waits out the
+    // Charm recast rather than pulling petless.
+    async Task<bool> PetUp(float maxWalk, CancellationToken ct)
+    {
+        if (p.World.MainJob != Job.Bst || p.World.PetIndex != 0) return false;
+        if (_notPetLvl != p.World.MainJobLevel) { _notPet.Clear(); _notPetLvl = p.World.MainJobLevel; }
+        for (int tries = 0; tries < 4 && !ct.IsCancellationRequested; tries++)
+        {
+            var cand = p.Nearest(e => e.IsMob && e.Hpp == 100 && e.ClaimId == 0 && CombatRoutines.NotObject(e)
+                && !CombatRoutines.SleepLockMobs.Any(n => e.Name.Contains(n, StringComparison.OrdinalIgnoreCase))
+                && !_uncharmable.Contains(e.Name) && !_notPet.Contains(e.Id)
+                && p.World.NowMs - e.LastSeenMs < 10_000
+                && p.DistanceTo(e.X, e.Z) <= CharmRange + maxWalk && nav.CanReach(e.X, e.Y, e.Z));
+            if (cand is null) return false;
+            int con = await combat.Consider(cand.Id, ct);
+            if (con is < 2 or > 3) { _notPet.Add(cand.Id); continue; }
+            if (p.DistanceTo(cand.X, cand.Z) > CharmRange)
+                await NavRoutines.WalkTo(nav, p, cand.X, cand.Z, within: CharmRange - 3f, ct, legTimeoutMs: 30_000);
+            if (cand.Hpp < 100 || cand.ClaimId != 0 || p.DistanceTo(cand.X, cand.Z) > CharmRange) { _notPet.Add(cand.Id); continue; }
+            if (!combat.AbilityReady(Ability.Charm)) { await Task.Delay(2000, ct); return true; }   // recast: wait, re-loop
+            nav.Stop();
+            long sent = p.World.NowMs;
+            await combat.UseAbility(Ability.Charm, cand.Id, ct);
+            for (int t = 0; t < 4000 && p.World.PetIndex == 0
+                 && !(p.World.LastCharm.target == cand.Id && p.World.LastCharm.ms >= sent); t += 250)
+                await Task.Delay(250, ct);
+            if (p.World.PetIndex != 0) { Log.Info($"[bst] Charm -> '{cand.Name}' (con {con}) is my pet"); return true; }
+            if (p.World.LastCharm.target == cand.Id && p.World.LastCharm.message == 127 && _uncharmable.Add(cand.Name))
+                Log.Info($"[bst] '{cand.Name}' can't be charmed — never a pet candidate again this session");
+            else Log.Info($"[bst] Charm on '{cand.Name}' resisted");
+            return true;   // a failed charm aggroes it: the grind's under-attack path fights it
+        }
+        return false;
     }
 
     LevelGrind.Config GrindCfg(byte job) => new()
@@ -109,6 +144,7 @@ public sealed class BstBrain(
         Equip = Equip,
         WepSkillForLevel = _ => job == Job.Whm ? ClubSkill : AxeSkill,
         UseAbilities = job == Job.Bst ? BstRotation : LevelGrind.Config.NoAbilities,   // WHM stints keep the generic kit
+        PetUp = job == Job.Bst ? PetUp : null,
         ConMin = 1, ConMax = 3,
         CleanPullNeighborCon = 3,
         RestHpTrigger = 70, RestHpTarget = 90,

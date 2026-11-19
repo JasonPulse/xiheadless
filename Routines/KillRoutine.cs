@@ -185,8 +185,12 @@ public static class KillRoutine
     }
 
     /// The mob hitting US right now (0x028 attack tracking within `withinMs`), nearest first; null if none.
+    /// An attacker whose type/HP update hasn't arrived yet still counts: the attack record (0x028, hostile actor ->
+    /// us) already proves it's hostile, and a bot moving fast through a zone meets mobs before their UPDATE_HP.
+    /// Requiring IsMob/Hpp>0 there let a PLD be beaten 100% -> KO on its walk to camp with no swing back (2026-10-16).
     public static Entity? AttackerOnMe(IPerception p, long withinMs = 8000) =>
-        p.Nearest(e => e.IsMob && e.Hpp > 0 && CombatRoutines.NotObject(e)
+        p.Nearest(e => (e.IsMob || !e.TypeKnown) && (e.Hpp > 0 || !e.TypeKnown) && e.Id != p.World.MyId
+            && !p.World.PartyMembers.ContainsKey(e.Id) && CombatRoutines.NotObject(e)
             && p.World.Attackers.TryGetValue(e.Id, out var a) && a.target == p.World.MyId && p.World.NowMs - a.ms < withinMs);
 
     /// Fight back against whatever is hitting us mid-walk (travel legs, meet walks, logout prep). You can't

@@ -12,6 +12,9 @@ public static class SessionPlan
     // Weights (percent) for today's mode roll. Party is the default posture; some bots "decide" to solo
     // today; a few do town upkeep (AH/restock/sell) and keep a shorter day.
     const int PartyPct = 60, SoloPct = 25;   // Upkeep = the remainder (15)
+    // A WHM main is a party job: it heals, and solo it can't kill (2026-11-12: Nekia's solo day went 1 win,
+    // 39 deaths). Mostly party days; its upkeep days are club skill-up days (JobKits.Apply), not gil farming.
+    const int WhmPartyPct = 80, WhmSoloPct = 10;
 
     // Session-length band (minutes). The seeded roll lands inside; Upkeep days run the SHORTER band.
     const int MinMinutes = 120, MaxMinutes = 360;         // 2-6h (user rule: sessions are 2-6 hours, NEVER less)
@@ -25,14 +28,16 @@ public static class SessionPlan
     /// Today's plan for this char. Stable for the whole UTC day: the END time is anchored to the char's FIRST
     /// login slot of the day (seeded start-of-day offset), not to "now" — so a relog at hour 5 of a 6-hour day
     /// has ~1 hour left, exactly like a human resuming their evening.
-    public static Plan ForToday(uint charId)
+    /// `mainJob` is the brain's MAIN job (not the job of a sub stint); it picks the mode weights.
+    public static Plan ForToday(uint charId, byte mainJob)
     {
         var today = DateTime.UtcNow.Date;
         int seed = unchecked((int)(charId * 2654435761u) ^ (today.DayOfYear * 97) ^ today.Year);
         var rng = new Random(seed);
 
         int roll = rng.Next(100);
-        var mode = roll < PartyPct ? DayMode.Party : roll < PartyPct + SoloPct ? DayMode.Solo : DayMode.Upkeep;
+        var (partyPct, soloPct) = mainJob == Job.Whm ? (WhmPartyPct, WhmSoloPct) : (PartyPct, SoloPct);
+        var mode = roll < partyPct ? DayMode.Party : roll < partyPct + soloPct ? DayMode.Solo : DayMode.Upkeep;
         // DEV ONLY (local live-party scenarios via runbot.sh): force today's mode. The fleet never sets it.
         if (Enum.TryParse<DayMode>(Environment.GetEnvironmentVariable("XIBOT_DEV_DAYMODE"), true, out var forced)) mode = forced;
 

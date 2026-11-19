@@ -48,6 +48,10 @@ public sealed class LevelGrind(
         public Func<CancellationToken, Task<bool>> EmergencyHeal = NoHeal;
         public Func<CancellationToken, Task> PostKillHeal = _ => Task.CompletedTask;
         public Func<uint, CancellationToken, Task<bool>>? LedgePull;   // ranged hate yank for ledge mobs (WAR Provoke)
+        // Pet jobs: get the pet out BEFORE a pull, never mid-fight (BST charm). Arg = how far it may walk for one
+        // (0 = only what's in reach: a party member holding camp). True = it acted (charmed, or a resisted charm
+        // put that mob on us), so the caller re-loops.
+        public Func<float, CancellationToken, Task<bool>>? PetUp;
 
         // ---- FIXED-ZONE mode (party item farms): grind THIS zone instead of the nation's leveling path.
         // Zone ENTRY is owned by Reunion when set (the duo crosses together); never a solo march.
@@ -463,6 +467,7 @@ public sealed class LevelGrind(
             bool NotObject(Entity e) => CombatRoutines.NotObject(e);   // shared: never fight chests/books/???s
             bool LeashOk(Entity e) => cfg.PullLeash <= 0f || p.DistanceTo(e.X, e.Z) <= cfg.PullLeash;
             bool BaseOk(Entity e) => e.IsMob && e.Hpp > 0 && e.Y < 100 && NotObject(e)
+                && (p.World.PetIndex == 0 || e.Index != p.World.PetIndex)   // a just-charmed pet still reads as a mob until its flags update
                 && !cfg.SkipMobNames.Any(n => e.Name.Contains(n, StringComparison.OrdinalIgnoreCase))
                 && !_skip.Contains(e.Id)
                 // con=-1 is INVALID (no /check reply — an object, or a mob out of check range/LoS): never a
@@ -579,6 +584,9 @@ public sealed class LevelGrind(
             // Party ready-check (tether): never pull until the healer is close + topped. Skipped when we're
             // already being hit — never stand still while beaten.
             if (!underAttack && cfg.BeforePull is { } gate && !await gate(ct)) continue;
+
+            // Pet first (BST): a petless pet job gets its pet before this pull, then re-picks a target.
+            if (!underAttack && cfg.PetUp is { } petUp && await petUp(40f, ct)) continue;
 
             // Ranged opener (WHM Dia) — no-op for melee.
             if (!underAttack) await cfg.Pull(mob.Id, ct);

@@ -33,7 +33,7 @@ public static class FleetDay
                                  INavigation nav, ILifecycle lifecycle, Hooks hooks,
                                  SessionPlan.Plan? planOverride, CancellationToken ct)
     {
-        var plan = planOverride ?? SessionPlan.ForToday(p.World.MyId);
+        var plan = planOverride ?? SessionPlan.ForToday(p.World.MyId, p.World.MainJob);
         _ = FleetSchedule.WatchThenLogout(p, combat, party, chat, lifecycle, plan, hooks.Tag, ct);
 
         switch (plan.Mode)
@@ -60,6 +60,10 @@ public static class FleetDay
                 // Arrive = travel to the hunt zone, then walk to the camp. Re-run whenever we end up outside the
                 // zone (a death on the walk-in home-points us to town: Nutha then recruited from Windurst Woods,
                 // 2026-10-07). False = no route / stuck: solo for the day.
+                // Every formation wait fights back first: standing still on the meet point while a mob kills you is
+                // the death loop above (the waits had no defense at all).
+                async Task Pause(int ms) { if (hooks.Defend is { } d) await d(ct); await Task.Delay(ms, ct); }
+
                 async Task<bool> Arrive()
                 {
                     ushort lastZone = 0; int noProgress = 0;
@@ -119,7 +123,7 @@ public static class FleetDay
                         await hooks.SoloGrind(ct);
                         return;
                     }
-                    await Task.Delay(3000, ct);
+                    await Pause(3000);
                 }
                 // Wait for the START gate: minimum Tank+Healer+DD (recruiter counts promised roles), then run
                 // — or the budget expires and we play with whoever joined.
@@ -135,16 +139,16 @@ public static class FleetDay
                     }
                     PartyCombat.AnnounceJob(chat, p, ref jobAnnounceMs);
                     finder.TopUp();
-                    await Task.Delay(3000, ct);
+                    await Pause(3000);
                 }
                 // The START gate is the PARTY's, not just the recruiter's: the recruiter announces START when
                 // its gate passes, and a joiner holds until it hears one. Without this the joiner skipped the
                 // gate, voted itself puller and pulled while the recruiter sat in the comp wait and never
                 // swung at the camp mob (Drusho/Nutha live test, 2026-10-07).
                 if (finder.Recruiting) chat.Party(StartWord);
-                else await AwaitPartyStart(p, chat, hooks.Tag, formDeadline, ct);
+                else await AwaitPartyStart(p, chat, hooks.Tag, formDeadline, hooks.Defend, ct);
                 Log.Always($"[{hooks.Tag}] party up ({party.MemberCount + 1} incl. me) — waiting for the JOB roster before the puller vote");
-                var plan2 = await VoteWhenRosterComplete(p, party, chat, hooks.Tag, ct);
+                var plan2 = await VoteWhenRosterComplete(p, party, chat, hooks.Tag, hooks.Defend, ct);
                 Log.Always($"[{hooks.Tag}] puller vote: puller={plan2.Puller} style={plan2.Style} tank={plan2.Tank ?? "?"}");
                 // No valid puller (roster is all casters + healer, nobody can pull) = the party can't hunt.
                 // Solo grind the rest of the day instead of holding an idle camp (user 2026-09-16). Same
@@ -176,16 +180,16 @@ public static class FleetDay
                         // (user rule: no puller decision until every member's job is known).
                         lastSize = party.MemberCount;
                         chat.Party(StartWord);   // a member who joined after the first START hears the party is running
-                        plan2 = await VoteWhenRosterComplete(p, party, chat, hooks.Tag, ct);
+                        plan2 = await VoteWhenRosterComplete(p, party, chat, hooks.Tag, hooks.Defend, ct);
                         Log.Always($"[{hooks.Tag}] re-vote ({lastSize + 1} incl. me): puller={plan2.Puller} style={plan2.Style} tank={plan2.Tank ?? "?"}");
                     }
                     await hooks.PartyGrind(plan2, ct);                 // one grind beat in role
                     if (party.MemberCount == 0)                        // disbanded on us -> back to seeking
                     {
                         Log.Info($"[{hooks.Tag}] party dissolved — seeking again");
-                        while (!ct.IsCancellationRequested && !finder.Step()) await Task.Delay(3000, ct);
+                        while (!ct.IsCancellationRequested && !finder.Step()) await Pause(3000);
                         lastSize = party.MemberCount;
-                        plan2 = await VoteWhenRosterComplete(p, party, chat, hooks.Tag, ct);
+                        plan2 = await VoteWhenRosterComplete(p, party, chat, hooks.Tag, hooks.Defend, ct);
                     }
                 }
                 return;
@@ -197,7 +201,8 @@ public static class FleetDay
     // A joiner's half of the START gate: hold until any member announces START (on party chat, after we joined),
     // the shared 30-min formation deadline passes, or something is already attacking the party (a human-led
     // party never says START; it just fights).
-    static async Task AwaitPartyStart(IPerception p, IChat chat, string tag, long deadline, CancellationToken ct)
+    static async Task AwaitPartyStart(IPerception p, IChat chat, string tag, long deadline,
+                                      Func<CancellationToken, Task<bool>>? defend, CancellationToken ct)
     {
         long jobAnnounceMs = 0;
         long since = p.World.NowMs - 60_000;   // a START sent while our join was landing still counts
@@ -210,6 +215,7 @@ public static class FleetDay
             { Log.Info($"[{tag}] party START heard"); return; }
             if (PartyUnderAttack(p)) { Log.Info($"[{tag}] party is already fighting — starting"); return; }
             PartyCombat.AnnounceJob(chat, p, ref jobAnnounceMs);
+            if (defend is not null) await defend(ct);
             await Task.Delay(3000, ct);
         }
         Log.Info($"[{tag}] no START before the formation deadline — starting with the party as is");
@@ -233,7 +239,8 @@ public static class FleetDay
     // until every party member's job is known (roster == size). Humans never announce, so a 2-min cap breaks
     // the wait and we vote with what we have (humans are never assigned duty anyway — right for OPEN parties).
     const int RosterWaitCapMs = 120_000;
-    static async Task<PartyCombat.PullPlan> VoteWhenRosterComplete(IPerception p, IParty party, IChat chat, string tag, CancellationToken ct)
+    static async Task<PartyCombat.PullPlan> VoteWhenRosterComplete(IPerception p, IParty party, IChat chat, string tag,
+                                                                   Func<CancellationToken, Task<bool>>? defend, CancellationToken ct)
     {
         long force = 0;   // 0 => AnnounceJob's cadence gate passes immediately
         PartyCombat.AnnounceJob(chat, p, ref force);
@@ -244,6 +251,7 @@ public static class FleetDay
             if (known >= size) { Log.Info($"[{tag}] roster complete ({known}/{size} jobs known)"); break; }
             if (Environment.TickCount64 - startMs > RosterWaitCapMs)
             { Log.Info($"[{tag}] roster incomplete after cap ({known}/{size} — human members?) — voting with what we know"); break; }
+            if (defend is not null) await defend(ct);
             await Task.Delay(3000, ct);
         }
         return PartyCombat.DecidePuller(PartyCombat.Roster(p));

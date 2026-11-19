@@ -69,6 +69,7 @@ public sealed class Combat(ISession s) : ICombat
         var info = Actions.Abilities[ability];
         // validTarget bit 0x01 = self (Berserk/Aggressor/Warcry/Mighty Strikes); everything else hits the enemy.
         uint tgt = (info.ValidTarget & 0x01) != 0 ? s.State.MyId : enemyTarget;
+        ActionPacket.GetOffMount(s);   // a mounted char's job abilities are refused
         s.Enqueue(ActionPacket.Build(ActionPacket.JobAbility, tgt, s.State.TargidOf(tgt), (uint)ability));
         s.State.AbilityUsedMs[ability] = s.State.NowMs;
         await Task.Delay(600, ct);
@@ -83,8 +84,7 @@ public sealed class Combat(ISession s) : ICombat
     {
         bool Done() => s.State.Hpp >= hpPct && (mpPct <= 0 || s.State.Mpp >= mpPct);
         if (Done()) return true;
-        if (s.State.IsMounted)              // can't /heal on a chocobo: get off first (travel now rides by default)
-        { s.Enqueue(ActionPacket.Build(ActionPacket.Dismount, s.State.MyId, s.State.MyIndex)); await Task.Delay(1000, ct); }
+        if (ActionPacket.GetOffMount(s)) await Task.Delay(1000, ct);   // can't /heal on a chocobo (travel rides by default)
         if (_engaged) Disengage();         // never /heal in combat — the server refuses it and hits cancel it
         // Settle: stand for a moment after disengaging and make sure we're NOT still being hit. A mob with
         // hate keeps attacking after we disengage, so if HP is still slipping we're in a fight — don't sit.
